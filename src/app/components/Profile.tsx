@@ -1,17 +1,40 @@
-import { Settings, Flame, TrendingUp } from "lucide-react";
+import { Settings, Flame, TrendingUp, LogOut } from "lucide-react";
 import { motion } from "motion/react";
 import { currentUserProfile, rankedItems } from "../data/mockData";
+import { useAuth } from "../../contexts/AuthContext";
+import { useNavigate } from "react-router-dom";
 
 export function Profile() {
+  const { signOut, user } = useAuth();
+  const navigate = useNavigate();
+
+  const handleLogout = async () => {
+    try {
+      await signOut();
+      navigate('/login');
+    } catch (error) {
+      console.error('Error logging out:', error);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#FAFAF8]">
       {/* Header */}
       <header className="sticky top-0 z-30 border-b border-neutral-200/60 bg-white/90 backdrop-blur-xl">
         <div className="mx-auto flex max-w-4xl items-center justify-between px-6 py-4">
           <h1 className="text-base tracking-tight text-neutral-900">Profile</h1>
-          <button className="flex h-9 w-9 items-center justify-center rounded-lg text-neutral-600 transition-all hover:bg-neutral-100">
-            <Settings className="h-4 w-4" />
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={handleLogout}
+              className="flex h-9 w-9 items-center justify-center rounded-lg text-neutral-600 transition-all hover:bg-red-50 hover:text-red-600"
+              title="Logout"
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
+            <button className="flex h-9 w-9 items-center justify-center rounded-lg text-neutral-600 transition-all hover:bg-neutral-100">
+              <Settings className="h-4 w-4" />
+            </button>
+          </div>
         </div>
       </header>
 
