@@ -215,9 +215,12 @@ export function apiPostToOOTDPost(
     compatibilityScore: post.compatibility_score ?? 0,
     aiInsight: '',
     tags: buildTagsFromPost(post),
-    outfitItems:
-      (post as any).outfit_items ??
-      (post.items?.length ? postOutfitItemsToUIOutfitItems(post.items) : undefined),
+    outfitItems: (() => {
+      const raw = (post as any).outfit_items;
+      if (raw && Array.isArray(raw) && raw.length > 0) return postOutfitItemsToUIOutfitItems(raw as PostOutfitItem[]);
+      if (post.items?.length) return postOutfitItemsToUIOutfitItems(post.items);
+      return undefined;
+    })(),
   };
 }
 

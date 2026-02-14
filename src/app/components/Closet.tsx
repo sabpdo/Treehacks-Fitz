@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from "react";
 import { useSearchParams } from "react-router";
-import { Plus, Grid3x3, List, X, ChevronRight, Flame, Upload } from "lucide-react";
+import { Plus, Grid3x3, List, X, ChevronRight, Flame, Upload, Trash2 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { mockClosetItems, type ClosetItem, currentUserProfile } from "../data/mockData";
 import { useAppStore } from "../context/AppStore";
-import { getCurrentProfile, getClosetItems, createClosetItem, updateClosetItem, uploadImage, getClosetItem } from "../../services/api";
+import { getCurrentProfile, getClosetItems, createClosetItem, updateClosetItem, deleteClosetItem, uploadImage, getClosetItem } from "../../services/api";
 import { apiClosetItemToUI } from "../../lib/adapters";
 
 // Map UI category to database category (reverse of adapter)
@@ -20,6 +20,16 @@ function mapCategoryToUI(dbCategory: string): "tops" | "bottoms" | "outerwear" |
   return categoryMap[dbCategory] || "tops";
 }
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "./ui/alert-dialog";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
@@ -107,6 +117,9 @@ export function Closet() {
   const [editItemError, setEditItemError] = useState<string | null>(null);
   const [detailModalCategory, setDetailModalCategory] = useState<Category | "">("");
   const [savingCategory, setSavingCategory] = useState(false);
+  const [deletingItem, setDeletingItem] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [detailFormData, setDetailFormData] = useState({
     image: null as File | null,
     imagePreview: null as string | null,
@@ -1273,6 +1286,68 @@ export function Closet() {
                       <p className="text-xs text-neutral-500">this season</p>
                     </div>
                   </div>
+
+                  {/* Remove from wardrobe */}
+                  <div className="mt-6 border-t border-neutral-200/60 pt-4">
+                    {deleteError && (
+                      <p className="mb-3 text-sm text-red-600">{deleteError}</p>
+                    )}
+                    <button
+                      type="button"
+                      disabled={deletingItem}
+                      onClick={() => setDeleteConfirmOpen(true)}
+                      className="flex w-full items-center justify-center gap-2 rounded-xl border border-red-200 bg-white py-3 text-sm text-red-600 transition-colors hover:bg-red-50 disabled:opacity-50"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Remove from wardrobe
+                    </button>
+                  </div>
+
+                  <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+                    <AlertDialogContent className="max-w-[calc(100%-2rem)] rounded-2xl border-neutral-200/60 bg-white p-6 shadow-xl sm:max-w-md">
+                      <AlertDialogHeader>
+                        <AlertDialogTitle className="text-left text-lg font-semibold text-neutral-900">
+                          Remove from wardrobe?
+                        </AlertDialogTitle>
+                        <AlertDialogDescription className="text-left text-sm text-neutral-500">
+                          This item will be removed from your closet. This can't be undone.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter className="mt-6 flex flex-row gap-3 sm:justify-end">
+                        <AlertDialogCancel
+                          onClick={() => setDeleteError(null)}
+                          className="rounded-xl border-neutral-300"
+                        >
+                          Cancel
+                        </AlertDialogCancel>
+                        <AlertDialogAction
+                          onClick={async (e) => {
+                            e.preventDefault();
+                            if (!selectedItem) return;
+                            setDeleteError(null);
+                            setDeletingItem(true);
+                            try {
+                              if (isUsingApi && selectedItem.id) {
+                                await deleteClosetItem(selectedItem.id);
+                              }
+                              setClosetItems((prev) => prev.filter((i) => i.id !== selectedItem.id));
+                              setSelectedItem(null);
+                              setDeleteConfirmOpen(false);
+                            } catch (err) {
+                              console.error("Failed to delete item:", err);
+                              setDeleteError(err instanceof Error ? err.message : "Failed to remove item");
+                              setDeleteConfirmOpen(false);
+                            } finally {
+                              setDeletingItem(false);
+                            }
+                          }}
+                          className="rounded-xl bg-red-600 text-white hover:bg-red-700"
+                        >
+                          {deletingItem ? "Removing…" : "Remove"}
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
                 </div>
               </div>
             </motion.div>

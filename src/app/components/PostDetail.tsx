@@ -110,7 +110,10 @@ export function PostDetail() {
     }
   };
 
-  const outfitItems = (post as { outfitItems?: OutfitItem[] }).outfitItems ?? [];
+  const rawOutfitItems = (post as { outfitItems?: OutfitItem[] }).outfitItems ?? [];
+  const outfitItems = rawOutfitItems.filter(
+    (oi) => oi != null && (typeof oi.id === "string" || typeof oi.label === "string")
+  );
 
   const getColorStyle = (color: string) => {
     const colorMap: Record<string, string> = {
@@ -238,9 +241,9 @@ export function PostDetail() {
             <>
               {!isOutfitBreakdownExpanded && (
                 <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
-                  {sortedItems.map((oi) => (
+                  {sortedItems.map((oi, idx) => (
                     <motion.div
-                      key={oi.id}
+                      key={oi.id ?? `oi-${idx}`}
                       whileHover={{ scale: 1.02 }}
                       whileTap={{ scale: 0.98 }}
                       className="flex-shrink-0"
@@ -274,9 +277,9 @@ export function PostDetail() {
                   >
                     <div className="overflow-hidden rounded-xl border border-neutral-200/60 bg-white">
                       <div className="divide-y divide-neutral-100">
-                        {sortedItems.map((oi) => (
+                        {sortedItems.map((oi, idx) => (
                           <div
-                            key={oi.id}
+                            key={oi.id ?? `oi-${idx}`}
                             className="flex w-full items-center gap-3 p-3 text-left"
                           >
                             {oi.imageUrl ? (
