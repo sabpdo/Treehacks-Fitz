@@ -4,7 +4,6 @@ import { HomeFeed } from "./components/HomeFeed";
 import { OOTDPost } from "./components/OOTDPost";
 import { PostDetail } from "./components/PostDetail";
 import { AllOOTDs } from "./components/AllOOTDs";
-import { Community } from "./components/Community";
 import { Profile } from "./components/Profile";
 import { AIOutfitGenerator } from "./components/AIOutfitGenerator";
 import { Closet } from "./components/Closet";
@@ -43,7 +42,6 @@ export const router = createBrowserRouter([
           { path: "post", Component: OOTDPost },
           { path: "post/:postId", Component: PostDetail },
           { path: "ootds", Component: AllOOTDs },
-          { path: "community", Component: Community },
           { path: "profile", Component: Profile },
           { path: "profile/:userId", Component: Profile },
           { path: "ai-generator", Component: AIOutfitGenerator },

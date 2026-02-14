@@ -4,11 +4,18 @@ import { Camera, Flame, Sparkles, ChevronRight, TrendingUp, ImageOff } from "luc
 import { motion } from "motion/react";
 import { useAppStore } from "../context/AppStore";
 import { ensurePublicStorageUrl, DEFAULT_AVATAR } from "../../lib/adapters";
+import { getNetworkTopRankings } from "../../services/api/ranking";
 import { PostGrid } from "./feed";
+
+function formatCategory(cat: string): string {
+  return cat.replace(/_/g, " ");
+}
 
 export function HomeFeed() {
   const { posts, followingUserIds, refetchFeed, getUser, currentUserId, isUsingApi, refetchCurrentUser } = useAppStore();
   const [brokenImageIds, setBrokenImageIds] = useState<Set<string>>(new Set());
+  const [networkTopRanked, setNetworkTopRanked] = useState<{ name: string; score: number; category: string }[]>([]);
+  const [networkRankingsLoading, setNetworkRankingsLoading] = useState(false);
 
   useEffect(() => {
     refetchFeed("following", "recent");
@@ -17,6 +24,35 @@ export function HomeFeed() {
   useEffect(() => {
     if (isUsingApi && currentUserId) refetchCurrentUser();
   }, [isUsingApi, currentUserId, refetchCurrentUser]);
+
+  useEffect(() => {
+    if (!isUsingApi || followingUserIds.size === 0) {
+      setNetworkTopRanked([]);
+      return;
+    }
+    let cancelled = false;
+    setNetworkRankingsLoading(true);
+    getNetworkTopRankings(Array.from(followingUserIds), 8)
+      .then((items) => {
+        if (cancelled) return;
+        setNetworkTopRanked(
+          items.map((item) => ({
+            name: item.brand || "Item",
+            score: Number(item.rating ?? 0),
+            category: formatCategory(item.category || "closet"),
+          }))
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setNetworkTopRanked([]);
+      })
+      .finally(() => {
+        if (!cancelled) setNetworkRankingsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isUsingApi, followingUserIds]);
 
   const currentUser = getUser(currentUserId);
   const streak = isUsingApi ? (currentUser?.streak ?? 0) : 7;
@@ -28,13 +64,6 @@ export function HomeFeed() {
 
   const friendsToday = posts.filter((p) => followingUserIds.has(p.userId));
   const friendsPosts = friendsToday.slice(0, 6);
-
-  const topRanked = [
-    { name: "Uniqlo White Tee", score: 9.4, category: "Essential Basics" },
-    { name: "Aritzia Effortless Pant", score: 9.2, category: "Best Bottoms" },
-    { name: "Prada Re-Edition Bag", score: 9.8, category: "Investment Pieces" },
-    { name: "Veja Sneakers", score: 8.9, category: "Everyday Shoes" },
-  ];
 
   return (
     <div className="min-h-screen bg-[#FAFAF8]">
@@ -189,26 +218,43 @@ export function HomeFeed() {
 
             <div className="overflow-hidden rounded-2xl border border-neutral-200/60 bg-white shadow-sm">
               <div className="divide-y divide-neutral-200/60">
-                {topRanked.map((item, index) => (
-                  <div key={index} className="px-5 py-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1">
-                        <p className="mb-0.5 text-sm text-neutral-900">{item.name}</p>
-                        <p className="text-xs text-neutral-400">{item.category}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-serif text-2xl text-neutral-900">
-                          {item.score}
-                        </p>
+                {networkRankingsLoading ? (
+                  [1, 2, 3, 4].map((i) => (
+                    <div key={i} className="animate-pulse px-5 py-4">
+                      <div className="flex items-center justify-between">
+                        <div className="h-4 w-24 rounded bg-neutral-200" />
+                        <div className="h-6 w-10 rounded bg-neutral-200" />
                       </div>
                     </div>
+                  ))
+                ) : networkTopRanked.length === 0 ? (
+                  <div className="px-5 py-8 text-center text-sm text-neutral-500">
+                    {followingUserIds.size === 0
+                      ? "Follow people to see their top ranked items here."
+                      : "No ranked items from people you follow yet."}
                   </div>
-                ))}
+                ) : (
+                  networkTopRanked.map((item, index) => (
+                    <div key={`${item.name}-${index}`} className="px-5 py-4">
+                      <div className="flex items-center justify-between">
+                        <div className="min-w-0 flex-1">
+                          <p className="mb-0.5 truncate text-sm text-neutral-900">{item.name}</p>
+                          <p className="text-xs capitalize text-neutral-400">{item.category}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-serif text-2xl text-neutral-900">
+                            {item.score.toFixed(1)}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
 
               <div className="border-t border-neutral-200/60 bg-neutral-50 p-4">
                 <Link
-                  to="/profile"
+                  to="/profile?tab=rankings"
                   className="flex w-full items-center justify-center gap-2 text-xs text-neutral-600 transition-colors duration-200 hover:text-neutral-900"
                 >
                   <TrendingUp className="h-3.5 w-3.5" />

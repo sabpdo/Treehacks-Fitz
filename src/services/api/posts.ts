@@ -68,7 +68,12 @@ export async function getFeedPosts(
 
     query = query.in('id', savedPostIds);
   } else if (filter === 'trending') {
-    query = query.order(orderBy, { ascending }).range(offset, offset + limit - 1);
+    const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const weekAgoIso = weekAgo.toISOString();
+    query = query
+      .gte('created_at', weekAgoIso)
+      .order('likes_count', { ascending: false })
+      .range(offset, offset + limit - 1);
   } else {
     // following: posts from followed users + own posts (fetch following IDs first; PostgREST doesn't support subqueries in .or())
     const { data: followRows } = await supabase
