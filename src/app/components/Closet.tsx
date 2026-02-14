@@ -3,8 +3,21 @@ import { Plus, Grid3x3, List, X, ChevronRight, Flame, Upload } from "lucide-reac
 import { motion, AnimatePresence } from "motion/react";
 import { mockClosetItems, type ClosetItem, currentUserProfile } from "../data/mockData";
 import { useAppStore } from "../context/AppStore";
-import { getCurrentProfile, getClosetItems, createClosetItem, uploadImage } from "../../services/api";
+import { getCurrentProfile, getClosetItems, createClosetItem, updateClosetItem, uploadImage, getClosetItem } from "../../services/api";
 import { apiClosetItemToUI } from "../../lib/adapters";
+
+// Map UI category to database category (reverse of adapter)
+function mapCategoryToUI(dbCategory: string): "tops" | "bottoms" | "outerwear" | "shoes" | "accessories" {
+  const categoryMap: Record<string, "tops" | "bottoms" | "outerwear" | "shoes" | "accessories"> = {
+    shirts: "tops",
+    pants: "bottoms",
+    skirts_dresses: "bottoms",
+    jackets_outerwear: "outerwear",
+    shoes: "shoes",
+    bags: "accessories",
+  };
+  return categoryMap[dbCategory] || "tops";
+}
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -14,6 +27,68 @@ import type { Category, VibeTag, PriceTier, Silhouette } from "../../types/datab
 
 type CategoryFilter = "all" | "tops" | "bottoms" | "outerwear" | "shoes" | "accessories";
 type ViewMode = "grid" | "list";
+
+const PREDEFINED_BRANDS = [
+  "H&M", "Zara", "Nike", "Adidas", "Uniqlo", "Forever 21", "Gap", "Old Navy",
+  "Target", "ASOS", "Shein", "Urban Outfitters", "Aritzia", "Lululemon",
+  "Levi's", "Madewell", "Everlane", "Reformation"
+];
+
+// Map color names to actual hex colors
+function getColorHex(colorName: string): string {
+  const color = colorName.toLowerCase().trim();
+  const colorMap: Record<string, string> = {
+    // Basic colors
+    white: "#FFFFFF",
+    black: "#000000",
+    gray: "#808080",
+    grey: "#808080",
+    // Neutrals
+    beige: "#F5F5DC",
+    cream: "#FFFDD0",
+    camel: "#C19A6B",
+    tan: "#D2B48C",
+    navy: "#000080",
+    sage: "#87AE73",
+    // Primary colors
+    red: "#FF0000",
+    blue: "#0000FF",
+    green: "#008000",
+    yellow: "#FFFF00",
+    orange: "#FFA500",
+    purple: "#800080",
+    pink: "#FFC0CB",
+    // Common variations
+    burgundy: "#800020",
+    maroon: "#800000",
+    coral: "#FF7F50",
+    salmon: "#FA8072",
+    peach: "#FFE5B4",
+    mint: "#98FF98",
+    turquoise: "#40E0D0",
+    teal: "#008080",
+    cyan: "#00FFFF",
+    lavender: "#E6E6FA",
+    violet: "#8A2BE2",
+    indigo: "#4B0082",
+    magenta: "#FF00FF",
+    fuchsia: "#FF00FF",
+    lime: "#00FF00",
+    olive: "#808000",
+    khaki: "#F0E68C",
+    gold: "#FFD700",
+    silver: "#C0C0C0",
+    bronze: "#CD7F32",
+    // Additional common colors
+    brown: "#A52A2A",
+    chocolate: "#7B3F00",
+    coffee: "#6F4E37",
+    ivory: "#FFFFF0",
+    offwhite: "#FAFAFA",
+    charcoal: "#36454F",
+  };
+  return colorMap[color] || "#E5E7EB"; // Default to light gray if color not found
+}
 
 export function Closet() {
   const [filter, setFilter] = useState<CategoryFilter>("all");
@@ -26,6 +101,11 @@ export function Closet() {
   const [addItemOpen, setAddItemOpen] = useState(false);
   const [addingItem, setAddingItem] = useState(false);
   const [addItemError, setAddItemError] = useState<string | null>(null);
+  const [editItemOpen, setEditItemOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState(false);
+  const [editItemError, setEditItemError] = useState<string | null>(null);
+  const [detailModalCategory, setDetailModalCategory] = useState<Category | "">("");
+  const [savingCategory, setSavingCategory] = useState(false);
   const [formData, setFormData] = useState({
     image: null as File | null,
     imagePreview: null as string | null,
@@ -39,6 +119,49 @@ export function Closet() {
     subcategory: "",
   });
   const { isUsingApi, currentUserId, getUser } = useAppStore();
+
+  // Map UI category back to database category
+  const mapCategoryToDB = (uiCategory: string): Category => {
+    const categoryMap: Record<string, Category> = {
+      tops: "shirts",
+      bottoms: "pants", // Default to pants, could be skirts_dresses
+      outerwear: "jackets_outerwear",
+      shoes: "shoes",
+      accessories: "bags",
+    };
+    return categoryMap[uiCategory] || "shirts";
+  };
+
+  // Initialize detail modal category when item is selected
+  useEffect(() => {
+    if (selectedItem) {
+      // Map UI category to database category for the dropdown
+      const dbCategoryMap: Record<string, Category> = {
+        tops: "shirts",
+        bottoms: "pants",
+        outerwear: "jackets_outerwear",
+        shoes: "shoes",
+        accessories: "bags",
+      };
+      // Get the database category from the selected item
+      // We need to fetch the full item to get the actual DB category
+      if (isUsingApi && selectedItem.id) {
+        getClosetItem(selectedItem.id)
+          .then((dbItem) => {
+            if (dbItem) {
+              setDetailModalCategory(dbItem.category);
+            }
+          })
+          .catch(() => {
+            // Fallback to mapping from UI category
+            setDetailModalCategory(dbCategoryMap[selectedItem.category] || "shirts");
+          });
+      } else {
+        // Fallback to mapping from UI category
+        setDetailModalCategory(dbCategoryMap[selectedItem.category] || "shirts");
+      }
+    }
+  }, [selectedItem, isUsingApi]);
 
   // Load closet items from API
   useEffect(() => {
@@ -298,12 +421,43 @@ export function Closet() {
                     {/* Brand */}
                     <div className="space-y-2">
                       <Label htmlFor="brand">Brand</Label>
-                      <Input
-                        id="brand"
+                      <Select
                         value={formData.brand}
-                        onChange={(e) => setFormData((prev) => ({ ...prev, brand: e.target.value }))}
-                        placeholder="e.g., Nike, Zara"
-                      />
+                        onValueChange={(value) => setFormData((prev) => ({ ...prev, brand: value }))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select brand" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="H&M">H&M</SelectItem>
+                          <SelectItem value="Zara">Zara</SelectItem>
+                          <SelectItem value="Nike">Nike</SelectItem>
+                          <SelectItem value="Adidas">Adidas</SelectItem>
+                          <SelectItem value="Uniqlo">Uniqlo</SelectItem>
+                          <SelectItem value="Forever 21">Forever 21</SelectItem>
+                          <SelectItem value="Gap">Gap</SelectItem>
+                          <SelectItem value="Old Navy">Old Navy</SelectItem>
+                          <SelectItem value="Target">Target</SelectItem>
+                          <SelectItem value="ASOS">ASOS</SelectItem>
+                          <SelectItem value="Shein">Shein</SelectItem>
+                          <SelectItem value="Urban Outfitters">Urban Outfitters</SelectItem>
+                          <SelectItem value="Aritzia">Aritzia</SelectItem>
+                          <SelectItem value="Lululemon">Lululemon</SelectItem>
+                          <SelectItem value="Levi's">Levi's</SelectItem>
+                          <SelectItem value="Madewell">Madewell</SelectItem>
+                          <SelectItem value="Everlane">Everlane</SelectItem>
+                          <SelectItem value="Reformation">Reformation</SelectItem>
+                          <SelectItem value="Other">Other</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {(formData.brand === "Other" || (formData.brand && !PREDEFINED_BRANDS.includes(formData.brand))) && (
+                        <Input
+                          id="brand-custom"
+                          value={formData.brand === "Other" ? "" : formData.brand}
+                          placeholder="Enter brand name"
+                          onChange={(e) => setFormData((prev) => ({ ...prev, brand: e.target.value }))}
+                        />
+                      )}
                     </div>
 
                     {/* Category */}
@@ -338,9 +492,9 @@ export function Closet() {
                           <SelectValue placeholder="Select price tier" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="budget">Budget</SelectItem>
-                          <SelectItem value="mid">Mid-range</SelectItem>
-                          <SelectItem value="luxury">Luxury</SelectItem>
+                          <SelectItem value="budget">$</SelectItem>
+                          <SelectItem value="mid">$$</SelectItem>
+                          <SelectItem value="luxury">$$$</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -601,28 +755,7 @@ export function Closet() {
                   <div
                     className="absolute right-3 top-3 h-5 w-5 rounded-full border-2 border-white shadow-sm"
                     style={{
-                      backgroundColor:
-                        item.color.toLowerCase() === "white"
-                          ? "#F5F5F5"
-                          : item.color.toLowerCase() === "black"
-                          ? "#1a1a1a"
-                          : item.color.toLowerCase() === "beige"
-                          ? "#D4C5B9"
-                          : item.color.toLowerCase() === "navy"
-                          ? "#1F2937"
-                          : item.color.toLowerCase() === "gray"
-                          ? "#9CA3AF"
-                          : item.color.toLowerCase() === "sage"
-                          ? "#8B9B8E"
-                          : item.color.toLowerCase() === "cream"
-                          ? "#F5F1E8"
-                          : item.color.toLowerCase() === "camel"
-                          ? "#C19A6B"
-                          : item.color.toLowerCase() === "tan"
-                          ? "#D2B48C"
-                          : item.color.toLowerCase() === "gold"
-                          ? "#FFD700"
-                          : "#E5E7EB",
+                      backgroundColor: getColorHex(item.color),
                     }}
                   />
                 </div>
@@ -630,8 +763,11 @@ export function Closet() {
                   <p className="mb-1 text-xs uppercase tracking-wide text-neutral-400">
                     {item.category}
                   </p>
-                  <p className="mb-0.5 text-sm text-neutral-900">{item.brand}</p>
-                  <p className="text-xs text-neutral-500">{item.color}</p>
+                  <p className="text-sm text-neutral-900">
+                    {(item as any).subcategory && item.brand 
+                      ? `${(item as any).subcategory} • ${item.brand}` 
+                      : (item as any).subcategory || item.brand || item.style || "—"}
+                  </p>
                 </div>
               </motion.button>
               ))
@@ -688,28 +824,7 @@ export function Closet() {
                     <div
                       className="h-3 w-3 rounded-full border border-neutral-300"
                       style={{
-                        backgroundColor:
-                          item.color.toLowerCase() === "white"
-                            ? "#F5F5F5"
-                            : item.color.toLowerCase() === "black"
-                            ? "#1a1a1a"
-                            : item.color.toLowerCase() === "beige"
-                            ? "#D4C5B9"
-                            : item.color.toLowerCase() === "navy"
-                            ? "#1F2937"
-                            : item.color.toLowerCase() === "gray"
-                            ? "#9CA3AF"
-                            : item.color.toLowerCase() === "sage"
-                            ? "#8B9B8E"
-                            : item.color.toLowerCase() === "cream"
-                            ? "#F5F1E8"
-                            : item.color.toLowerCase() === "camel"
-                            ? "#C19A6B"
-                            : item.color.toLowerCase() === "tan"
-                            ? "#D2B48C"
-                            : item.color.toLowerCase() === "gold"
-                            ? "#FFD700"
-                            : "#E5E7EB",
+                        backgroundColor: getColorHex(item.color),
                       }}
                     />
                     <span className="text-xs text-neutral-600">{item.color}</span>
@@ -779,11 +894,53 @@ export function Closet() {
                     {/* Category */}
                     <div>
                       <p className="mb-1 text-xs uppercase tracking-wide text-neutral-400">
-                        Category
+                        Category *
                       </p>
-                      <p className="capitalize text-neutral-900">
-                        {selectedItem.category}
-                      </p>
+                      <Select
+                        value={detailModalCategory}
+                        onValueChange={async (value) => {
+                          if (!selectedItem || !isUsingApi || !currentUserId) return;
+                          const newCategory = value as Category;
+                          setDetailModalCategory(newCategory);
+                          setSavingCategory(true);
+                          try {
+                            const updatedItem = await updateClosetItem(selectedItem.id, {
+                              category: newCategory,
+                            });
+                            const uiItem = apiClosetItemToUI(updatedItem);
+                            setClosetItems((prev) =>
+                              prev.map((item) => (item.id === selectedItem.id ? uiItem : item))
+                            );
+                            setSelectedItem(uiItem);
+                          } catch (err) {
+                            console.error("Failed to update category:", err);
+                            // Revert on error
+                            const dbCategoryMap: Record<string, Category> = {
+                              tops: "shirts",
+                              bottoms: "pants",
+                              outerwear: "jackets_outerwear",
+                              shoes: "shoes",
+                              accessories: "bags",
+                            };
+                            setDetailModalCategory(dbCategoryMap[selectedItem.category] || "shirts");
+                          } finally {
+                            setSavingCategory(false);
+                          }
+                        }}
+                        disabled={savingCategory || !isUsingApi}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select category" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="shirts">Shirts/Tops</SelectItem>
+                          <SelectItem value="pants">Pants</SelectItem>
+                          <SelectItem value="skirts_dresses">Skirts/Dresses</SelectItem>
+                          <SelectItem value="jackets_outerwear">Jackets/Outerwear</SelectItem>
+                          <SelectItem value="shoes">Shoes</SelectItem>
+                          <SelectItem value="bags">Bags</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
 
                     {/* Price Tier */}
@@ -792,8 +949,11 @@ export function Closet() {
                         <p className="mb-1 text-xs uppercase tracking-wide text-neutral-400">
                           Price Tier
                         </p>
-                        <p className="capitalize text-neutral-900">
-                          {(selectedItem as any).priceTier}
+                        <p className="text-neutral-900">
+                          {(selectedItem as any).priceTier === "budget" ? "$" : 
+                           (selectedItem as any).priceTier === "mid" ? "$$" : 
+                           (selectedItem as any).priceTier === "luxury" ? "$$$" : 
+                           (selectedItem as any).priceTier}
                         </p>
                       </div>
                     )}
@@ -812,28 +972,7 @@ export function Closet() {
                             <div
                               className="h-4 w-4 rounded-full border border-neutral-300"
                               style={{
-                                backgroundColor:
-                                  color.toLowerCase() === "white"
-                                    ? "#F5F5F5"
-                                    : color.toLowerCase() === "black"
-                                    ? "#1a1a1a"
-                                    : color.toLowerCase() === "beige"
-                                    ? "#D4C5B9"
-                                    : color.toLowerCase() === "navy"
-                                    ? "#1F2937"
-                                    : color.toLowerCase() === "gray"
-                                    ? "#9CA3AF"
-                                    : color.toLowerCase() === "sage"
-                                    ? "#8B9B8E"
-                                    : color.toLowerCase() === "cream"
-                                    ? "#F5F1E8"
-                                    : color.toLowerCase() === "camel"
-                                    ? "#C19A6B"
-                                    : color.toLowerCase() === "tan"
-                                    ? "#D2B48C"
-                                    : color.toLowerCase() === "gold"
-                                    ? "#FFD700"
-                                    : "#E5E7EB",
+                                backgroundColor: getColorHex(color),
                               }}
                             />
                             <span className="text-neutral-900 capitalize text-sm">{color}</span>
@@ -916,7 +1055,35 @@ export function Closet() {
                       View Outfits
                       <ChevronRight className="h-4 w-4" />
                     </button>
-                    <button className="flex items-center justify-center gap-2 rounded-xl border border-neutral-300 bg-white py-3 text-sm text-neutral-900 transition-all hover:bg-neutral-50">
+                    <button
+                      onClick={async () => {
+                        if (!selectedItem || !isUsingApi) return;
+                        try {
+                          // Fetch full database item to get all fields
+                          const dbItem = await getClosetItem(selectedItem.id);
+                          if (!dbItem) return;
+
+                          // Populate edit form with existing data
+                          setFormData({
+                            image: null,
+                            imagePreview: dbItem.image_url,
+                            brand: dbItem.brand || "",
+                            category: dbItem.category,
+                            vibeTags: dbItem.vibe_tags || [],
+                            priceTier: dbItem.price_tier || "",
+                            colors: dbItem.colors || [],
+                            fabric: dbItem.fabric || "",
+                            silhouette: dbItem.silhouette || "",
+                            subcategory: dbItem.subcategory || "",
+                          });
+                          setEditItemOpen(true);
+                        } catch (err) {
+                          console.error("Failed to load item for editing:", err);
+                          setEditItemError("Failed to load item details");
+                        }
+                      }}
+                      className="flex items-center justify-center gap-2 rounded-xl border border-neutral-300 bg-white py-3 text-sm text-neutral-900 transition-all hover:bg-neutral-50"
+                    >
                       Edit Details
                     </button>
                   </div>
@@ -926,6 +1093,372 @@ export function Closet() {
           </>
         )}
       </AnimatePresence>
+
+      {/* Edit Item Dialog */}
+      <Dialog open={editItemOpen} onOpenChange={setEditItemOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden bg-white flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Edit Item Details</DialogTitle>
+          </DialogHeader>
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (!selectedItem || !formData.category) {
+                setEditItemError("Please fill in required fields");
+                return;
+              }
+
+              if (!isUsingApi || !currentUserId) {
+                setEditItemError("Please log in to edit items");
+                return;
+              }
+
+              setEditingItem(true);
+              setEditItemError(null);
+
+              try {
+                // Prepare update data
+                const updates: any = {
+                  brand: formData.brand || null,
+                  category: formData.category as Category,
+                  vibe_tags: formData.vibeTags.length > 0 ? formData.vibeTags : [],
+                  price_tier: formData.priceTier || null,
+                  colors: formData.colors.length > 0 ? formData.colors : [],
+                  fabric: formData.fabric || null,
+                  silhouette: formData.silhouette || null,
+                  subcategory: formData.subcategory || null,
+                };
+
+                // If new image was uploaded, update image_url
+                if (formData.image) {
+                  const imageUrl = await uploadImage(formData.image);
+                  updates.image_url = imageUrl;
+                }
+
+                // Update the item
+                const updatedItem = await updateClosetItem(selectedItem.id, updates);
+
+                // Convert to UI format and update in list
+                const uiItem = apiClosetItemToUI(updatedItem);
+                setClosetItems((prev) =>
+                  prev.map((item) => (item.id === selectedItem.id ? uiItem : item))
+                );
+
+                // Update selected item
+                setSelectedItem(uiItem);
+
+                // Reset form and close dialog
+                setFormData({
+                  image: null,
+                  imagePreview: null,
+                  brand: "",
+                  category: "" as Category | "",
+                  vibeTags: [],
+                  priceTier: "" as PriceTier | "",
+                  colors: [],
+                  fabric: "",
+                  silhouette: "" as Silhouette | "",
+                  subcategory: "",
+                });
+                setEditItemOpen(false);
+              } catch (err) {
+                console.error("Failed to update item:", err);
+                setEditItemError(err instanceof Error ? err.message : "Failed to update item");
+              } finally {
+                setEditingItem(false);
+              }
+            }}
+            className="space-y-4 overflow-y-auto flex-1 pr-2"
+          >
+            {/* Image Preview/Upload */}
+            <div className="space-y-2">
+              <Label htmlFor="edit-image">Item Image</Label>
+              <div className="flex items-center gap-4">
+                {formData.imagePreview ? (
+                  <div className="relative">
+                    <img
+                      src={formData.imagePreview}
+                      alt="Preview"
+                      className="h-32 w-32 rounded-lg object-cover border border-neutral-200"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFormData((prev) => ({ ...prev, image: null, imagePreview: null }));
+                      }}
+                      className="absolute -top-2 -right-2 flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-white hover:bg-red-600"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <label
+                    htmlFor="edit-image-upload"
+                    className="flex h-32 w-32 cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-neutral-300 bg-neutral-50 hover:border-neutral-400"
+                  >
+                    <Upload className="mb-2 h-6 w-6 text-neutral-400" />
+                    <span className="text-xs text-neutral-500">Change Image</span>
+                  </label>
+                )}
+                <input
+                  id="edit-image-upload"
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      const reader = new FileReader();
+                      reader.onloadend = () => {
+                        setFormData((prev) => ({
+                          ...prev,
+                          image: file,
+                          imagePreview: reader.result as string,
+                        }));
+                      };
+                      reader.readAsDataURL(file);
+                    }
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Brand */}
+            <div className="space-y-2">
+              <Label htmlFor="edit-brand">Brand</Label>
+              <Select
+                value={formData.brand}
+                onValueChange={(value) => setFormData((prev) => ({ ...prev, brand: value }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select brand" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="H&M">H&M</SelectItem>
+                  <SelectItem value="Zara">Zara</SelectItem>
+                  <SelectItem value="Nike">Nike</SelectItem>
+                  <SelectItem value="Adidas">Adidas</SelectItem>
+                  <SelectItem value="Uniqlo">Uniqlo</SelectItem>
+                  <SelectItem value="Forever 21">Forever 21</SelectItem>
+                  <SelectItem value="Gap">Gap</SelectItem>
+                  <SelectItem value="Old Navy">Old Navy</SelectItem>
+                  <SelectItem value="Target">Target</SelectItem>
+                  <SelectItem value="ASOS">ASOS</SelectItem>
+                  <SelectItem value="Shein">Shein</SelectItem>
+                  <SelectItem value="Urban Outfitters">Urban Outfitters</SelectItem>
+                  <SelectItem value="Aritzia">Aritzia</SelectItem>
+                  <SelectItem value="Lululemon">Lululemon</SelectItem>
+                  <SelectItem value="Levi's">Levi's</SelectItem>
+                  <SelectItem value="Madewell">Madewell</SelectItem>
+                  <SelectItem value="Everlane">Everlane</SelectItem>
+                  <SelectItem value="Reformation">Reformation</SelectItem>
+                  <SelectItem value="Other">Other</SelectItem>
+                </SelectContent>
+              </Select>
+              {(formData.brand === "Other" || (formData.brand && !PREDEFINED_BRANDS.includes(formData.brand))) && (
+                <Input
+                  id="edit-brand-custom"
+                  value={formData.brand === "Other" ? "" : formData.brand}
+                  placeholder="Enter brand name"
+                  onChange={(e) => setFormData((prev) => ({ ...prev, brand: e.target.value }))}
+                />
+              )}
+            </div>
+
+            {/* Category */}
+            <div className="space-y-2">
+              <Label htmlFor="edit-category">Category *</Label>
+              <Select
+                value={formData.category}
+                onValueChange={(value) => setFormData((prev) => ({ ...prev, category: value as Category }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select category" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="shirts">Shirts/Tops</SelectItem>
+                  <SelectItem value="pants">Pants</SelectItem>
+                  <SelectItem value="skirts_dresses">Skirts/Dresses</SelectItem>
+                  <SelectItem value="jackets_outerwear">Jackets/Outerwear</SelectItem>
+                  <SelectItem value="shoes">Shoes</SelectItem>
+                  <SelectItem value="bags">Bags</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Price Tier */}
+            <div className="space-y-2">
+              <Label htmlFor="edit-priceTier">Price Tier</Label>
+              <Select
+                value={formData.priceTier}
+                onValueChange={(value) => setFormData((prev) => ({ ...prev, priceTier: value as PriceTier }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select price tier" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="budget">$</SelectItem>
+                  <SelectItem value="mid">$$</SelectItem>
+                  <SelectItem value="luxury">$$$</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Colors */}
+            <div className="space-y-2">
+              <Label htmlFor="edit-colors">Colors</Label>
+              <div className="flex flex-wrap gap-2">
+                {["black", "white", "gray", "navy", "beige", "sage", "cream", "camel", "tan", "gold", "red", "blue", "green", "pink", "brown"].map((color) => (
+                  <button
+                    key={color}
+                    type="button"
+                    onClick={() => {
+                      setFormData((prev) => ({
+                        ...prev,
+                        colors: prev.colors.includes(color)
+                          ? prev.colors.filter((c) => c !== color)
+                          : [...prev.colors, color],
+                      }));
+                    }}
+                    className={`rounded-full px-3 py-1 text-xs capitalize transition-colors ${
+                      formData.colors.includes(color)
+                        ? "bg-neutral-900 text-white"
+                        : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
+                    }`}
+                  >
+                    {color}
+                  </button>
+                ))}
+              </div>
+              <Input
+                id="edit-custom-color"
+                placeholder="Or enter custom color"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    const input = e.target as HTMLInputElement;
+                    const value = input.value.trim().toLowerCase();
+                    if (value && !formData.colors.includes(value)) {
+                      setFormData((prev) => ({
+                        ...prev,
+                        colors: [...prev.colors, value],
+                      }));
+                      input.value = "";
+                    }
+                  }
+                }}
+              />
+            </div>
+
+            {/* Fabric */}
+            <div className="space-y-2">
+              <Label htmlFor="edit-fabric">Fabric</Label>
+              <Input
+                id="edit-fabric"
+                value={formData.fabric}
+                onChange={(e) => setFormData((prev) => ({ ...prev, fabric: e.target.value }))}
+                placeholder="e.g., cotton, denim, silk, wool"
+              />
+            </div>
+
+            {/* Silhouette */}
+            <div className="space-y-2">
+              <Label htmlFor="edit-silhouette">Silhouette</Label>
+              <Select
+                value={formData.silhouette}
+                onValueChange={(value) => setFormData((prev) => ({ ...prev, silhouette: value as Silhouette }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select silhouette" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="fitted">Fitted</SelectItem>
+                  <SelectItem value="oversized">Oversized</SelectItem>
+                  <SelectItem value="loose">Loose</SelectItem>
+                  <SelectItem value="tailored">Tailored</SelectItem>
+                  <SelectItem value="relaxed">Relaxed</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Subcategory */}
+            <div className="space-y-2">
+              <Label htmlFor="edit-subcategory">Subcategory</Label>
+              <Input
+                id="edit-subcategory"
+                value={formData.subcategory}
+                onChange={(e) => setFormData((prev) => ({ ...prev, subcategory: e.target.value }))}
+                placeholder="e.g., t-shirt, jeans, sweater, sneakers"
+              />
+            </div>
+
+            {/* Vibe Tags */}
+            <div className="space-y-2">
+              <Label>Vibe Tags</Label>
+              <div className="flex flex-wrap gap-2">
+                {(["date night", "casual", "workout", "office"] as VibeTag[]).map((vibe) => (
+                  <button
+                    key={vibe}
+                    type="button"
+                    onClick={() => {
+                      setFormData((prev) => ({
+                        ...prev,
+                        vibeTags: prev.vibeTags.includes(vibe)
+                          ? prev.vibeTags.filter((v) => v !== vibe)
+                          : [...prev.vibeTags, vibe],
+                      }));
+                    }}
+                    className={`rounded-full px-3 py-1 text-xs transition-colors ${
+                      formData.vibeTags.includes(vibe)
+                        ? "bg-neutral-900 text-white"
+                        : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
+                    }`}
+                  >
+                    {vibe}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Error Message */}
+            {editItemError && (
+              <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                {editItemError}
+              </div>
+            )}
+
+            {/* Submit Button */}
+            <div className="flex justify-end gap-3 pt-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setEditItemOpen(false);
+                  setFormData({
+                    image: null,
+                    imagePreview: null,
+                    brand: "",
+                    category: "" as Category | "",
+                    vibeTags: [],
+                    priceTier: "" as PriceTier | "",
+                    colors: [],
+                    fabric: "",
+                    silhouette: "" as Silhouette | "",
+                    subcategory: "",
+                  });
+                  setEditItemError(null);
+                }}
+                disabled={editingItem}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={editingItem || !formData.category}>
+                {editingItem ? "Saving..." : "Save Changes"}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <style>{`
         .scrollbar-hide::-webkit-scrollbar {

@@ -132,6 +132,11 @@ export interface UpdateClosetItemRequest {
   vibe_tags?: VibeTag[];
   price_tier?: PriceTier;
   rating?: number;
+  colors?: string[];
+  fabric?: string;
+  silhouette?: Silhouette;
+  subcategory?: string;
+  image_url?: string;
 }
 
 export interface CreatePostRequest {
