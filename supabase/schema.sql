@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS closet_items (
 
   -- Brand & Basic Info
   brand TEXT,
-  category TEXT NOT NULL, -- 'top', 'bottom', 'shoes', 'accessories', 'outerwear'
+  category TEXT NOT NULL, -- 'shirts', 'pants', 'skirts_dresses', 'jackets_outerwear', 'shoes', 'bags'
 
   -- Vibe & Style
   vibe_tags TEXT[] DEFAULT '{}', -- ['date night', 'casual', 'grunge', 'preppy']
