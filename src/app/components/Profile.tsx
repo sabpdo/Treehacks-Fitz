@@ -16,8 +16,9 @@ import {
   DialogDescription,
   DialogFooter,
 } from "./ui/dialog";
-import { updateProfile } from "../../services/api";
+import { updateProfile, uploadImage } from "../../services/api";
 import { getAllCategoryRankings } from "../../services/api/ranking";
+import { DEFAULT_AVATAR } from "../../lib/adapters";
 import type { RankedItem } from "../data/mockData";
 
 export function Profile() {
@@ -44,6 +45,8 @@ export function Profile() {
   const [editError, setEditError] = useState<string | null>(null);
   const [rankedItemsFromApi, setRankedItemsFromApi] = useState<RankedItem[]>([]);
   const [rankingsLoading, setRankingsLoading] = useState(false);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const avatarInputRef = React.useRef<HTMLInputElement>(null);
 
   const isOwnProfile = !userId || userId === currentUserId;
   const profileUser = getUser(userId ?? currentUserId);
@@ -101,7 +104,9 @@ export function Profile() {
 
   const displayName = isOwnProfile ? "You" : profileUser?.name ?? "User";
   const displayHandle = isOwnProfile ? (profileUser?.handle || currentUserProfile.username) : (profileUser?.handle ?? "");
-  const avatarUrl = isOwnProfile ? (profileUser?.avatarUrl || currentUserProfile.userAvatar) : (profileUser?.avatarUrl ?? "");
+  const avatarUrl =
+    (isOwnProfile ? (profileUser?.avatarUrl || currentUserProfile.userAvatar) : profileUser?.avatarUrl) ||
+    DEFAULT_AVATAR;
   const followerCount = isUsingApi && profileUser
     ? profileUser.followerCount
     : isOwnProfile
@@ -229,11 +234,54 @@ export function Profile() {
         <div className="mb-6 overflow-hidden rounded-2xl border border-neutral-200/60 bg-white">
           <div className="p-6">
             <div className="mb-5 flex items-start gap-5">
-              <img
-                src={avatarUrl}
-                alt={displayName}
-                className="h-20 w-20 rounded-full border border-neutral-200 object-cover"
-              />
+              {isOwnProfile ? (
+                <label className="relative block cursor-pointer">
+                  <input
+                    ref={avatarInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="sr-only"
+                    disabled={avatarUploading}
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file || !file.type.startsWith("image/")) return;
+                      setAvatarUploading(true);
+                      try {
+                        const url = await uploadImage(file, "profile");
+                        await updateProfile({ avatar_url: url });
+                        await refetchCurrentUser();
+                      } catch (err) {
+                        console.error("Avatar upload failed:", err);
+                      } finally {
+                        setAvatarUploading(false);
+                        e.target.value = "";
+                      }
+                    }}
+                  />
+                  <span className="block h-20 w-20 overflow-hidden rounded-full border border-neutral-200 bg-neutral-100 object-cover">
+                    {avatarUploading ? (
+                      <span className="flex h-full w-full items-center justify-center text-xs text-neutral-500">
+                        ...
+                      </span>
+                    ) : (
+                      <img
+                        src={avatarUrl}
+                        alt={displayName}
+                        className="h-full w-full object-cover"
+                      />
+                    )}
+                  </span>
+                  <span className="absolute inset-0 flex items-center justify-center rounded-full bg-black/0 text-xs font-medium text-white opacity-0 transition hover:bg-black/40 hover:opacity-100">
+                    Change
+                  </span>
+                </label>
+              ) : (
+                <img
+                  src={avatarUrl}
+                  alt={displayName}
+                  className="h-20 w-20 rounded-full border border-neutral-200 object-cover"
+                />
+              )}
               <div className="flex-1">
                 <h2 className="mb-1 text-xl font-medium text-neutral-900">{displayName}</h2>
                 <p className="mb-3 text-sm text-neutral-500">@{displayHandle}</p>

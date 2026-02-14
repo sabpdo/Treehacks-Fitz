@@ -90,12 +90,12 @@ export function PostDetail() {
       setFetchedPost((prev) =>
         prev
           ? {
-              ...prev,
-              likeCount: prev.likeCount + (newLiked ? 1 : -1),
-              likedByUserIds: newLiked
-                ? [...prev.likedByUserIds, currentUserId]
-                : prev.likedByUserIds.filter((id) => id !== currentUserId),
-            }
+            ...prev,
+            likeCount: prev.likeCount + (newLiked ? 1 : -1),
+            likedByUserIds: newLiked
+              ? [...prev.likedByUserIds, currentUserId]
+              : prev.likedByUserIds.filter((id) => id !== currentUserId),
+          }
           : null
       );
     }
@@ -115,7 +115,7 @@ export function PostDetail() {
 
   return (
     <div className="min-h-screen bg-[#FAFAF8]">
-      <header className="sticky top-0 z-30 flex items-center gap-4 border-b border-neutral-200/60 bg-white/90 px-4 py-3 backdrop-blur-xl">
+      <header className="sticky top-0 z-30 flex items-center gap-4 border-b border-neutral-200/60 bg-white/90 px-4 py-3 backdrop-blur-xl sm:px-6">
         <motion.button
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.96 }}
@@ -128,7 +128,7 @@ export function PostDetail() {
         <h1 className="flex-1 text-sm font-medium text-neutral-900">Post</h1>
       </header>
 
-      <div className="mx-auto max-w-lg bg-white">
+      <div className="mx-auto max-w-2xl bg-white sm:px-4">
         <div className="relative aspect-[4/5] overflow-hidden bg-neutral-50">
           <img
             src={ensurePublicStorageUrl(post.imageUrl)}
@@ -175,7 +175,7 @@ export function PostDetail() {
           commentCount={post.commentCount}
           onLike={handleLike}
           onSave={() => toggleSave(post.id)}
-          onComment={() => {}}
+          onComment={() => { }}
         />
 
         <div className="border-t border-neutral-200/60 px-4 py-4">

@@ -1,6 +1,7 @@
 import { Link } from "react-router";
 import { motion } from "motion/react";
 import type { User } from "../../data/mockData";
+import { ensurePublicStorageUrl, DEFAULT_AVATAR } from "../../../lib/adapters";
 import { Badge } from "./Badge";
 import { Button } from "../ui/button";
 import { cn } from "../ui/utils";
@@ -37,7 +38,7 @@ export function UserCard({
         <Link to={`/profile/${user.id}`} className="block p-4">
           <div className="flex flex-col items-center text-center">
             <img
-              src={user.avatarUrl}
+              src={user.avatarUrl ? ensurePublicStorageUrl(user.avatarUrl) : DEFAULT_AVATAR}
               alt={user.name}
               className="h-16 w-16 rounded-full object-cover transition-transform duration-300 hover:scale-105"
             />
@@ -82,7 +83,7 @@ export function UserCard({
             className="flex-shrink-0 transition-opacity duration-200 hover:opacity-90"
           >
             <img
-              src={user.avatarUrl}
+              src={user.avatarUrl ? ensurePublicStorageUrl(user.avatarUrl) : DEFAULT_AVATAR}
               alt={user.name}
               className="h-14 w-14 rounded-full object-cover transition-transform duration-300 hover:scale-105"
             />

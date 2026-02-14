@@ -355,7 +355,15 @@ If you get **"Bucket not found"** or **"Failed to create post"** when posting a 
 4. Enable **Public bucket** (so post images can be displayed)
 5. Click **Create bucket**
 
-### 6.2 Storage policies (required for uploads)
+### 6.2 Make the bucket public (required for images to load in feed)
+
+If post images show **"Image unavailable"** in the feed:
+
+1. In Supabase go to **Storage** → click the **closet-images** bucket.
+2. Open the bucket **⋮** menu (or settings) and ensure **"Public bucket"** is **ON**. If you created the bucket without this, turn it on so the `/object/public/` URLs work.
+3. Ensure **.env** has **`VITE_SUPABASE_URL`** set to your project URL (e.g. `https://xxxx.supabase.co` with no trailing slash).
+
+### 6.3 Storage policies (required for uploads)
 
 If you get **"new row violates row-level security policy"** when posting a photo, run the storage policies:
 
@@ -375,7 +383,10 @@ ON storage.objects FOR SELECT TO public
 USING (bucket_id = 'closet-images');
 ```
 
-### 6.3 Upload Function
+**Profile bucket (avatars)**  
+Create a bucket named **profile**, set it to **Public**, then run the profile policies from **`supabase/storage-policies.sql`** (the same file also defines INSERT/SELECT for the `profile` bucket so profile pictures can be uploaded and displayed).
+
+### 6.4 Upload Function
 
 ```typescript
 import { supabase } from "./lib/supabase";

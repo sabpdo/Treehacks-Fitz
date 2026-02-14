@@ -5,21 +5,34 @@
 
 import type { Post, Profile, Comment as ApiComment } from '../types/database';
 
-const SUPABASE_URL = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_URL) || '';
+const BUCKET = 'closet-images';
 
 /** Ensure Supabase storage URL is a full public URL so images load in the browser */
 export function ensurePublicStorageUrl(url: string | null | undefined): string {
   if (!url || typeof url !== 'string') return url || '';
-  let full = url;
+  let full = url.trim();
+  if (full.startsWith('data:')) return full;
+  const base = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_URL) || '';
+  const baseUrl = base.replace(/\/$/, '');
+
   if (!full.startsWith('http')) {
-    const base = (SUPABASE_URL || '').replace(/\/$/, '');
-    full = base ? `${base}${full.startsWith('/') ? full : `/${full}`}` : full;
+    if (!baseUrl) return full;
+    if (full.includes('/storage/v1/object/')) {
+      full = `${baseUrl}${full.startsWith('/') ? full : `/${full}`}`;
+    } else {
+      const path = full.startsWith('/') ? full.slice(1) : full;
+      full = `${baseUrl}/storage/v1/object/public/${BUCKET}/${path}`;
+    }
   }
   if (full.includes('/storage/v1/object/public/')) return full;
   if (full.includes('/storage/v1/object/'))
     return full.replace('/storage/v1/object/', '/storage/v1/object/public/');
   return full;
 }
+
+/** Default no-face avatar when user has no profile photo (data URL SVG) */
+export const DEFAULT_AVATAR =
+  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%239ca3af'%3E%3Cpath d='M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z'/%3E%3C/svg%3E";
 
 // UI types (from mockData) - minimal shape used by components
 export interface UIUser {
@@ -64,7 +77,7 @@ export function apiProfileToUser(profile: Profile | null | undefined): UIUser | 
     id: profile.id,
     name: profile.display_name || profile.username || 'User',
     handle: profile.username || '',
-    avatarUrl: profile.avatar_url || '',
+    avatarUrl: profile.avatar_url || DEFAULT_AVATAR,
     bio: profile.bio || '',
     vibes: [],
     followerCount: profile.followers ?? 0,

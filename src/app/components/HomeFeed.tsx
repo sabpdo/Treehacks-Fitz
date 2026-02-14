@@ -3,10 +3,8 @@ import { Link } from "react-router";
 import { Camera, Flame, Sparkles, ChevronRight, TrendingUp, ImageOff } from "lucide-react";
 import { motion } from "motion/react";
 import { useAppStore } from "../context/AppStore";
-import { ensurePublicStorageUrl } from "../../lib/adapters";
+import { ensurePublicStorageUrl, DEFAULT_AVATAR } from "../../lib/adapters";
 import { PostGrid } from "./feed";
-
-const AVATAR_FALLBACK = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%239ca3af'%3E%3Cpath d='M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z'/%3E%3C/svg%3E";
 
 export function HomeFeed() {
   const { posts, followingUserIds, refetchFeed, getUser, currentUserId, isUsingApi, refetchCurrentUser } = useAppStore();
@@ -41,7 +39,7 @@ export function HomeFeed() {
   return (
     <div className="min-h-screen bg-[#FAFAF8]">
       <header className="sticky top-0 z-30 border-b border-neutral-200/60 bg-white/90 backdrop-blur-xl">
-        <div className="mx-auto max-w-5xl px-6 py-4">
+        <div className="mx-auto max-w-5xl px-4 py-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between">
             <h1 className="font-serif text-xl tracking-tight">ClosetRank</h1>
             <div className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-orange-400/10 to-rose-500/10 px-3 py-1">
@@ -52,7 +50,7 @@ export function HomeFeed() {
         </div>
       </header>
 
-      <div className="mx-auto max-w-5xl px-6 pb-12">
+      <div className="mx-auto max-w-5xl px-4 pb-12 sm:px-6 lg:px-8">
         {/* Today's OOTD Prompt */}
         <section className="py-8">
           <div className="mx-auto max-w-md overflow-hidden rounded-2xl border border-neutral-200/60 bg-white shadow-sm">
@@ -155,10 +153,10 @@ export function HomeFeed() {
                           onClick={(e) => e.stopPropagation()}
                         >
                           <img
-                            src={ensurePublicStorageUrl(poster?.avatarUrl) || AVATAR_FALLBACK}
+                            src={poster?.avatarUrl ? ensurePublicStorageUrl(poster.avatarUrl) : DEFAULT_AVATAR}
                             alt=""
                             className="h-6 w-6 rounded-full object-cover"
-                            onError={(e) => { (e.target as HTMLImageElement).src = AVATAR_FALLBACK; }}
+                            onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_AVATAR; }}
                           />
                           <p className="text-xs text-neutral-900">
                             {poster?.handle ?? post.userId}

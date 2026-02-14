@@ -23,6 +23,21 @@ function dataURLtoFile(dataUrl: string, filename: string): File {
   return new File([u8arr], filename, { type: mime });
 }
 
+/** Convert selected image (data URL or http URL) to a File for upload */
+async function imageToFile(selectedImage: string, filename: string): Promise<File> {
+  if (selectedImage.startsWith("data:")) {
+    return dataURLtoFile(selectedImage, filename);
+  }
+  if (selectedImage.startsWith("http://") || selectedImage.startsWith("https://")) {
+    const res = await fetch(selectedImage, { mode: "cors" });
+    if (!res.ok) throw new Error(`Failed to fetch image: ${res.status}`);
+    const blob = await res.blob();
+    const ext = blob.type?.split("/")[1] || "jpg";
+    return new File([blob], filename.replace(/\.[^.]+$/, `.${ext}`), { type: blob.type || "image/jpeg" });
+  }
+  throw new Error("Invalid image source");
+}
+
 const VIBE_OPTIONS = ["Date night", "Casual", "Work", "Grunge", "Cafe study"];
 
 export function OOTDPost() {
@@ -87,7 +102,7 @@ export function OOTDPost() {
       try {
         setError(null);
         setIsPosting(true);
-        const file = dataURLtoFile(selectedImage, "ootd.jpg");
+        const file = await imageToFile(selectedImage, "ootd.jpg");
         const imageUrl = await uploadImage(file);
         const apiPost = await createPost({
           image_url: imageUrl,
@@ -131,7 +146,7 @@ export function OOTDPost() {
   const handleRankingComplete = async () => {
     if (isUsingApi && selectedImage) {
       try {
-        const file = dataURLtoFile(selectedImage, "ootd.jpg");
+        const file = await imageToFile(selectedImage, "ootd.jpg");
         const imageUrl = await uploadImage(file);
         const apiPost = await createPost({
           image_url: imageUrl,

@@ -5,7 +5,7 @@ import { Bookmark, ImageOff } from "lucide-react";
 import { formatPostTime } from "../../data/mockData";
 import type { OOTDPost } from "../../data/mockData";
 import { useAppStore } from "../../context/AppStore";
-import { ensurePublicStorageUrl } from "../../../lib/adapters";
+import { ensurePublicStorageUrl, DEFAULT_AVATAR } from "../../../lib/adapters";
 import { Badge } from "./Badge";
 import { cn } from "../ui/utils";
 
@@ -58,7 +58,11 @@ export function PostCard({
             className="h-full w-full object-cover object-center transition-transform duration-500 group-hover:scale-105"
             loading="lazy"
             decoding="async"
-            onError={() => setImageError(true)}
+            onError={(e) => {
+              setImageError(true);
+              const src = (e.target as HTMLImageElement)?.src;
+              if (src) console.warn("[PostCard] Image failed to load:", src);
+            }}
           />
         )}
         {score != null && (
@@ -75,7 +79,7 @@ export function PostCard({
             onClick={(e) => e.stopPropagation()}
           >
             <img
-              src={user?.avatarUrl ?? ""}
+              src={user?.avatarUrl ? ensurePublicStorageUrl(user.avatarUrl) : DEFAULT_AVATAR}
               alt={user?.name ?? ""}
               className="h-6 w-6 rounded-full object-cover"
             />
@@ -152,7 +156,11 @@ export function PostCard({
               className="h-full w-full object-cover object-center transition-transform duration-500 group-hover:scale-105"
               loading="lazy"
               decoding="async"
-              onError={() => setImageError(true)}
+              onError={(e) => {
+                setImageError(true);
+                const src = (e.target as HTMLImageElement)?.src;
+                if (src) console.warn("[PostCard] Image failed to load:", src);
+              }}
             />
           )}
           {score != null && (
