@@ -2,13 +2,11 @@ import { Link } from "react-router";
 import { Camera, Flame, Sparkles, ChevronRight, TrendingUp } from "lucide-react";
 import { motion } from "motion/react";
 import { useAppStore } from "../context/AppStore";
-import { usePostSheet } from "../context/PostSheetContext";
 import { PostGrid } from "./feed";
 import { mockOOTDPosts, mockUsers } from "../data/mockData";
 
 export function HomeFeed() {
   const { posts, followingUserIds } = useAppStore();
-  const postSheet = usePostSheet();
   const todayDate = new Date().toLocaleDateString("en-US", {
     weekday: "long",
     month: "long",
@@ -110,16 +108,10 @@ export function HomeFeed() {
                 "Complements your minimal aesthetic",
                 "Aligns with your casual-chic style",
               ];
-              const CardWrap = postSheet
-                ? "button"
-                : Link;
-              const cardProps = postSheet
-                ? { type: "button" as const, onClick: () => postSheet.openPost(post.id) }
-                : { to: `/post/${post.id}` };
               return (
                 <div key={post.id} className="flex-shrink-0">
-                  <CardWrap
-                    {...cardProps}
+                  <Link
+                    to={`/post/${post.id}`}
                     className="block w-[280px] overflow-hidden rounded-xl border border-neutral-200/60 bg-white text-left shadow-sm transition-all duration-300 hover:border-neutral-300 hover:shadow-md"
                   >
                     <div className="relative aspect-[4/5] overflow-hidden bg-neutral-50">
@@ -153,7 +145,7 @@ export function HomeFeed() {
                         {insights[index]}
                       </p>
                     </div>
-                  </CardWrap>
+                  </Link>
                 </div>
               );
             })}

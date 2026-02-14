@@ -1,10 +1,9 @@
-import { Link, useNavigate } from "react-router";
+import { Link } from "react-router";
 import { motion } from "motion/react";
 import { Bookmark } from "lucide-react";
 import { formatPostTime } from "../../data/mockData";
 import { mockUsers } from "../../data/mockData";
 import type { OOTDPost, User } from "../../data/mockData";
-import { usePostSheet } from "../../context/PostSheetContext";
 import { useAppStore } from "../../context/AppStore";
 import { Badge } from "./Badge";
 import { cn } from "../ui/utils";
@@ -33,9 +32,7 @@ export function PostCard({
 }: PostCardProps) {
   const user = getUser(post.userId);
   const score = compatibilityScore ?? post.compatibilityScore;
-  const postSheet = usePostSheet();
   const { getCommentsForPost, isSaved, toggleSave } = useAppStore();
-  const navigate = useNavigate();
 
   const comments = showFeedMeta ? getCommentsForPost(post.id) : [];
   const firstComment = comments[0];
@@ -46,11 +43,6 @@ export function PostCard({
     "group block overflow-hidden rounded-xl border border-neutral-200/60 bg-white shadow-sm transition-all duration-300 hover:border-neutral-300 hover:shadow-md active:scale-[0.995]",
     className
   );
-
-  const handleOpen = () => {
-    if (postSheet) postSheet.openPost(post.id);
-    else navigate(`/post/${post.id}`);
-  };
 
   const cardContent = (
     <>
@@ -123,8 +115,8 @@ export function PostCard({
   );
 
   if (compact) {
-    const compactContent = (
-      <>
+    return (
+      <MotionLink to={`/post/${post.id}`} className={baseClass} whileTap={{ scale: 0.995 }} transition={{ duration: 0.2 }}>
         <div className="relative aspect-square overflow-hidden bg-neutral-50">
           <img
             src={post.imageUrl}
@@ -147,53 +139,12 @@ export function PostCard({
           </Link>
           <p className="text-[10px] text-neutral-400">{formatPostTime(post.createdAt)}</p>
         </div>
-      </>
-    );
-    if (postSheet) {
-      return (
-        <motion.div
-          role="button"
-          tabIndex={0}
-          className={baseClass}
-          onClick={handleOpen}
-          onKeyDown={(e) => e.key === "Enter" && handleOpen()}
-          whileTap={{ scale: 0.995 }}
-          transition={{ duration: 0.2 }}
-        >
-          {compactContent}
-        </motion.div>
-      );
-    }
-    return (
-      <MotionLink to={`/post/${post.id}`} className={baseClass} whileTap={{ scale: 0.995 }} transition={{ duration: 0.2 }}>
-        {compactContent}
       </MotionLink>
     );
   }
 
-  if (postSheet) {
-    return (
-      <motion.div
-        role="button"
-        tabIndex={0}
-        className={baseClass}
-        onClick={handleOpen}
-        onKeyDown={(e) => e.key === "Enter" && handleOpen()}
-        whileTap={{ scale: 0.995 }}
-        transition={{ duration: 0.2 }}
-      >
-        {cardContent}
-      </motion.div>
-    );
-  }
-
   return (
-    <MotionLink
-      to={`/post/${post.id}`}
-      className={baseClass}
-      whileTap={{ scale: 0.995 }}
-      transition={{ duration: 0.2 }}
-    >
+    <MotionLink to={`/post/${post.id}`} className={baseClass} whileTap={{ scale: 0.995 }} transition={{ duration: 0.2 }}>
       {cardContent}
     </MotionLink>
   );

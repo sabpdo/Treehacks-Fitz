@@ -19,20 +19,14 @@ export function Root() {
         <Outlet />
       </main>
 
-      {/* Floating Post Button */}
+      {/* Floating Post Button - minimal style */}
       {location.pathname === "/" && (
-        <motion.div
-          initial={{ scale: 0 }}
-          animate={{ scale: 1 }}
-          transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
+        <Link
+          to="/post"
+          className="fixed right-6 bottom-24 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-[#8B9B8E] shadow-lg transition-all hover:bg-[#7A8A7D] hover:shadow-md active:scale-95"
         >
-          <Link
-            to="/post"
-            className="fixed right-6 bottom-24 z-50 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-[#8B9B8E] to-[#7A8A7D] shadow-2xl shadow-[#8B9B8E]/30 transition-all hover:scale-110 hover:shadow-3xl active:scale-95"
-          >
-            <Plus className="h-7 w-7 text-white" strokeWidth={2.5} />
-          </Link>
-        </motion.div>
+          <Plus className="h-6 w-6 text-white" strokeWidth={2.5} />
+        </Link>
       )}
 
       {/* Bottom Navigation */}

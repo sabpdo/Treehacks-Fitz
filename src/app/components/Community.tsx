@@ -1,18 +1,69 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { Search, Grid3x3, List } from "lucide-react";
+import { motion, AnimatePresence } from "motion/react";
 import { useAppStore } from "../context/AppStore";
 import { mockUsers } from "../data/mockData";
+import type { User } from "../data/mockData";
+import { Link } from "react-router";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "./ui/tabs";
 import { UserCard } from "./feed";
 import { Input } from "./ui/input";
 import { Skeleton } from "./ui/skeleton";
+import { Button } from "./ui/button";
 
 type ViewMode = "list" | "grid";
+const TAB_ORDER = ["following", "followers", "discover"] as const;
+
+/** Table-like row: avatar | name @handle | Follow */
+function UserListRow({
+  user,
+  isFollowing,
+  onFollow,
+}: {
+  user: User;
+  isFollowing: boolean;
+  onFollow: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-3 border-b border-neutral-100 py-3 last:border-0">
+      <Link to={`/profile/${user.id}`} className="flex-shrink-0">
+        <img
+          src={user.avatarUrl}
+          alt={user.name}
+          className="h-10 w-10 rounded-full object-cover"
+        />
+      </Link>
+      <div className="min-w-0 flex-1">
+        <Link to={`/profile/${user.id}`} className="block truncate">
+          <p className="truncate font-medium text-neutral-900">{user.name}</p>
+          <p className="truncate text-xs text-neutral-500">@{user.handle}</p>
+        </Link>
+      </div>
+      <Button
+        variant={isFollowing ? "outline" : "default"}
+        size="sm"
+        className="flex-shrink-0 rounded-full border-neutral-200 bg-neutral-900 px-4 text-white hover:bg-neutral-800"
+        onClick={onFollow}
+      >
+        {isFollowing ? "Unfollow" : "Follow"}
+      </Button>
+    </div>
+  );
+}
 
 export function Community() {
   const [search, setSearch] = useState("");
   const [viewMode, setViewMode] = useState<ViewMode>("list");
+  const [tab, setTab] = useState<(typeof TAB_ORDER)[number]>("discover");
+  const slideDirectionRef = useRef(0);
   const { followingUserIds, isFollowing, toggleFollow, posts } = useAppStore();
+
+  const handleTabChange = (value: string) => {
+    const newIndex = TAB_ORDER.indexOf(value as (typeof TAB_ORDER)[number]);
+    const oldIndex = TAB_ORDER.indexOf(tab);
+    slideDirectionRef.current = newIndex - oldIndex;
+    setTab(value as (typeof TAB_ORDER)[number]);
+  };
 
   const following = mockUsers.filter((u) => u.id !== "me" && followingUserIds.has(u.id));
   const followers = mockUsers.filter((u) => u.id !== "me").slice(0, 6);
@@ -69,138 +120,110 @@ export function Community() {
       );
     }
     return (
-      <div className="space-y-4">
+      <div className="rounded-xl border border-neutral-200/60 bg-white shadow-sm">
         {users.map((user) => (
-          <UserCard
+          <UserListRow
             key={user.id}
             user={user}
-            recentOotdUrls={getRecentOotdUrls(user.id)}
             isFollowing={isFollowing(user.id)}
             onFollow={() => toggleFollow(user.id)}
-            variant="list"
-            className="transition-all duration-300 hover:border-neutral-300 hover:shadow-md"
           />
         ))}
       </div>
     );
   };
 
+  const renderTabContent = () => {
+    if (tab === "following") return renderUserList(following, "No one followed yet. Discover people to follow.");
+    if (tab === "followers") return renderUserList(followers, "No followers yet.");
+    return renderUserList(filteredDiscover, "No people match your search.");
+  };
+
   return (
     <div className="min-h-screen overflow-x-hidden bg-[#FAFAF8]">
-      <header className="sticky top-0 z-30 border-b border-neutral-200/60 bg-white/95 backdrop-blur-xl">
-        <div className="mx-auto max-w-2xl px-4 py-4">
-          <div className="mb-4 flex items-center justify-between">
-            <h1 className="text-lg font-medium tracking-tight text-neutral-900">
-              Community
-            </h1>
-            <div className="flex gap-1">
-              <button
-                type="button"
-                onClick={() => setViewMode("list")}
-                className={`flex h-9 w-9 items-center justify-center rounded-lg transition-all duration-200 ${
-                  viewMode === "list"
-                    ? "bg-neutral-900 text-white"
-                    : "text-neutral-400 hover:bg-neutral-100"
-                }`}
-              >
-                <List className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode("grid")}
-                className={`flex h-9 w-9 items-center justify-center rounded-lg transition-all duration-200 ${
-                  viewMode === "grid"
-                    ? "bg-neutral-900 text-white"
-                    : "text-neutral-400 hover:bg-neutral-100"
-                }`}
-              >
-                <Grid3x3 className="h-4 w-4" />
-              </button>
+      <div className="mx-auto w-full max-w-2xl px-4">
+        <header className="sticky top-0 z-30 border-b border-neutral-200/60 bg-white/95 backdrop-blur-xl">
+          <div className="py-4">
+            <div className="mb-4 flex items-center justify-between">
+              <h1 className="text-lg font-medium tracking-tight text-neutral-900">
+                Community
+              </h1>
+              <div className="flex gap-1">
+                <button
+                  type="button"
+                  onClick={() => setViewMode("list")}
+                  className={`flex h-9 w-9 items-center justify-center rounded-lg transition-all duration-200 ${
+                    viewMode === "list"
+                      ? "bg-neutral-900 text-white"
+                      : "text-neutral-400 hover:bg-neutral-100"
+                  }`}
+                >
+                  <List className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode("grid")}
+                  className={`flex h-9 w-9 items-center justify-center rounded-lg transition-all duration-200 ${
+                    viewMode === "grid"
+                      ? "bg-neutral-900 text-white"
+                      : "text-neutral-400 hover:bg-neutral-100"
+                  }`}
+                >
+                  <Grid3x3 className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+            <div className="relative">
+              <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+              <Input
+                placeholder="Search people"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="rounded-xl border-neutral-200 bg-neutral-50 pl-10 transition-all duration-200 placeholder:text-neutral-400 focus:bg-white focus:ring-2 focus:ring-neutral-200"
+              />
             </div>
           </div>
-          <div className="relative">
-            <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
-            <Input
-              placeholder="Search people"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="rounded-xl border-neutral-200 bg-neutral-50 pl-10 transition-all duration-200 placeholder:text-neutral-400 focus:bg-white focus:ring-2 focus:ring-neutral-200"
-            />
-          </div>
+
+          <Tabs value={tab} onValueChange={handleTabChange} className="w-full overflow-x-hidden">
+            <TabsList className="mb-2 flex w-full justify-start gap-1 rounded-xl bg-neutral-100 p-1">
+              <TabsTrigger
+                value="following"
+                className="flex-1 rounded-lg py-2.5 text-xs font-medium transition-all duration-200 data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=inactive]:text-neutral-500 data-[state=inactive]:hover:text-neutral-700"
+              >
+                Following
+              </TabsTrigger>
+              <TabsTrigger
+                value="followers"
+                className="flex-1 rounded-lg py-2.5 text-xs font-medium transition-all duration-200 data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=inactive]:text-neutral-500 data-[state=inactive]:hover:text-neutral-700"
+              >
+                Followers
+              </TabsTrigger>
+              <TabsTrigger
+                value="discover"
+                className="flex-1 rounded-lg py-2.5 text-xs font-medium transition-all duration-200 data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=inactive]:text-neutral-500 data-[state=inactive]:hover:text-neutral-700"
+              >
+                Discover
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </header>
+
+        <div className="relative mt-4 min-h-[200px] overflow-hidden pb-24">
+          <AnimatePresence mode="wait" custom={slideDirectionRef.current}>
+            <motion.div
+              key={tab}
+              custom={slideDirectionRef.current}
+              initial={(d: number) => ({ opacity: 0, x: (d || 0) * 40 })}
+              animate={{ opacity: 1, x: 0 }}
+              exit={(d: number) => ({ opacity: 0, x: (d || 0) * -40 })}
+              transition={{ duration: 0.25, ease: "easeInOut" }}
+              className="w-full"
+            >
+              {renderTabContent()}
+            </motion.div>
+          </AnimatePresence>
         </div>
-
-        <Tabs defaultValue="discover" className="w-full overflow-x-hidden">
-          <TabsList className="mx-4 mb-2 flex w-[calc(100%-2rem)] max-w-2xl justify-start gap-1 rounded-xl bg-neutral-100 p-1">
-            <TabsTrigger
-              value="following"
-              className="flex-1 rounded-lg py-2.5 text-xs font-medium transition-all duration-200 data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=inactive]:text-neutral-500 data-[state=inactive]:hover:text-neutral-700"
-            >
-              Following
-            </TabsTrigger>
-            <TabsTrigger
-              value="followers"
-              className="flex-1 rounded-lg py-2.5 text-xs font-medium transition-all duration-200 data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=inactive]:text-neutral-500 data-[state=inactive]:hover:text-neutral-700"
-            >
-              Followers
-            </TabsTrigger>
-            <TabsTrigger
-              value="discover"
-              className="flex-1 rounded-lg py-2.5 text-xs font-medium transition-all duration-200 data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=inactive]:text-neutral-500 data-[state=inactive]:hover:text-neutral-700"
-            >
-              Discover
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="following" className="mt-4 overflow-x-hidden px-4 pb-24">
-            {renderUserList(following, "No one followed yet. Discover people to follow.")}
-          </TabsContent>
-
-          <TabsContent value="followers" className="mt-4 overflow-x-hidden px-4 pb-24">
-            {renderUserList(followers, "No followers yet.")}
-          </TabsContent>
-
-          <TabsContent value="discover" className="mt-4 overflow-x-hidden px-4 pb-24">
-            {loading ? (
-              <div className="space-y-4">
-                {[1, 2, 3, 4].map((i) => (
-                  <Skeleton key={i} className="h-52 rounded-2xl" />
-                ))}
-              </div>
-            ) : filteredDiscover.length === 0 ? (
-              <div className="flex min-h-[200px] flex-col items-center justify-center rounded-2xl border border-neutral-200/60 bg-white/50 py-12 text-center">
-                <p className="text-sm text-neutral-500">No people match your search.</p>
-              </div>
-            ) : viewMode === "grid" ? (
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-                {filteredDiscover.map((user) => (
-                  <UserCard
-                    key={user.id}
-                    user={user}
-                    isFollowing={isFollowing(user.id)}
-                    onFollow={() => toggleFollow(user.id)}
-                    variant="grid"
-                    className="transition-all duration-300 hover:border-neutral-300 hover:shadow-md"
-                  />
-                ))}
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {filteredDiscover.map((user) => (
-                  <UserCard
-                    key={user.id}
-                    user={user}
-                    recentOotdUrls={getRecentOotdUrls(user.id)}
-                    isFollowing={isFollowing(user.id)}
-                    onFollow={() => toggleFollow(user.id)}
-                    variant="list"
-                    className="transition-all duration-300 hover:border-neutral-300 hover:shadow-md"
-                  />
-                ))}
-              </div>
-            )}
-          </TabsContent>
-        </Tabs>
-      </header>
+      </div>
     </div>
   );
 }
