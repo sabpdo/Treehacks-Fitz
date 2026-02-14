@@ -37,15 +37,13 @@ export function Root() {
             className="relative flex flex-col items-center gap-1.5 transition-colors duration-200"
           >
             <Home
-              className={`h-6 w-6 transition-all ${
-                isActive("/") ? "text-[#8B9B8E]" : "text-neutral-400"
-              }`}
+              className={`h-6 w-6 transition-all ${isActive("/") ? "text-[#8B9B8E]" : "text-neutral-400"
+                }`}
               strokeWidth={isActive("/") ? 2.5 : 2}
             />
             <span
-              className={`text-xs transition-all ${
-                isActive("/") ? "text-[#8B9B8E]" : "text-neutral-400"
-              }`}
+              className={`text-xs transition-all ${isActive("/") ? "text-[#8B9B8E]" : "text-neutral-400"
+                }`}
             >
               Feed
             </span>
@@ -89,15 +87,13 @@ export function Root() {
             className="relative flex flex-col items-center gap-1.5 transition-colors duration-200"
           >
             <Sparkles
-              className={`h-6 w-6 transition-all ${
-                isActive("/ai-generator") ? "text-[#8B9B8E]" : "text-neutral-400"
-              }`}
+              className={`h-6 w-6 transition-all ${isActive("/ai-generator") ? "text-[#8B9B8E]" : "text-neutral-400"
+                }`}
               strokeWidth={isActive("/ai-generator") ? 2.5 : 2}
             />
             <span
-              className={`text-xs transition-all ${
-                isActive("/ai-generator") ? "text-[#8B9B8E]" : "text-neutral-400"
-              }`}
+              className={`text-xs transition-all ${isActive("/ai-generator") ? "text-[#8B9B8E]" : "text-neutral-400"
+                }`}
             >
               AI
             </span>
@@ -115,15 +111,13 @@ export function Root() {
             className="relative flex flex-col items-center gap-1.5 transition-colors duration-200"
           >
             <ShoppingBag
-              className={`h-6 w-6 transition-all ${
-                isActive("/closet") ? "text-[#8B9B8E]" : "text-neutral-400"
-              }`}
+              className={`h-6 w-6 transition-all ${isActive("/closet") ? "text-[#8B9B8E]" : "text-neutral-400"
+                }`}
               strokeWidth={isActive("/closet") ? 2.5 : 2}
             />
             <span
-              className={`text-xs transition-all ${
-                isActive("/closet") ? "text-[#8B9B8E]" : "text-neutral-400"
-              }`}
+              className={`text-xs transition-all ${isActive("/closet") ? "text-[#8B9B8E]" : "text-neutral-400"
+                }`}
             >
               Closet
             </span>
@@ -165,15 +159,13 @@ export function Root() {
             className="relative flex flex-col items-center gap-1.5 transition-colors duration-200"
           >
             <User
-              className={`h-6 w-6 transition-all ${
-                isActive("/profile") ? "text-[#8B9B8E]" : "text-neutral-400"
-              }`}
+              className={`h-6 w-6 transition-all ${isActive("/profile") ? "text-[#8B9B8E]" : "text-neutral-400"
+                }`}
               strokeWidth={isActive("/profile") ? 2.5 : 2}
             />
             <span
-              className={`text-xs transition-all ${
-                isActive("/profile") ? "text-[#8B9B8E]" : "text-neutral-400"
-              }`}
+              className={`text-xs transition-all ${isActive("/profile") ? "text-[#8B9B8E]" : "text-neutral-400"
+                }`}
             >
               Profile
             </span>

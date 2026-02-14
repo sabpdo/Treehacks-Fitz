@@ -252,3 +252,36 @@ export async function getAllCategoryRankings(
 
   return results as Record<Category, ItemWithRanking[]>;
 }
+
+/**
+ * Get top ranked items across users you follow (for "Top Ranked in Your Network").
+ * Fetches rankings from each followed user, flattens, sorts by rating desc, returns top N.
+ */
+export async function getNetworkTopRankings(
+  followingUserIds: string[],
+  limit: number = 8
+): Promise<ItemWithRanking[]> {
+  if (followingUserIds.length === 0) return [];
+
+  const maxUsers = 15;
+  const userIds = followingUserIds.slice(0, maxUsers);
+
+  const allByUser = await Promise.all(
+    userIds.map((userId) =>
+      getAllCategoryRankings(userId).catch(() => ({} as Record<Category, ItemWithRanking[]>))
+    )
+  );
+
+  const flat: ItemWithRanking[] = [];
+  for (const byCategory of allByUser) {
+    for (const items of Object.values(byCategory)) {
+      flat.push(...items);
+    }
+  }
+
+  const sorted = flat
+    .filter((item) => item.rating != null && !Number.isNaN(item.rating))
+    .sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0));
+
+  return sorted.slice(0, limit);
+}

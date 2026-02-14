@@ -11,6 +11,10 @@ type PostGridProps = {
   getCompatibility?: (post: OOTDPost) => number | undefined;
   /** Stagger delay per item (seconds) for entrance animation, e.g. 0.03 */
   staggerDelay?: number;
+  /** Show delete button on each card (e.g. on own profile) */
+  showDelete?: boolean;
+  /** Called when user confirms delete */
+  onDelete?: (postId: string) => void | Promise<void>;
 };
 
 export function PostGrid({
@@ -20,6 +24,8 @@ export function PostGrid({
   className,
   getCompatibility,
   staggerDelay = 0,
+  showDelete = false,
+  onDelete,
 }: PostGridProps) {
   if (posts.length === 0) {
     return (
@@ -50,6 +56,8 @@ export function PostGrid({
             post={post}
             compact={compact}
             compatibilityScore={getCompatibility?.(post) ?? post.compatibilityScore}
+            showDelete={showDelete}
+            onDelete={onDelete}
           />
         );
         if (staggerDelay > 0) {
