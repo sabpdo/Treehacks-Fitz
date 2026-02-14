@@ -31,6 +31,7 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
   const [showSwapModal, setShowSwapModal] = useState(false);
   const [swapModalView, setSwapModalView] = useState<SwapModalView>("select");
   const [swappingItemId, setSwappingItemId] = useState<string | null>(null);
+  const [isAddingNewItem, setIsAddingNewItem] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [cameraError, setCameraError] = useState<string | null>(null);
@@ -200,6 +201,7 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
   };
 
   const openSwapModal = (itemId: string) => {
+    setIsAddingNewItem(false);
     setSwappingItemId(itemId);
     setShowSwapModal(true);
     setSwapModalView("select");
@@ -207,12 +209,58 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
     setCategoryFilter("all");
   };
 
+  const openAddItemModal = () => {
+    setIsAddingNewItem(true);
+    setSwappingItemId(null);
+    setShowSwapModal(true);
+    setSwapModalView("select");
+    setSearchQuery("");
+    setCategoryFilter("all");
+  };
+
+  const categoryToType = (cat: string): DetectedItem["type"] => {
+    if (cat === "tops") return "top";
+    if (cat === "bottoms") return "bottom";
+    if (cat === "shoes") return "shoes";
+    if (cat === "accessories") return "accessory";
+    return "top";
+  };
+
+  const getNewItemPosition = () => {
+    const n = detectedItems.length;
+    return { x: 25 + (n % 3) * 25, y: 35 + Math.floor(n / 3) * 22 };
+  };
+
   const selectSwapItem = (closetItemId: string) => {
-    if (!swappingItemId) return;
-    
     const closetItem = mockClosetItems.find((item) => item.id === closetItemId);
     if (!closetItem) return;
 
+    if (isAddingNewItem) {
+      const pos = getNewItemPosition();
+      setDetectedItems((items) => [
+        ...items,
+        {
+          id: `manual-${Date.now()}`,
+          type: categoryToType(closetItem.category),
+          position: pos,
+          label: `${closetItem.color} ${closetItem.category}`,
+          color: closetItem.color,
+          fabric: closetItem.fabric,
+          silhouette: closetItem.silhouette,
+          closetMatch: {
+            id: closetItem.id,
+            brand: closetItem.brand || "Unknown",
+            imageUrl: closetItem.imageUrl,
+          },
+          isConfirmed: false,
+        },
+      ]);
+      setShowSwapModal(false);
+      setIsAddingNewItem(false);
+      return;
+    }
+
+    if (!swappingItemId) return;
     setDetectedItems((items) =>
       items.map((item) =>
         item.id === swappingItemId
@@ -237,8 +285,26 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
   };
 
   const handleAddNewItem = () => {
-    // In a real app, this would save to the closet
+    const pos = getNewItemPosition();
+    const type = (newItemData.category || "top") as DetectedItem["type"];
+    setDetectedItems((items) => [
+      ...items,
+      {
+        id: `manual-${Date.now()}`,
+        type: type === "outerwear" ? "top" : type,
+        position: pos,
+        label: newItemData.brand
+          ? `${newItemData.color || "Item"} ${newItemData.brand}`
+          : newItemData.color || "New item",
+        color: newItemData.color || "",
+        fabric: newItemData.fabric,
+        silhouette: newItemData.silhouette,
+        closetMatch: undefined,
+        isConfirmed: false,
+      },
+    ]);
     setShowSwapModal(false);
+    setIsAddingNewItem(false);
     setSwapModalView("select");
     setNewItemData({
       image: "",
@@ -404,17 +470,61 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          className="fixed inset-0 flex flex-col bg-neutral-900"
+          className="fixed inset-0 bg-neutral-900"
+          style={{ minHeight: "100vh", minWidth: "100%" }}
         >
-          {/* Background: captured photo full screen */}
-          <img
-            src={capturedImage}
-            alt="Captured outfit"
-            className="absolute inset-0 h-full w-full object-cover"
-          />
+          {/* Background: captured photo full screen - explicit size so it always fills */}
+          <div className="absolute inset-0 min-h-full min-w-full">
+            <img
+              src={capturedImage}
+              alt="Captured outfit"
+              className="block h-full w-full object-cover object-center"
+              style={{ minHeight: "100%", minWidth: "100%" }}
+            />
+          </div>
 
           {/* Overlay: dim + scanning UI */}
           <div className="absolute inset-0 bg-black/35">
+              {/* Hotspot dots - detection points with pulse/ripple */}
+              {[
+                { left: "18%", top: "28%", delay: 0 },
+                { left: "52%", top: "22%", delay: 0.2 },
+                { left: "82%", top: "35%", delay: 0.4 },
+                { left: "25%", top: "55%", delay: 0.1 },
+                { left: "70%", top: "58%", delay: 0.35 },
+                { left: "45%", top: "72%", delay: 0.25 },
+                { left: "88%", top: "78%", delay: 0.15 },
+                { left: "12%", top: "68%", delay: 0.3 },
+              ].map((pos, i) => (
+                <motion.div
+                  key={i}
+                  className="absolute h-3 w-3 rounded-full border-2 border-white/80 bg-white/20 shadow-lg shadow-white/20"
+                  style={{ left: pos.left, top: pos.top, transform: "translate(-50%, -50%)" }}
+                  initial={{ scale: 0, opacity: 0 }}
+                  animate={{
+                    scale: [0, 1.2, 1],
+                    opacity: [0, 0.9, 0.7],
+                  }}
+                  transition={{
+                    delay: pos.delay,
+                    duration: 0.5,
+                    repeat: Infinity,
+                    repeatDelay: 0.8,
+                  }}
+                >
+                  <motion.div
+                    className="absolute inset-0 rounded-full border-2 border-white/60"
+                    animate={{ scale: [1, 2.5, 2.5], opacity: [0.6, 0, 0] }}
+                    transition={{
+                      delay: pos.delay + 0.2,
+                      duration: 1.2,
+                      repeat: Infinity,
+                      repeatDelay: 0.6,
+                    }}
+                  />
+                </motion.div>
+              ))}
+
               <div className="flex h-full flex-col items-center justify-center">
                 <motion.div
                   initial={{ opacity: 0, y: 20 }}
@@ -438,7 +548,7 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
                   initial={{ opacity: 0 }}
                   animate={{ opacity: [0.3, 0.6, 0.3] }}
                   transition={{ duration: 1.5, repeat: Infinity }}
-                  className="absolute inset-0"
+                  className="absolute inset-0 pointer-events-none"
                   style={{
                     backgroundImage: `
                       linear-gradient(0deg, transparent 24%, rgba(255, 255, 255, .05) 25%, rgba(255, 255, 255, .05) 26%, transparent 27%, transparent 74%, rgba(255, 255, 255, .05) 75%, rgba(255, 255, 255, .05) 76%, transparent 77%, transparent),
@@ -452,7 +562,7 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
                   initial={{ y: "-100%" }}
                   animate={{ y: "200%" }}
                   transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-                  className="absolute left-0 right-0 h-32 bg-gradient-to-b from-transparent via-white/10 to-transparent"
+                  className="absolute left-0 right-0 h-32 bg-gradient-to-b from-transparent via-white/10 to-transparent pointer-events-none"
                 />
               </div>
             </div>
@@ -474,7 +584,16 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
               >
                 <X className="h-4 w-4" />
               </button>
-              <h2 className="text-sm text-neutral-900">Tag Your Items</h2>
+              <div className="flex flex-col items-center">
+                <h2 className="text-sm text-neutral-900">Tag Your Items</h2>
+                <button
+                  type="button"
+                  onClick={openAddItemModal}
+                  className="mt-0.5 text-xs text-[#8B9B8E] underline-offset-2 hover:underline"
+                >
+                  AI missed something? Add item
+                </button>
+              </div>
               <button
                 onClick={() => setStep("confirm")}
                 disabled={!allItemsConfirmed}
@@ -515,13 +634,41 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
                       onClick={() =>
                         setSelectedPin(selectedPin === item.id ? null : item.id)
                       }
-                      className="relative"
+                      className="relative group"
                     >
+                      {/* Glow ring - sage green pulse (same as "AI missed something" link) */}
                       <motion.div
+                        className="absolute inset-0 rounded-full"
+                        style={{
+                          width: 24,
+                          height: 24,
+                          left: "50%",
+                          top: "50%",
+                          marginLeft: -12,
+                          marginTop: -12,
+                        }}
+                        animate={{
+                          boxShadow: [
+                            "0 0 0 0 rgba(139, 155, 142, 0.5)",
+                            "0 0 0 10px rgba(139, 155, 142, 0)",
+                          ],
+                        }}
+                        transition={{
+                          duration: 1.8,
+                          repeat: Infinity,
+                          ease: "easeOut",
+                        }}
+                      />
+                      <motion.div
+                        whileHover={{ scale: 1.15 }}
                         animate={{
                           scale: selectedPin === item.id ? 1.2 : 1,
+                          boxShadow: selectedPin === item.id
+                            ? "0 0 14px 3px rgba(139, 155, 142, 0.65)"
+                            : "0 0 8px 2px rgba(139, 155, 142, 0.4)",
                         }}
-                        className={`h-3 w-3 rounded-full border-2 border-white shadow-lg transition-all ${
+                        transition={{ duration: 0.2 }}
+                        className={`relative h-3 w-3 rounded-full border-2 border-white shadow-lg ${
                           item.isConfirmed ? "bg-[#8B9B8E]" : "bg-neutral-900"
                         }`}
                       />
@@ -531,7 +678,7 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
                           initial={{ scale: 1, opacity: 0.5 }}
                           animate={{ scale: 2, opacity: 0 }}
                           transition={{ duration: 1.5, repeat: Infinity }}
-                          className="absolute inset-0 rounded-full bg-neutral-900"
+                          className="absolute inset-0 rounded-full bg-neutral-900 pointer-events-none"
                         />
                       )}
                     </button>
@@ -784,7 +931,10 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              onClick={() => setShowSwapModal(false)}
+              onClick={() => {
+                setShowSwapModal(false);
+                setIsAddingNewItem(false);
+              }}
               className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm"
             />
 
@@ -801,14 +951,19 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
                     <div className="mb-4 flex items-start justify-between">
                       <div>
                         <h3 className="mb-1 text-base text-neutral-900">
-                          Select Matching Item
+                          {isAddingNewItem ? "Add item AI missed" : "Select Matching Item"}
                         </h3>
                         <p className="text-xs text-neutral-500">
-                          Choose from your closet or add new
+                          {isAddingNewItem
+                            ? "Pick from your closet or add a new item"
+                            : "Choose from your closet or add new"}
                         </p>
                       </div>
                       <button
-                        onClick={() => setShowSwapModal(false)}
+                        onClick={() => {
+                          setShowSwapModal(false);
+                          setIsAddingNewItem(false);
+                        }}
                         className="flex h-8 w-8 items-center justify-center rounded-full text-neutral-500 transition-colors hover:bg-neutral-100"
                       >
                         <X className="h-4 w-4" />

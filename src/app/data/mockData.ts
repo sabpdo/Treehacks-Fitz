@@ -393,6 +393,19 @@ export interface User {
   followingCount: number;
 }
 
+/** One tagged item on an outfit post (position for dot, details for popup/list) */
+export interface OutfitItem {
+  id: string;
+  type: string; // top, bottom, shoes, accessory
+  label: string;
+  position: { x: number; y: number }; // percentage
+  imageUrl?: string;
+  brand?: string;
+  color?: string;
+  fabric?: string;
+  silhouette?: string;
+}
+
 export interface OOTDPost {
   id: string;
   userId: string;
@@ -406,6 +419,8 @@ export interface OOTDPost {
   likedByUserIds: string[];
   compatibilityScore: number;
   aiInsight: string;
+  /** Tagged items in the outfit (for dots + Codibook-style list) */
+  outfitItems?: OutfitItem[];
 }
 
 export interface Comment {
@@ -535,6 +550,11 @@ export const mockOOTDPosts: OOTDPost[] = [
     likedByUserIds: ["u2", "u4"],
     compatibilityScore: 82,
     aiInsight: "Matches your neutral palette and relaxed silhouette preference.",
+    outfitItems: [
+      { id: "p1-i1", type: "top", label: "White Cotton Shirt", position: { x: 48, y: 32 }, imageUrl: "https://images.unsplash.com/photo-1618354691373-d851c5c3a990?w=400", brand: "Everlane", color: "White" },
+      { id: "p1-i2", type: "bottom", label: "Beige Wide-Leg Trousers", position: { x: 52, y: 62 }, imageUrl: "https://images.unsplash.com/photo-1594633313593-bab3825d0caf?w=400", brand: "Aritzia", color: "Beige" },
+      { id: "p1-i3", type: "shoes", label: "White Leather Sneakers", position: { x: 50, y: 88 }, imageUrl: "https://images.unsplash.com/photo-1595777457583-95e059d581b8?w=400", brand: "Veja", color: "White" },
+    ],
   },
   {
     id: "p2",
@@ -550,6 +570,11 @@ export const mockOOTDPosts: OOTDPost[] = [
     likedByUserIds: ["u1", "u3", "u5"],
     compatibilityScore: 78,
     aiInsight: "Similar silhouette to your saved looks.",
+    outfitItems: [
+      { id: "p2-i1", type: "top", label: "Cream Knit", position: { x: 50, y: 28 }, imageUrl: "https://images.unsplash.com/photo-1599643478518-a784e5dc4c8f?w=400", brand: "& Other Stories", color: "Cream" },
+      { id: "p2-i2", type: "bottom", label: "Navy Trousers", position: { x: 48, y: 58 }, imageUrl: "https://images.unsplash.com/photo-1624623278313-a930126a11c3?w=400", brand: "Zara", color: "Navy" },
+      { id: "p2-i3", type: "shoes", label: "Black Sneakers", position: { x: 52, y: 85 }, imageUrl: "https://images.unsplash.com/photo-1560343090-f0409e92791a?w=400", brand: "Veja", color: "Black" },
+    ],
   },
   {
     id: "p3",
@@ -565,6 +590,12 @@ export const mockOOTDPosts: OOTDPost[] = [
     likedByUserIds: ["u2"],
     compatibilityScore: 91,
     aiInsight: "Aligns with your minimal aesthetic and office-ready style.",
+    outfitItems: [
+      { id: "p3-i1", type: "top", label: "White Linen Shirt", position: { x: 50, y: 30 }, imageUrl: "https://images.unsplash.com/photo-1618354691373-d851c5c3a990?w=400", brand: "Everlane", color: "White" },
+      { id: "p3-i2", type: "bottom", label: "Beige Trousers", position: { x: 50, y: 60 }, imageUrl: "https://images.unsplash.com/photo-1594633313593-bab3825d0caf?w=400", brand: "Aritzia", color: "Beige" },
+      { id: "p3-i3", type: "outerwear", label: "Camel Coat", position: { x: 48, y: 22 }, imageUrl: "https://images.unsplash.com/photo-1591047139829-d91aecb6caea?w=400", brand: "COS", color: "Camel" },
+      { id: "p3-i4", type: "shoes", label: "Black Loafers", position: { x: 52, y: 88 }, imageUrl: "https://images.unsplash.com/photo-1560343090-f0409e92791a?w=400", brand: "Veja", color: "Black" },
+    ],
   },
   {
     id: "p4",
@@ -580,6 +611,10 @@ export const mockOOTDPosts: OOTDPost[] = [
     likedByUserIds: ["u1", "u5"],
     compatibilityScore: 88,
     aiInsight: "Complements your beige and cream palette.",
+    outfitItems: [
+      { id: "p4-i1", type: "top", label: "Cream Sweater", position: { x: 50, y: 35 }, imageUrl: "https://images.unsplash.com/photo-1599643478518-a784e5dc4c8f?w=400", brand: "& Other Stories", color: "Cream" },
+      { id: "p4-i2", type: "bottom", label: "Tan Trousers", position: { x: 50, y: 65 }, imageUrl: "https://images.unsplash.com/photo-1594633313593-bab3825d0caf?w=400", brand: "Aritzia", color: "Beige" },
+    ],
   },
   {
     id: "p5",
@@ -595,6 +630,11 @@ export const mockOOTDPosts: OOTDPost[] = [
     likedByUserIds: ["u1", "u2", "u6"],
     compatibilityScore: 85,
     aiInsight: "Clean lines that match your closet core.",
+    outfitItems: [
+      { id: "p5-i1", type: "top", label: "White Tee", position: { x: 48, y: 34 }, imageUrl: "https://images.unsplash.com/photo-1618354691373-d851c5c3a990?w=400", brand: "Everlane", color: "White" },
+      { id: "p5-i2", type: "bottom", label: "Black Trousers", position: { x: 52, y: 62 }, imageUrl: "https://images.unsplash.com/photo-1624623278313-a930126a11c3?w=400", brand: "Zara", color: "Navy" },
+      { id: "p5-i3", type: "shoes", label: "White Sneakers", position: { x: 50, y: 86 }, imageUrl: "https://images.unsplash.com/photo-1595777457583-95e059d581b8?w=400", brand: "Veja", color: "White" },
+    ],
   },
   {
     id: "p6",
