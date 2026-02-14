@@ -22,5 +22,9 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
     return <Navigate to="/login" replace />;
   }
 
+  if (!user.email_confirmed_at) {
+    return <Navigate to="/confirm-email" replace />;
+  }
+
   return <>{children}</>;
 };

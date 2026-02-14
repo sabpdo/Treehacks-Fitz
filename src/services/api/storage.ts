@@ -56,12 +56,10 @@ export async function uploadImage(file: File, bucket: string = 'closet-images'):
     throw new Error(`Upload failed: ${msg}`);
   }
 
-  // Get public URL
-  const { data } = supabase.storage
-    .from(bucket)
-    .getPublicUrl(filePath);
-
-  return data.publicUrl;
+  // Build public URL (must include /object/public/ for public buckets to load in browser)
+  const baseUrl = import.meta.env.VITE_SUPABASE_URL?.replace(/\/$/, '') || '';
+  const publicUrl = `${baseUrl}/storage/v1/object/public/${bucket}/${filePath}`;
+  return publicUrl;
 }
 
 /**

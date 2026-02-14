@@ -11,6 +11,7 @@ import { Closet } from "./components/Closet";
 import { ReRank } from "./components/ReRank";
 import { Login } from "./components/Login";
 import { SignUp } from "./components/SignUp";
+import { ConfirmEmail } from "./components/ConfirmEmail";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 
 export const router = createBrowserRouter([
@@ -21,6 +22,10 @@ export const router = createBrowserRouter([
   {
     path: "/signup",
     Component: SignUp,
+  },
+  {
+    path: "/confirm-email",
+    Component: ConfirmEmail,
   },
   {
     path: "/",

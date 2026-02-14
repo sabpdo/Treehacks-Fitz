@@ -1,6 +1,7 @@
+import { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { motion } from "motion/react";
-import { Bookmark } from "lucide-react";
+import { Bookmark, ImageOff } from "lucide-react";
 import { formatPostTime } from "../../data/mockData";
 import type { OOTDPost } from "../../data/mockData";
 import { useAppStore } from "../../context/AppStore";
@@ -34,6 +35,7 @@ export function PostCard({
   const firstComment = comments[0];
   const commentPreview = firstComment?.text;
   const saved = showFeedMeta && isSaved(post.id);
+  const [imageError, setImageError] = useState(false);
 
   const baseClass = cn(
     "group block overflow-hidden rounded-xl border border-neutral-200/60 bg-white shadow-sm transition-all duration-300 hover:border-neutral-300 hover:shadow-md active:scale-[0.995]",
@@ -42,12 +44,22 @@ export function PostCard({
 
   const cardContent = (
     <>
-      <div className="relative aspect-[4/5] overflow-hidden bg-neutral-50">
-        <img
-          src={post.imageUrl}
-          alt={post.caption}
-          className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-        />
+      <div className="relative aspect-[4/5] min-h-[200px] overflow-hidden bg-neutral-100">
+        {imageError ? (
+          <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-neutral-400">
+            <ImageOff className="h-10 w-10" />
+            <span className="text-xs">Image unavailable</span>
+          </div>
+        ) : (
+          <img
+            src={post.imageUrl}
+            alt={post.caption || "Post"}
+            className="h-full w-full object-cover object-center transition-transform duration-500 group-hover:scale-105"
+            loading="lazy"
+            decoding="async"
+            onError={() => setImageError(true)}
+          />
+        )}
         {score != null && (
           <div className="absolute left-3 top-3">
             <Badge variant="accent">{score}%</Badge>
@@ -126,12 +138,22 @@ export function PostCard({
         whileTap={{ scale: 0.995 }}
         transition={{ duration: 0.2 }}
       >
-        <div className="relative aspect-square overflow-hidden bg-neutral-50">
-          <img
-            src={post.imageUrl}
-            alt={post.caption}
-            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-          />
+        <div className="relative aspect-square min-h-[140px] overflow-hidden bg-neutral-100">
+          {imageError ? (
+            <div className="flex h-full w-full flex-col items-center justify-center gap-1 text-neutral-400">
+              <ImageOff className="h-8 w-8" />
+              <span className="text-[10px]">Unavailable</span>
+            </div>
+          ) : (
+            <img
+              src={post.imageUrl}
+              alt={post.caption || "Post"}
+              className="h-full w-full object-cover object-center transition-transform duration-500 group-hover:scale-105"
+              loading="lazy"
+              decoding="async"
+              onError={() => setImageError(true)}
+            />
+          )}
           {score != null && (
             <div className="absolute right-2 top-2">
               <Badge variant="accent">{score}%</Badge>

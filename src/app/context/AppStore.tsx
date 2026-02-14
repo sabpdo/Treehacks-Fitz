@@ -294,18 +294,24 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   const toggleFollow = useCallback(
     async (userId: string) => {
       if (useApi) {
+        const isCurrentlyFollowing = followingUserIds.has(userId);
+        setFollowingUserIds((prev) => {
+          const next = new Set(prev);
+          if (isCurrentlyFollowing) next.delete(userId);
+          else next.add(userId);
+          return next;
+        });
         try {
-          const isCurrentlyFollowing = followingUserIds.has(userId);
           if (isCurrentlyFollowing) await unfollowUser(userId);
           else await followUser(userId);
-          setFollowingUserIds((prev) => {
-            const next = new Set(prev);
-            if (isCurrentlyFollowing) next.delete(userId);
-            else next.add(userId);
-            return next;
-          });
         } catch (e) {
           console.error("Toggle follow failed:", e);
+          setFollowingUserIds((prev) => {
+            const next = new Set(prev);
+            if (isCurrentlyFollowing) next.add(userId);
+            else next.delete(userId);
+            return next;
+          });
         }
         return;
       }
