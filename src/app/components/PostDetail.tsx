@@ -14,6 +14,8 @@ import { Button } from "./ui/button";
 import { cn } from "./ui/utils";
 import { getPost } from "../../services/api";
 import { apiPostToOOTDPost } from "../../lib/adapters";
+import { getCategoryIcon, getCategoryLabel } from "../../lib/categories";
+import type { Post as ApiPost } from "../../types/database";
 
 export function PostDetail() {
   const { postId } = useParams<{ postId: string }>();
@@ -32,6 +34,7 @@ export function PostDetail() {
   } = useAppStore();
   const [commentText, setCommentText] = useState("");
   const [fetchedPost, setFetchedPost] = useState<ReturnType<typeof apiPostToOOTDPost> | null>(null);
+  const [apiPostData, setApiPostData] = useState<ApiPost | null>(null);
   const [loading, setLoading] = useState(!!postId);
 
   const postFromStore = posts.find((p) => p.id === postId);
@@ -48,6 +51,7 @@ export function PostDetail() {
     getPost(postId)
       .then((apiPost) => {
         if (cancelled || !apiPost) return;
+        setApiPostData(apiPost);
         setFetchedPost(apiPostToOOTDPost(apiPost, currentUserId));
         return loadCommentsForPost(postId);
       })
@@ -141,6 +145,28 @@ export function PostDetail() {
             <p className="mt-2 text-[10px] text-neutral-400">
               Liked by {likedByFriendsCount} {likedByFriendsCount === 1 ? "friend" : "friends"}
             </p>
+          )}
+
+          {/* Clothing items in this outfit */}
+          {apiPostData?.items && apiPostData.items.length > 0 && (
+            <div className="mt-4">
+              <p className="mb-2 text-[10px] font-medium uppercase tracking-wide text-neutral-400">
+                Items in this outfit
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {apiPostData.items.map((item) => (
+                  <div
+                    key={item.id}
+                    className="flex items-center gap-1.5 rounded-full border border-neutral-200 bg-neutral-50 px-2.5 py-1"
+                  >
+                    <span className="text-sm">{getCategoryIcon(item.category)}</span>
+                    <span className="text-[11px] font-medium text-neutral-700">
+                      {getCategoryLabel(item.category)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
         </div>
 

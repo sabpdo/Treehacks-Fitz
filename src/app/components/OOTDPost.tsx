@@ -11,6 +11,7 @@ import { createPost, uploadImage } from "../../services/api";
 import { apiPostToOOTDPost } from "../../lib/adapters";
 import { MultiItemRankingFlow } from "./MultiItemRankingFlow";
 import type { AIImageAnalysis } from "../../types/database";
+import { getCategoryIcon, getCategoryLabel } from "../../lib/categories";
 
 function dataURLtoFile(dataUrl: string, filename: string): File {
   const arr = dataUrl.split(",");
@@ -226,6 +227,40 @@ export function OOTDPost() {
             </div>
           )}
         </motion.div>
+
+        {/* Detected clothing items tags */}
+        {detectedItems.length > 0 && !showRankingFlow && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-5 overflow-hidden rounded-2xl bg-gradient-to-br from-[#8B9B8E]/5 to-[#8B9B8E]/10 shadow-sm"
+          >
+            <div className="p-5">
+              <div className="mb-3 flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-[#8B9B8E]" />
+                <label className="text-xs font-medium tracking-wide text-[#8B9B8E]">
+                  AI DETECTED ITEMS
+                </label>
+              </div>
+              <p className="mb-3 text-xs text-neutral-600">
+                We found {detectedItems.length} {detectedItems.length === 1 ? 'item' : 'items'} in your outfit:
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {detectedItems.map((item, index) => (
+                  <div
+                    key={index}
+                    className="flex items-center gap-2 rounded-full border border-[#8B9B8E]/30 bg-white px-3 py-2 shadow-sm"
+                  >
+                    <span className="text-base">{getCategoryIcon(item.category)}</span>
+                    <span className="text-xs font-medium text-neutral-700">
+                      {getCategoryLabel(item.category)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </motion.div>
+        )}
 
         {/* Caption */}
         <motion.div
