@@ -1,5 +1,5 @@
 import { Outlet, Link, useLocation } from "react-router";
-import { Home, Users, Sparkles, User, ShoppingBag, Plus } from "lucide-react";
+import { Home, Users, Sparkles, User, ShoppingBag, ShoppingCart, Plus } from "lucide-react";
 import { motion } from "motion/react";
 
 export function Root() {
@@ -128,6 +128,30 @@ export function Root() {
               Closet
             </span>
             {isActive("/closet") && (
+              <motion.div
+                layoutId="nav-indicator"
+                className="absolute -top-3 h-1 w-8 rounded-full bg-[#8B9B8E]"
+                transition={{ type: "spring", stiffness: 300, damping: 30 }}
+              />
+            )}
+          </Link>
+
+          <Link
+            to="/shopping"
+            className="relative flex flex-col items-center gap-1.5 transition-colors duration-200"
+          >
+            <ShoppingCart
+              className={`h-6 w-6 transition-all ${isActive("/shopping") ? "text-[#8B9B8E]" : "text-neutral-400"
+                }`}
+              strokeWidth={isActive("/shopping") ? 2.5 : 2}
+            />
+            <span
+              className={`text-xs transition-all ${isActive("/shopping") ? "text-[#8B9B8E]" : "text-neutral-400"
+                }`}
+            >
+              Shop
+            </span>
+            {isActive("/shopping") && (
               <motion.div
                 layoutId="nav-indicator"
                 className="absolute -top-3 h-1 w-8 rounded-full bg-[#8B9B8E]"

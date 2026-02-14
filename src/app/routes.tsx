@@ -9,6 +9,7 @@ import { Profile } from "./components/Profile";
 import { AIOutfitGenerator } from "./components/AIOutfitGenerator";
 import { Closet } from "./components/Closet";
 import { ReRank } from "./components/ReRank";
+import { Shopping } from "./components/Shopping";
 import { Login } from "./components/Login";
 import { SignUp } from "./components/SignUp";
 import { ConfirmEmail } from "./components/ConfirmEmail";
@@ -49,6 +50,7 @@ export const router = createBrowserRouter([
           { path: "ai-generator", Component: AIOutfitGenerator },
           { path: "closet", Component: Closet },
           { path: "rerank", Component: ReRank },
+          { path: "shopping", Component: Shopping },
         ],
       },
     ],
