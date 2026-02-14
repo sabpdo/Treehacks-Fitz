@@ -1,6 +1,91 @@
 // Database TypeScript Types for ClosetRank
 
-export type Category = 'top' | 'bottom' | 'shoes' | 'accessories' | 'outerwear';
+// Main Categories
+export type Category = 'tops' | 'bottoms' | 'outerwear' | 'dresses_skirts' | 'shoes' | 'bags' | 'accessories';
+
+// Subcategories by main category
+export type TopSubcategory =
+  | 't-shirt'
+  | 'tank top'
+  | 'blouse'
+  | 'button-up shirt'
+  | 'polo'
+  | 'crop top'
+  | 'tube top'
+  | 'henley'
+  | 'other top';
+
+export type BottomSubcategory =
+  | 'jeans'
+  | 'trousers'
+  | 'chinos'
+  | 'leggings'
+  | 'joggers'
+  | 'cargo pants'
+  | 'shorts'
+  | 'sweatpants'
+  | 'other bottom';
+
+export type OuterwearSubcategory =
+  | 'sweater'
+  | 'cardigan'
+  | 'hoodie'
+  | 'sweatshirt'
+  | 'blazer'
+  | 'jacket'
+  | 'coat'
+  | 'vest'
+  | 'other outerwear';
+
+export type DressSkirtSubcategory =
+  | 'mini dress'
+  | 'midi dress'
+  | 'maxi dress'
+  | 'mini skirt'
+  | 'midi skirt'
+  | 'maxi skirt'
+  | 'other dress/skirt';
+
+export type ShoeSubcategory =
+  | 'sneakers'
+  | 'boots'
+  | 'sandals'
+  | 'heels'
+  | 'flats'
+  | 'loafers'
+  | 'slippers'
+  | 'other shoes';
+
+export type BagSubcategory =
+  | 'tote'
+  | 'crossbody'
+  | 'shoulder bag'
+  | 'backpack'
+  | 'clutch'
+  | 'satchel'
+  | 'messenger bag'
+  | 'other bag';
+
+export type AccessorySubcategory =
+  | 'hat'
+  | 'scarf'
+  | 'belt'
+  | 'sunglasses'
+  | 'jewelry'
+  | 'watch'
+  | 'tie'
+  | 'other accessory';
+
+export type Subcategory =
+  | TopSubcategory
+  | BottomSubcategory
+  | OuterwearSubcategory
+  | DressSkirtSubcategory
+  | ShoeSubcategory
+  | BagSubcategory
+  | AccessorySubcategory;
+
+export type Gender = 'women' | 'men' | 'unisex';
 
 export type PriceTier = 'budget' | 'mid' | 'luxury';
 
@@ -25,6 +110,7 @@ export interface Profile {
   avatar_url: string | null;
   bio: string | null;
   instagram_handle: string | null;
+  gender: Gender | null;
   followers: number;
   following: number;
   streak: number;

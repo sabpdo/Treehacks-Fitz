@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS profiles (
   avatar_url TEXT,
   bio TEXT,
   instagram_handle TEXT,
+  gender TEXT, -- 'women', 'men', 'unisex'
   followers INTEGER DEFAULT 0,
   following INTEGER DEFAULT 0,
   streak INTEGER DEFAULT 0,
