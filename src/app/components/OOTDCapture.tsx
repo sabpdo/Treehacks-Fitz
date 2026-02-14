@@ -165,6 +165,7 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
   const [showSwapModal, setShowSwapModal] = useState(false);
   const [swapModalView, setSwapModalView] = useState<SwapModalView>("select");
   const [swappingItemId, setSwappingItemId] = useState<string | null>(null);
+  const [isAddingNewItem, setIsAddingNewItem] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [cameraError, setCameraError] = useState<string | null>(null);
@@ -313,7 +314,7 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
     e.target.value = "";
   };
 
-  // AI scanning: try segmentation first (Replicate), then OpenAI Vision, then mock
+  // AI scanning: try OpenAI/edge first, then segmentation (Replicate), then mock
   useEffect(() => {
     if (step !== "scanning" || !capturedImage) return;
 
@@ -324,6 +325,22 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
         setDetectedItems(items.length > 0 ? items : MOCK_DETECTED_ITEMS);
         setStep("tagging");
       }
+    };
+
+    const runOpenAI = async () => {
+      const env = (import.meta as unknown as { env?: { VITE_OPENAI_API_KEY?: string } }).env;
+      if (!env?.VITE_OPENAI_API_KEY) return false;
+      try {
+        const res = await analyzeOutfitImage(capturedImage);
+        const items = res?.items;
+        if (items && items.length > 0) {
+          goToTagging(aiAnalysisToDetectedItems(items));
+          return true;
+        }
+      } catch (err) {
+        console.warn("OpenAI analysis failed:", err);
+      }
+      return false;
     };
 
     const runSegmentation = async () => {
@@ -341,28 +358,13 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
       return false;
     };
 
-    const runOpenAI = async () => {
-      if (!import.meta.env.VITE_OPENAI_API_KEY) return false;
-      try {
-        const res = await analyzeOutfitImage(capturedImage);
-        const items = res?.items;
-        if (items && items.length > 0) {
-          goToTagging(aiAnalysisToDetectedItems(items));
-          return true;
-        }
-      } catch (err) {
-        console.warn("OpenAI analysis failed:", err);
-      }
-      return false;
-    };
-
     let mockTimer: ReturnType<typeof setTimeout> | null = null;
     (async () => {
-      const usedSegmentation = await runSegmentation();
+      const usedOpenAI = await runOpenAI();
       if (cancelled) return;
-      if (!usedSegmentation) {
-        const usedOpenAI = await runOpenAI();
-        if (!cancelled && !usedOpenAI) {
+      if (!usedOpenAI) {
+        const usedSegmentation = await runSegmentation();
+        if (!cancelled && !usedSegmentation) {
           mockTimer = setTimeout(() => goToTagging(MOCK_DETECTED_ITEMS), 2500);
         }
       }
@@ -384,6 +386,7 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
   };
 
   const openSwapModal = (itemId: string) => {
+    setIsAddingNewItem(false);
     setSwappingItemId(itemId);
     setShowSwapModal(true);
     setSwapModalView("select");
@@ -407,12 +410,51 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
     };
   }, [showSwapModal, isUsingApi, currentUserId]);
 
+  /** Map UI closet category (tops, bottoms, …) to DetectedItem type */
+  const uiCategoryToType = (cat: string): DetectedItem["type"] => {
+    if (cat === "tops") return "top";
+    if (cat === "bottoms") return "bottom";
+    if (cat === "outerwear") return "jacket";
+    if (cat === "shoes") return "shoes";
+    if (cat === "accessories") return "accessory";
+    return "top";
+  };
+
+  const getNewItemPosition = (): { x: number; y: number } => {
+    const n = detectedItems.length;
+    return { x: 25 + (n % 3) * 25, y: 35 + Math.floor(n / 3) * 22 };
+  };
+
   const selectSwapItem = (closetItemId: string) => {
     if (!swappingItemId) return;
 
     const closetItem = getFilteredClosetItems().find((item) => item.id === closetItemId);
     if (!closetItem) return;
 
+    if (isAddingNewItem) {
+      const pos = getNewItemPosition();
+      setDetectedItems((items) => [
+        ...items,
+        {
+          id: `manual-${Date.now()}`,
+          type: uiCategoryToType(closetItem.category),
+          position: pos,
+          label: `${closetItem.color} ${closetItem.category}`,
+          color: closetItem.color,
+          fabric: closetItem.fabric,
+          silhouette: closetItem.silhouette,
+          closetMatch: {
+            id: closetItem.id,
+            brand: closetItem.brand || "Unknown",
+            imageUrl: closetItem.imageUrl,
+          },
+          isConfirmed: false,
+        },
+      ]);
+      setShowSwapModal(false);
+      setIsAddingNewItem(false);
+      return;
+    }
     setDetectedItems((items) =>
       items.map((item) =>
         item.id === swappingItemId
@@ -436,95 +478,13 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
     setSwappingItemId(null);
   };
 
-  const handleAddNewItem = async () => {
-    if (!isUsingApi || !currentUserId) {
-      setShowSwapModal(false);
-      setSwapModalView("select");
-      setNewItemData({ image: "", category: "", subcategory: "", brand: "", colors: [], fabric: "", silhouette: "" });
-      return;
-    }
-
-    setAddToClosetError(null);
-    setAddingToCloset(true);
-
-    try {
-      // Resolve image URL: use crop from segmentation when available, not the full OOTD
-      let imageUrl: string;
-      const imageInput = (newItemData.image || "").trim();
-      if (imageInput.startsWith("data:")) {
-        const file = dataURLToFile(imageInput, "closet-item.jpg");
-        imageUrl = await uploadImage(file);
-      } else if (imageInput.startsWith("http://") || imageInput.startsWith("https://")) {
-        imageUrl = imageInput;
-      } else {
-        // Prefer detected item's crop (segment) over full OOTD image
-        const detected = swappingItemId ? detectedItems.find((i) => i.id === swappingItemId) : null;
-        if (detected?.imageUrl?.startsWith("http")) {
-          imageUrl = detected.imageUrl;
-        } else if (detected?.imageUrl?.startsWith("data:")) {
-          const file = dataURLToFile(detected.imageUrl, "closet-item.jpg");
-          imageUrl = await uploadImage(file);
-        } else if (capturedImage) {
-          const file = dataURLToFile(capturedImage, "closet-item.jpg");
-          imageUrl = await uploadImage(file);
-        } else {
-          setAddToClosetError("Please add an image (paste crop URL or use a segmented photo).");
-          setAddingToCloset(false);
-          return;
-        }
-      }
-
-      const dbCategory = detectedTypeToDbCategory(newItemData.category || "top");
-      const created = await createClosetItem({
-        image_url: imageUrl,
-        category: dbCategory,
-        brand: newItemData.brand || undefined,
-        subcategory: newItemData.subcategory || undefined,
-        colors: newItemData.colors.length > 0 ? newItemData.colors : undefined,
-        fabric: newItemData.fabric || undefined,
-        silhouette: (newItemData.silhouette as import("../../types/database").Silhouette) || undefined,
-      });
-
-      const uiItem = apiClosetItemToUI(created);
-      setClosetItemsForSwap((prev) => [uiItem, ...prev]);
-      setDetectedItems((prev) =>
-        prev.map((item) =>
-          item.id === swappingItemId
-            ? {
-              ...item,
-              closetMatch: {
-                id: created.id,
-                brand: created.brand || "Unknown",
-                imageUrl: ensurePublicStorageUrl(created.image_url),
-              },
-              label: newItemData.subcategory || item.label,
-              color: newItemData.colors[0] || item.color,
-              fabric: newItemData.fabric ?? item.fabric,
-              silhouette: newItemData.silhouette ?? item.silhouette,
-            }
-            : item
-        )
-      );
-
-      setShowSwapModal(false);
-      setSwapModalView("select");
-      setSwappingItemId(null);
-      setNewItemData({ image: "", category: "", subcategory: "", brand: "", colors: [], fabric: "", silhouette: "" });
-    } catch (e) {
-      console.error("Add to closet failed:", e);
-      setAddToClosetError(e instanceof Error ? e.message : "Failed to add to closet");
-    } finally {
-      setAddingToCloset(false);
-    }
-  };
-
   /** Open the Add New Item form pre-filled from a detected item (for "Not in Closet" → Add as New Item). */
   const openAddAsNewItem = (item: DetectedItem) => {
     setSwappingItemId(item.id);
     setAddToClosetError(null);
     setNewItemData({
       image: item.imageUrl ?? item.closetMatch?.imageUrl ?? "",
-      category: item.type ?? "",
+      category: detectedTypeToDbCategory(item.type ?? "top"),
       subcategory: item.label ?? "",
       brand: item.closetMatch?.brand ?? "",
       colors: preselectColorsFromDetected(item.color),
@@ -533,6 +493,101 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
     });
     setSwapModalView("add-new");
     setShowSwapModal(true);
+  };
+
+  const handleAddNewItem = async () => {
+    if (isUsingApi && currentUserId) {
+      setAddToClosetError(null);
+      setAddingToCloset(true);
+      try {
+        let imageUrl: string;
+        const imageInput = (newItemData.image || "").trim();
+        if (imageInput.startsWith("data:")) {
+          const file = dataURLToFile(imageInput, "closet-item.jpg");
+          imageUrl = await uploadImage(file);
+        } else if (imageInput.startsWith("http://") || imageInput.startsWith("https://")) {
+          imageUrl = imageInput;
+        } else {
+          const detected = swappingItemId ? detectedItems.find((i) => i.id === swappingItemId) : null;
+          if (detected?.imageUrl?.startsWith("http")) {
+            imageUrl = detected.imageUrl;
+          } else if (detected?.imageUrl?.startsWith("data:")) {
+            imageUrl = await uploadImage(dataURLToFile(detected.imageUrl, "closet-item.jpg"));
+          } else if (capturedImage) {
+            imageUrl = await uploadImage(dataURLToFile(capturedImage, "closet-item.jpg"));
+          } else {
+            setAddToClosetError("Please add an image (paste crop URL or use a segmented photo).");
+            setAddingToCloset(false);
+            return;
+          }
+        }
+        const dbCategory = detectedTypeToDbCategory(newItemData.category || "top");
+        const created = await createClosetItem({
+          image_url: imageUrl,
+          category: dbCategory,
+          brand: newItemData.brand || undefined,
+          subcategory: newItemData.subcategory || undefined,
+          colors: newItemData.colors.length > 0 ? newItemData.colors : undefined,
+          fabric: newItemData.fabric || undefined,
+          silhouette: (newItemData.silhouette as import("../../types/database").Silhouette) || undefined,
+        });
+        const uiItem = apiClosetItemToUI(created);
+        setClosetItemsForSwap((prev) => [uiItem, ...prev]);
+        if (swappingItemId) {
+          setDetectedItems((prev) =>
+            prev.map((item) =>
+              item.id === swappingItemId
+                ? {
+                  ...item,
+                  closetMatch: {
+                    id: created.id,
+                    brand: created.brand || "Unknown",
+                    imageUrl: ensurePublicStorageUrl(created.image_url),
+                  },
+                  label: newItemData.subcategory || item.label,
+                  color: newItemData.colors[0] || item.color,
+                  fabric: newItemData.fabric ?? item.fabric,
+                  silhouette: newItemData.silhouette ?? item.silhouette,
+                }
+                : item
+            )
+          );
+        }
+        setShowSwapModal(false);
+        setSwapModalView("select");
+        setSwappingItemId(null);
+        setNewItemData({ image: "", category: "", subcategory: "", brand: "", colors: [], fabric: "", silhouette: "" });
+      } catch (e) {
+        console.error("Add to closet failed:", e);
+        setAddToClosetError(e instanceof Error ? e.message : "Failed to add to closet");
+      } finally {
+        setAddingToCloset(false);
+      }
+      return;
+    }
+    // Mock: add a manual item from the form to the list
+    const pos = getNewItemPosition();
+    const type = categoryToType(newItemData.category || "shirts");
+    setDetectedItems((items) => [
+      ...items,
+      {
+        id: `manual-${Date.now()}`,
+        type: type === "outerwear" ? "jacket" : type,
+        position: pos,
+        label: newItemData.brand
+          ? `${newItemData.colors[0] || "Item"} ${newItemData.brand}`
+          : newItemData.colors[0] || newItemData.subcategory || "New item",
+        color: newItemData.colors[0] || "",
+        fabric: newItemData.fabric || undefined,
+        silhouette: newItemData.silhouette as DetectedItem["silhouette"],
+        closetMatch: undefined,
+        isConfirmed: false,
+      },
+    ]);
+    setShowSwapModal(false);
+    setSwapModalView("select");
+    setIsAddingNewItem(false);
+    setNewItemData({ image: "", category: "", subcategory: "", brand: "", colors: [], fabric: "", silhouette: "" });
   };
 
   /** Remove a tagged item from the list (e.g. wrong detection like a handbag that isn't there). */
@@ -778,14 +833,18 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          className="fixed inset-0 flex flex-col bg-neutral-900"
+          className="fixed inset-0 bg-neutral-900"
+          style={{ minHeight: "100vh", minWidth: "100%" }}
         >
-          {/* Background: captured photo full screen */}
-          <img
-            src={capturedImage}
-            alt="Captured outfit"
-            className="absolute inset-0 h-full w-full object-cover"
-          />
+          {/* Background: captured photo full screen - explicit size so it always fills */}
+          <div className="absolute inset-0 min-h-full min-w-full">
+            <img
+              src={capturedImage}
+              alt="Captured outfit"
+              className="block h-full w-full object-cover object-center"
+              style={{ minHeight: "100%", minWidth: "100%" }}
+            />
+          </div>
 
           {/* Overlay: dim + scanning UI */}
           <div className="absolute inset-0 bg-black/35">
@@ -840,21 +899,26 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
           animate={{ opacity: 1 }}
           className="flex h-full w-full flex-col bg-[#FAFAF8]"
         >
-          <div className="flex shrink-0 items-center justify-between border-b border-neutral-200/60 bg-white px-6 py-4">
-            <button
-              onClick={onClose}
-              className="flex h-9 w-9 items-center justify-center rounded-full text-neutral-600 transition-colors hover:bg-neutral-100"
-            >
-              <X className="h-4 w-4" />
-            </button>
-            <h2 className="text-sm font-medium text-neutral-900">Tag your items</h2>
-            <button
-              onClick={() => setStep("confirm")}
-              disabled={!allItemsConfirmed}
-              className={`text-sm transition-colors ${allItemsConfirmed ? "text-neutral-900 hover:text-neutral-600" : "text-neutral-300"}`}
-            >
-              Next
-            </button>
+          <div className="absolute left-0 right-0 top-0 z-20 border-b border-neutral-200/60 bg-white/90 backdrop-blur-xl">
+            <div className="flex items-center justify-between px-6 py-4">
+              <button
+                onClick={onClose}
+                className="flex h-9 w-9 items-center justify-center rounded-full text-neutral-600 transition-all hover:bg-neutral-100"
+              >
+                <X className="h-4 w-4" />
+              </button>
+              <h2 className="text-sm text-neutral-900">Tag Your Items</h2>
+              <button
+                onClick={() => setStep("confirm")}
+                disabled={!allItemsConfirmed}
+                className={`text-sm transition-colors ${allItemsConfirmed
+                  ? "text-neutral-900 hover:text-neutral-600"
+                  : "text-neutral-300"
+                  }`}
+              >
+                Next
+              </button>
+            </div>
           </div>
 
           <div className="flex-1 overflow-y-auto">
@@ -869,79 +933,58 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
               </div>
 
               <p className="mb-3 text-xs font-medium uppercase tracking-wide text-neutral-500">
-                Items we detected — drag to reorder
+                Items we detected
               </p>
               <ul className="space-y-2">
                 {detectedItems.map((item, index) => (
                   <motion.li
                     key={item.id}
-                    layout
                     initial={{ opacity: 0, y: 8 }}
-                    animate={{
-                      opacity: 1,
-                      y: 0,
-                      scale: draggedItemId === item.id ? 1.02 : 1,
-                    }}
-                    className={`rounded-xl border bg-white shadow-sm transition-shadow ${selectedPin === item.id ? "border-neutral-400 shadow-md ring-1 ring-neutral-200" : "border-neutral-200/60"
-                      } ${draggedItemId === item.id ? "z-10 shadow-lg" : ""}`}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: index * 0.05 }}
+                    className="list-none"
                   >
                     <div
-                      draggable
-                      onDragStart={(e) => {
-                        setDraggedItemId(item.id);
-                        e.dataTransfer.setData("text/plain", item.id);
-                        e.dataTransfer.effectAllowed = "move";
-                      }}
-                      onDragEnd={() => setDraggedItemId(null)}
-                      onDragOver={(e) => {
-                        e.preventDefault();
-                        e.dataTransfer.dropEffect = "move";
-                      }}
-                      onDrop={(e) => {
-                        e.preventDefault();
-                        const fromId = e.dataTransfer.getData("text/plain");
-                        if (!fromId || fromId === item.id) return;
-                        const fromIdx = detectedItems.findIndex((i) => i.id === fromId);
-                        if (fromIdx !== -1) reorderItems(fromIdx, index);
-                      }}
-                      className="flex cursor-grab active:cursor-grabbing items-center gap-3 p-3"
+                      className={`flex items-center gap-3 rounded-xl border p-3 transition-colors ${item.isConfirmed
+                          ? "border-[#8B9B8E]/50 bg-[#8B9B8E]/5"
+                          : "border-neutral-200/60 bg-white"
+                        }`}
                     >
-                      <span className="touch-none text-neutral-400" aria-hidden>
-                        <GripVertical className="h-5 w-5" />
-                      </span>
-                      {item.imageUrl || item.closetMatch?.imageUrl ? (
-                        <img
-                          src={item.imageUrl ?? item.closetMatch?.imageUrl}
-                          alt=""
-                          className="h-14 w-14 shrink-0 rounded-lg object-cover bg-neutral-100"
-                        />
-                      ) : (
-                        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-neutral-100 text-neutral-400">
-                          <Sparkles className="h-6 w-6" />
-                        </div>
-                      )}
                       <button
                         type="button"
                         onClick={() => setSelectedPin(selectedPin === item.id ? null : item.id)}
-                        className="min-w-0 flex-1 text-left"
+                        className="flex min-w-0 flex-1 items-center gap-3 text-left hover:opacity-90"
                       >
-                        <p className="truncate text-sm font-medium text-neutral-900">{item.label}</p>
-                        <p className="text-xs capitalize text-neutral-500">{item.type}</p>
-                      </button>
-                      {item.isConfirmed ? (
-                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#8B9B8E]">
-                          <Check className="h-4 w-4 text-white" />
+                        {item.closetMatch?.imageUrl ? (
+                          <img
+                            src={item.closetMatch.imageUrl}
+                            alt=""
+                            className="h-12 w-12 flex-shrink-0 rounded-lg object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-lg bg-neutral-100 text-neutral-400">
+                            <span className="text-lg font-medium uppercase">{item.type.slice(0, 1)}</span>
+                          </div>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium text-neutral-900">{item.label}</p>
+                          <p className="text-xs capitalize text-neutral-500">{item.type}</p>
+                          {item.color && item.color !== "—" && (
+                            <span className="mt-1 inline-block rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] text-neutral-600">{item.color}</span>
+                          )}
                         </div>
-                      ) : (
-                        <ChevronRight className="h-5 w-5 shrink-0 text-neutral-400" />
-                      )}
+                        <div className={`flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full ${item.isConfirmed ? "bg-[#8B9B8E]/20" : "bg-neutral-200"}`}>
+                          <Check className={`h-3.5 w-3.5 ${item.isConfirmed ? "text-[#8B9B8E]" : "text-neutral-400"}`} />
+                        </div>
+                      </button>
                       <button
                         type="button"
                         onClick={(e) => {
+                          e.preventDefault();
                           e.stopPropagation();
                           removeDetectedItem(item.id);
                         }}
-                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-neutral-400 transition-colors hover:bg-red-50 hover:text-red-600"
+                        className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-neutral-400 transition-colors hover:bg-red-50 hover:text-red-600"
                         aria-label="Remove item"
                       >
                         <Trash2 className="h-4 w-4" />
@@ -1042,7 +1085,12 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
                           {!item.isConfirmed ? (
                             <>
                               <button
-                                onClick={() => confirmItem(item.id)}
+                                type="button"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  confirmItem(item.id);
+                                }}
                                 className="rounded-xl bg-neutral-900 py-2.5 text-sm text-white transition-all hover:bg-neutral-800"
                               >
                                 Confirm
@@ -1194,7 +1242,10 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              onClick={() => setShowSwapModal(false)}
+              onClick={() => {
+                setShowSwapModal(false);
+                setIsAddingNewItem(false);
+              }}
               className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm"
             />
 
@@ -1211,14 +1262,19 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
                     <div className="mb-4 flex items-start justify-between">
                       <div>
                         <h3 className="mb-1 text-base text-neutral-900">
-                          Select Matching Item
+                          {isAddingNewItem ? "Add item AI missed" : "Select Matching Item"}
                         </h3>
                         <p className="text-xs text-neutral-500">
-                          Choose from your closet or add new
+                          {isAddingNewItem
+                            ? "Pick from your closet or add a new item"
+                            : "Choose from your closet or add new"}
                         </p>
                       </div>
                       <button
-                        onClick={() => setShowSwapModal(false)}
+                        onClick={() => {
+                          setShowSwapModal(false);
+                          setIsAddingNewItem(false);
+                        }}
                         className="flex h-8 w-8 items-center justify-center rounded-full text-neutral-500 transition-colors hover:bg-neutral-100"
                       >
                         <X className="h-4 w-4" />

@@ -3,7 +3,7 @@
  * Use these when wiring the real API to existing components.
  */
 
-import type { Post, Profile, Comment as ApiComment } from '../types/database';
+import type { Post, Profile, Comment as ApiComment, ClosetItem, PostOutfitItem } from '../types/database';
 
 const BUCKET = 'closet-images';
 
@@ -56,6 +56,18 @@ export interface UIOOTDPostTag {
   closetItemId?: string;
 }
 
+export interface UIOutfitItem {
+  id: string;
+  type: string;
+  label: string;
+  position: { x: number; y: number };
+  imageUrl?: string;
+  brand?: string;
+  color?: string;
+  fabric?: string;
+  silhouette?: string;
+}
+
 export interface UIOOTDPost {
   id: string;
   userId: string;
@@ -70,6 +82,7 @@ export interface UIOOTDPost {
   compatibilityScore: number;
   aiInsight: string;
   tags?: UIOOTDPostTag[];
+  outfitItems?: UIOutfitItem[];
 }
 
 export interface UIComment {
@@ -78,6 +91,69 @@ export interface UIComment {
   userId: string;
   text: string;
   createdAt: string;
+}
+
+/** Map DB category to outfit breakdown type (top, bottom, shoes, etc.) */
+function categoryToOutfitType(category: string): string {
+  const map: Record<string, string> = {
+    shirts: 'top',
+    pants: 'bottom',
+    skirts_dresses: 'bottom',
+    jackets_outerwear: 'outerwear',
+    shoes: 'shoes',
+    bags: 'accessory',
+  };
+  return map[category] ?? 'top';
+}
+
+const DEFAULT_OUTFIT_POSITIONS = [
+  { x: 48, y: 32 },
+  { x: 52, y: 62 },
+  { x: 50, y: 88 },
+  { x: 48, y: 22 },
+  { x: 50, y: 50 },
+];
+
+/** Build outfit items from post's linked closet items (for outfit breakdown). Uses default positions when DB has no position data. */
+function closetItemsToOutfitItems(items: ClosetItem[]): UIOutfitItem[] {
+  if (!items?.length) return [];
+  return items.map((item, i) => {
+    const pos = DEFAULT_OUTFIT_POSITIONS[i % DEFAULT_OUTFIT_POSITIONS.length];
+    const label = item.subcategory || item.category?.replace(/_/g, ' ') || 'Item';
+    const capitalizedLabel = label.charAt(0).toUpperCase() + label.slice(1);
+    return {
+      id: item.id,
+      type: categoryToOutfitType(item.category),
+      label: item.brand ? `${item.brand} ${capitalizedLabel}` : capitalizedLabel,
+      position: pos,
+      imageUrl: item.image_url || undefined,
+      brand: item.brand ?? undefined,
+      color: item.colors?.[0] ?? undefined,
+      fabric: item.fabric ?? undefined,
+      silhouette: item.silhouette ?? undefined,
+    };
+  });
+}
+
+/** Build UI outfit items from post outfit items (same shape as closet item but from post). */
+function postOutfitItemsToUIOutfitItems(items: PostOutfitItem[]): UIOutfitItem[] {
+  if (!items?.length) return [];
+  return items.map((item, i) => {
+    const pos = DEFAULT_OUTFIT_POSITIONS[i % DEFAULT_OUTFIT_POSITIONS.length];
+    const label = item.subcategory || item.category?.replace(/_/g, ' ') || 'Item';
+    const capitalizedLabel = label.charAt(0).toUpperCase() + label.slice(1);
+    return {
+      id: item.id ?? `post-item-${i}`,
+      type: categoryToOutfitType(item.category),
+      label: item.brand ? `${item.brand} ${capitalizedLabel}` : capitalizedLabel,
+      position: pos,
+      imageUrl: item.image_url || undefined,
+      brand: item.brand ?? undefined,
+      color: item.colors?.[0] ?? undefined,
+      fabric: item.fabric ?? undefined,
+      silhouette: item.silhouette ?? undefined,
+    };
+  });
 }
 
 export function apiProfileToUser(profile: Profile | null | undefined): UIUser | null {
@@ -133,12 +209,15 @@ export function apiPostToOOTDPost(
     vibeTag: typeof vibeTag === 'string' ? vibeTag : 'casual',
     createdAt: post.created_at,
     likeCount: post.likes_count ?? 0,
-    savedCount: 0, // not stored on post in DB
+    savedCount: 0,
     commentCount: post.comments_count ?? 0,
     likedByUserIds: post.is_liked && currentUserId ? [currentUserId] : [],
     compatibilityScore: post.compatibility_score ?? 0,
     aiInsight: '',
     tags: buildTagsFromPost(post),
+    outfitItems:
+      (post as any).outfit_items ??
+      (post.items?.length ? postOutfitItemsToUIOutfitItems(post.items) : undefined),
   };
 }
 

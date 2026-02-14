@@ -301,7 +301,13 @@ Return ONLY the JSON array, no markdown.`;
               };
             });
             labels = fromApi.concat(
-              storedUrls.slice(urlsToLabel.length).map(() => ({ category: "shirts", description: "Item" }))
+              storedUrls.slice(urlsToLabel.length).map(() => ({
+                category: "shirts",
+                description: "Item",
+                color: undefined,
+                fabric: undefined,
+                silhouette: undefined,
+              }))
             );
           }
         } catch {
