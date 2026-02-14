@@ -66,7 +66,7 @@ export function OOTDPost() {
     if (!selectedImage || !caption.trim()) return;
 
     // If OpenAI is not configured, post directly without AI analysis
-    if (!import.meta.env.VITE_OPENAI_API_KEY) {
+    if (!(import.meta as any).env?.VITE_OPENAI_API_KEY) {
       await handlePostSimple();
       return;
     }

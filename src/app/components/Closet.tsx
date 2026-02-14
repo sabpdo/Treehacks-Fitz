@@ -3,7 +3,8 @@ import { Plus, Grid3x3, List, X, ChevronRight, Flame } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { mockClosetItems, type ClosetItem, currentUserProfile } from "../data/mockData";
 import { useAppStore } from "../context/AppStore";
-import { getCurrentProfile } from "../../services/api";
+import { getCurrentProfile, getClosetItems } from "../../services/api";
+import { apiClosetItemToUI } from "../../lib/adapters";
 
 type CategoryFilter = "all" | "tops" | "bottoms" | "outerwear" | "shoes" | "accessories";
 type ViewMode = "grid" | "list";
@@ -13,23 +14,51 @@ export function Closet() {
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [selectedItem, setSelectedItem] = useState<ClosetItem | null>(null);
   const [streak, setStreak] = useState<number>(currentUserProfile.streak);
+  const [closetItems, setClosetItems] = useState<ClosetItem[]>(mockClosetItems);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const { isUsingApi, currentUserId, getUser } = useAppStore();
+
+  // Load closet items from API
+  useEffect(() => {
+    if (isUsingApi && currentUserId) {
+      setLoading(true);
+      setError(null);
+      getClosetItems(currentUserId)
+        .then((items) => {
+          const uiItems = items.map(apiClosetItemToUI);
+          setClosetItems(uiItems);
+        })
+        .catch((err) => {
+          console.error("Failed to load closet items:", err);
+          setError("Failed to load closet items");
+          // Fallback to mock data on error
+          setClosetItems(mockClosetItems);
+        })
+        .finally(() => {
+          setLoading(false);
+        });
+    } else {
+      // Use mock data when not using API
+      setClosetItems(mockClosetItems);
+    }
+  }, [isUsingApi, currentUserId]);
 
   const filteredItems =
     filter === "all"
-      ? mockClosetItems
-      : mockClosetItems.filter((item) => item.category === filter);
+      ? closetItems
+      : closetItems.filter((item) => item.category === filter);
 
   // Calculate category breakdown
   const categoryBreakdown = {
-    tops: mockClosetItems.filter((i) => i.category === "tops").length,
-    bottoms: mockClosetItems.filter((i) => i.category === "bottoms").length,
-    outerwear: mockClosetItems.filter((i) => i.category === "outerwear").length,
-    shoes: mockClosetItems.filter((i) => i.category === "shoes").length,
-    accessories: mockClosetItems.filter((i) => i.category === "accessories").length,
+    tops: closetItems.filter((i) => i.category === "tops").length,
+    bottoms: closetItems.filter((i) => i.category === "bottoms").length,
+    outerwear: closetItems.filter((i) => i.category === "outerwear").length,
+    shoes: closetItems.filter((i) => i.category === "shoes").length,
+    accessories: closetItems.filter((i) => i.category === "accessories").length,
   };
 
-  const totalItems = mockClosetItems.length;
+  const totalItems = closetItems.length;
 
   // Load streak from API if using API
   useEffect(() => {
@@ -185,10 +214,29 @@ export function Closet() {
           ))}
         </div>
 
+        {/* Loading State */}
+        {loading && (
+          <div className="flex min-h-[400px] items-center justify-center">
+            <p className="text-neutral-500">Loading closet items...</p>
+          </div>
+        )}
+
+        {/* Error State */}
+        {error && !loading && (
+          <div className="mb-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+            {error}
+          </div>
+        )}
+
         {/* Visual Grid View */}
-        {viewMode === "grid" && (
+        {!loading && viewMode === "grid" && (
           <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
-            {filteredItems.map((item, index) => (
+            {filteredItems.length === 0 ? (
+              <div className="col-span-full flex min-h-[200px] flex-col items-center justify-center rounded-2xl border border-neutral-200/60 bg-white/50 py-12 text-center">
+                <p className="text-sm text-neutral-500">No items in your closet yet.</p>
+              </div>
+            ) : (
+              filteredItems.map((item, index) => (
               <motion.button
                 key={item.id}
                 initial={{ opacity: 0, y: 20 }}
@@ -240,12 +288,13 @@ export function Closet() {
                   <p className="text-xs text-neutral-500">{item.color}</p>
                 </div>
               </motion.button>
-            ))}
+              ))
+            )}
           </div>
         )}
 
         {/* Structured List View */}
-        {viewMode === "list" && (
+        {!loading && viewMode === "list" && (
           <div className="overflow-hidden rounded-xl border border-neutral-200/60 bg-white">
             {/* Table Header */}
             <div className="grid grid-cols-[60px_1fr_100px_100px_80px_100px_100px] gap-4 border-b border-neutral-200/60 bg-neutral-50 px-4 py-3 text-xs uppercase tracking-wide text-neutral-500">
@@ -260,7 +309,12 @@ export function Closet() {
 
             {/* Table Rows */}
             <div className="divide-y divide-neutral-200/60">
-              {filteredItems.map((item, index) => (
+              {filteredItems.length === 0 ? (
+                <div className="flex min-h-[200px] flex-col items-center justify-center py-12 text-center">
+                  <p className="text-sm text-neutral-500">No items in your closet yet.</p>
+                </div>
+              ) : (
+                filteredItems.map((item, index) => (
                 <motion.button
                   key={item.id}
                   initial={{ opacity: 0 }}
@@ -319,7 +373,8 @@ export function Closet() {
                     {item.silhouette || "—"}
                   </div>
                 </motion.button>
-              ))}
+                ))
+              )}
             </div>
           </div>
         )}
