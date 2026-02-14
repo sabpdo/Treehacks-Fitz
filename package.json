@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "build": "vite build",
-    "dev": "vite"
+    "dev": "vite",
+    "server": "node server.js",
+    "dev:all": "concurrently \"npm run server\" \"npm run dev\""
   },
   "dependencies": {
     "@emotion/react": "11.14.0",
@@ -43,8 +45,12 @@
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
     "cmdk": "1.1.1",
+    "concurrently": "^8.2.2",
+    "cors": "^2.8.6",
     "date-fns": "3.6.0",
+    "dotenv": "^16.6.1",
     "embla-carousel-react": "8.6.0",
+    "express": "^4.22.1",
     "input-otp": "1.4.2",
     "lucide-react": "0.487.0",
     "motion": "12.23.24",

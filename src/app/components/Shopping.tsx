@@ -14,24 +14,36 @@ export function Shopping() {
   const [error, setError] = useState<string | null>(null);
 
   const handleSearch = async () => {
-    if (!query.trim()) return;
+    const trimmedQuery = query.trim();
+    if (!trimmedQuery) {
+      setError("Please enter a search query");
+      return;
+    }
 
     setLoading(true);
     setError(null);
+    setProducts([]); // Clear previous results
 
     try {
-      const results = await searchProducts(query.trim());
+      console.log("Starting search for:", trimmedQuery);
+      const results = await searchProducts(trimmedQuery);
+      console.log("Search completed, results:", results);
       setProducts(results);
+      
+      if (results.length === 0) {
+        setError("No products found. Try a different search term.");
+      }
     } catch (err) {
       console.error("Search error:", err);
-      setError("Failed to search products. Please try again.");
+      setError(err instanceof Error ? err.message : "Failed to search products. Please try again.");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter" && !loading) {
+      e.preventDefault();
       handleSearch();
     }
   };
@@ -53,7 +65,7 @@ export function Shopping() {
                 placeholder="Search for clothing (e.g., 'black jacket', 'summer dress')"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                onKeyPress={handleKeyPress}
+                onKeyDown={handleKeyDown}
                 className="pl-10 rounded-full border-neutral-300"
                 disabled={loading}
               />
@@ -131,12 +143,24 @@ export function Shopping() {
                         alt={product.name}
                         className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
                         loading="lazy"
+                        onError={(e) => {
+                          // If image fails to load, try to construct a fallback from the product URL
+                          console.warn('Image failed to load:', product.image);
+                          const target = e.target as HTMLImageElement;
+                          // Hide broken image and show placeholder
+                          target.style.display = 'none';
+                          const placeholder = target.parentElement?.querySelector('.image-placeholder') as HTMLElement;
+                          if (placeholder) {
+                            placeholder.style.display = 'flex';
+                          }
+                        }}
                       />
-                    ) : (
-                      <div className="flex h-full w-full items-center justify-center">
-                        <ShoppingCart className="h-12 w-12 text-neutral-300" />
-                      </div>
-                    )}
+                    ) : null}
+                    <div 
+                      className={`image-placeholder flex h-full w-full items-center justify-center ${product.image ? 'hidden' : ''}`}
+                    >
+                      <ShoppingCart className="h-12 w-12 text-neutral-300" />
+                    </div>
 
                     {/* Store Badge */}
                     <div className="absolute left-2 top-2">
