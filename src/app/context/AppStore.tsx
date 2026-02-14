@@ -28,6 +28,7 @@ import {
   getPost,
   getFollowing,
   getCurrentProfile,
+  ensureProfile,
   followUser,
   unfollowUser,
   getProfile,
@@ -69,6 +70,7 @@ type AppStoreActions = {
   getUser: (id: string) => UIUser | null;
   loadUser: (id: string) => Promise<void>;
   refetchFeed: (filter?: FeedFilter, sort?: FeedSort) => Promise<void>;
+  refetchCurrentUser: () => Promise<void>;
 };
 
 const defaultState: AppStoreState = {
@@ -139,10 +141,14 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     (async () => {
       try {
-        const [saved, followingList, currentProfile] = await Promise.all([
+        let currentProfile = await getCurrentProfile();
+        if (!currentProfile) {
+          await ensureProfile();
+          currentProfile = await getCurrentProfile();
+        }
+        const [saved, followingList] = await Promise.all([
           getSavedPostIds(),
           getFollowing(authUser.id),
-          getCurrentProfile(),
         ]);
         if (cancelled) return;
         setSavedPostIds(saved);
@@ -288,18 +294,24 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   const toggleFollow = useCallback(
     async (userId: string) => {
       if (useApi) {
+        const isCurrentlyFollowing = followingUserIds.has(userId);
+        setFollowingUserIds((prev) => {
+          const next = new Set(prev);
+          if (isCurrentlyFollowing) next.delete(userId);
+          else next.add(userId);
+          return next;
+        });
         try {
-          const isCurrentlyFollowing = followingUserIds.has(userId);
           if (isCurrentlyFollowing) await unfollowUser(userId);
           else await followUser(userId);
-          setFollowingUserIds((prev) => {
-            const next = new Set(prev);
-            if (isCurrentlyFollowing) next.delete(userId);
-            else next.add(userId);
-            return next;
-          });
         } catch (e) {
           console.error("Toggle follow failed:", e);
+          setFollowingUserIds((prev) => {
+            const next = new Set(prev);
+            if (isCurrentlyFollowing) next.add(userId);
+            else next.delete(userId);
+            return next;
+          });
         }
         return;
       }
@@ -394,6 +406,17 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const refetchCurrentUser = useCallback(async () => {
+    if (!useApi || !authUser) return;
+    try {
+      const profile = await getCurrentProfile();
+      const u = apiProfileToUser(profile);
+      if (u) setUsersCache((prev) => ({ ...prev, [authUser.id]: u }));
+    } catch (e) {
+      console.error("Refetch current user failed:", e);
+    }
+  }, [useApi, authUser?.id]);
+
   const value = useMemo(
     () => ({
       posts,
@@ -417,6 +440,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       getUser,
       loadUser,
       refetchFeed,
+      refetchCurrentUser,
     }),
     [
       posts,
@@ -440,6 +464,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       getUser,
       loadUser,
       refetchFeed,
+      refetchCurrentUser,
     ]
   );
 

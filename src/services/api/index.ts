@@ -39,6 +39,7 @@ export {
 // Profiles API
 export {
   getCurrentProfile,
+  ensureProfile,
   getProfile,
   updateProfile,
   followUser,
@@ -47,6 +48,7 @@ export {
   getFollowers,
   getFollowing,
   updateStreak,
+  getDiscoverProfiles,
   searchUsers,
 } from './profiles';
 

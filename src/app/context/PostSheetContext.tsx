@@ -8,6 +8,7 @@ import {
 import { AnimatePresence, motion } from "motion/react";
 import { X } from "lucide-react";
 import { useAppStore } from "./AppStore";
+import { ensurePublicStorageUrl } from "../../lib/adapters";
 import { formatPostTime } from "../data/mockData";
 import {
   ActionRow,
@@ -87,7 +88,7 @@ function PostDetailSheet({
           <div className="flex-1 overflow-y-auto">
             <div className="relative aspect-[4/5] overflow-hidden bg-neutral-50">
               <img
-                src={post.imageUrl}
+                src={ensurePublicStorageUrl(post.imageUrl)}
                 alt={post.caption}
                 className="h-full w-full object-cover"
               />
