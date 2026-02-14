@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { Search, Grid3x3, List } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useAppStore } from "../context/AppStore";
@@ -10,6 +10,8 @@ import { UserCard } from "./feed";
 import { Input } from "./ui/input";
 import { Skeleton } from "./ui/skeleton";
 import { Button } from "./ui/button";
+import { getFollowing, getFollowers, searchUsers } from "../../services/api";
+import { apiProfileToUser, type UIUser } from "../../lib/adapters";
 
 type ViewMode = "list" | "grid";
 const TAB_ORDER = ["following", "followers", "discover"] as const;
@@ -56,7 +58,52 @@ export function Community() {
   const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [tab, setTab] = useState<(typeof TAB_ORDER)[number]>("discover");
   const slideDirectionRef = useRef(0);
-  const { followingUserIds, isFollowing, toggleFollow, posts } = useAppStore();
+  const { followingUserIds, isFollowing, toggleFollow, posts, isUsingApi, currentUserId } = useAppStore();
+  const [followingList, setFollowingList] = useState<UIUser[]>([]);
+  const [followersList, setFollowersList] = useState<UIUser[]>([]);
+  const [discoverList, setDiscoverList] = useState<UIUser[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!isUsingApi || !currentUserId) return;
+    let cancelled = false;
+    setLoading(true);
+    Promise.all([
+      getFollowing(currentUserId),
+      getFollowers(currentUserId),
+    ])
+      .then(([followingProfiles, followerProfiles]) => {
+        if (cancelled) return;
+        setFollowingList(followingProfiles.map(apiProfileToUser).filter((u): u is UIUser => u !== null));
+        setFollowersList(followerProfiles.map(apiProfileToUser).filter((u): u is UIUser => u !== null));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isUsingApi, currentUserId]);
+
+  useEffect(() => {
+    if (!isUsingApi) return;
+    if (!search.trim()) {
+      setDiscoverList([]);
+      return;
+    }
+    let cancelled = false;
+    searchUsers(search)
+      .then((profiles) => {
+        if (cancelled) return;
+        setDiscoverList(profiles.map(apiProfileToUser).filter((u): u is UIUser => u !== null));
+      })
+      .catch(() => {
+        if (!cancelled) setDiscoverList([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isUsingApi, search]);
 
   const handleTabChange = (value: string) => {
     const newIndex = TAB_ORDER.indexOf(value as (typeof TAB_ORDER)[number]);
@@ -65,26 +112,31 @@ export function Community() {
     setTab(value as (typeof TAB_ORDER)[number]);
   };
 
-  const following = mockUsers.filter((u) => u.id !== "me" && followingUserIds.has(u.id));
-  const followers = mockUsers.filter((u) => u.id !== "me").slice(0, 6);
-  const discover = mockUsers.filter((u) => u.id !== "me");
+  const following = isUsingApi
+    ? followingList
+    : mockUsers.filter((u) => u.id !== "me" && followingUserIds.has(u.id));
+  const followers = isUsingApi
+    ? followersList.slice(0, 6)
+    : mockUsers.filter((u) => u.id !== "me").slice(0, 6);
+  const discover = isUsingApi
+    ? (search.trim() ? discoverList : [])
+    : mockUsers.filter((u) => u.id !== "me");
 
   const filteredDiscover = useMemo(() => {
+    if (isUsingApi) return discover;
     if (!search.trim()) return discover;
     const q = search.toLowerCase();
     return discover.filter(
       (u) =>
         u.name.toLowerCase().includes(q) ||
         u.handle.toLowerCase().includes(q) ||
-        u.bio.toLowerCase().includes(q) ||
-        u.vibes.some((v) => v.toLowerCase().includes(q))
+        (u.bio && u.bio.toLowerCase().includes(q)) ||
+        (u.vibes && u.vibes.some((v) => v.toLowerCase().includes(q)))
     );
-  }, [discover, search]);
+  }, [isUsingApi, discover, search]);
 
   const getRecentOotdUrls = (userId: string) =>
     posts.filter((p) => p.userId === userId).slice(0, 4).map((p) => p.imageUrl);
-
-  const [loading] = useState(false);
 
   const renderUserList = (users: typeof discover, emptyMessage: string) => {
     if (loading) {
@@ -152,22 +204,20 @@ export function Community() {
                 <button
                   type="button"
                   onClick={() => setViewMode("list")}
-                  className={`flex h-9 w-9 items-center justify-center rounded-lg transition-all duration-200 ${
-                    viewMode === "list"
+                  className={`flex h-9 w-9 items-center justify-center rounded-lg transition-all duration-200 ${viewMode === "list"
                       ? "bg-neutral-900 text-white"
                       : "text-neutral-400 hover:bg-neutral-100"
-                  }`}
+                    }`}
                 >
                   <List className="h-4 w-4" />
                 </button>
                 <button
                   type="button"
                   onClick={() => setViewMode("grid")}
-                  className={`flex h-9 w-9 items-center justify-center rounded-lg transition-all duration-200 ${
-                    viewMode === "grid"
+                  className={`flex h-9 w-9 items-center justify-center rounded-lg transition-all duration-200 ${viewMode === "grid"
                       ? "bg-neutral-900 text-white"
                       : "text-neutral-400 hover:bg-neutral-100"
-                  }`}
+                    }`}
                 >
                   <Grid3x3 className="h-4 w-4" />
                 </button>

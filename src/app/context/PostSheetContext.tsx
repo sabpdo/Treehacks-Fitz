@@ -8,7 +8,6 @@ import {
 import { AnimatePresence, motion } from "motion/react";
 import { X } from "lucide-react";
 import { useAppStore } from "./AppStore";
-import { mockUsers } from "../data/mockData";
 import { formatPostTime } from "../data/mockData";
 import {
   ActionRow,
@@ -18,10 +17,6 @@ import {
 import { Input } from "../components/ui/input";
 import { Button } from "../components/ui/button";
 import { cn } from "../components/ui/utils";
-
-function getUser(id: string) {
-  return mockUsers.find((u) => u.id === id);
-}
 
 type PostSheetContextValue = {
   openPost: (postId: string) => void;
@@ -43,7 +38,7 @@ function PostDetailSheet({
   postId: string;
   onClose: () => void;
 }) {
-  const { posts, getCommentsForPost, isSaved, isLiked, toggleSave, toggleLike, addComment } =
+  const { posts, getCommentsForPost, isSaved, isLiked, toggleSave, toggleLike, addComment, getUser } =
     useAppStore();
   const [commentText, setCommentText] = useState("");
 
@@ -133,7 +128,7 @@ function PostDetailSheet({
               commentCount={post.commentCount}
               onLike={() => toggleLike(post.id)}
               onSave={() => toggleSave(post.id)}
-              onComment={() => {}}
+              onComment={() => { }}
             />
 
             <div className="border-t border-neutral-200/60 px-4 py-4">

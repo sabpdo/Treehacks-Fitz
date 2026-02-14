@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router";
 import { ArrowLeft, ChevronDown } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
@@ -12,21 +12,20 @@ type SortOption = "recent" | "most_liked";
 
 export function AllOOTDs() {
   const navigate = useNavigate();
-  const { posts, savedPostIds, followingUserIds } = useAppStore();
+  const { posts, savedPostIds, followingUserIds, refetchFeed, feedLoading, isUsingApi } = useAppStore();
   const [filter, setFilter] = useState<FilterTab>("following");
   const [sort, setSort] = useState<SortOption>("recent");
   const [sortOpen, setSortOpen] = useState(false);
-  const [loading] = useState(false);
+
+  useEffect(() => {
+    refetchFeed(filter, sort);
+  }, [filter, sort, refetchFeed]);
 
   const filtered = (() => {
-    if (filter === "saved") {
-      return posts.filter((p) => savedPostIds.has(p.id));
-    }
-    if (filter === "following") {
-      return posts.filter((p) => followingUserIds.has(p.userId));
-    }
-    if (filter === "trending") {
-      return [...posts].sort((a, b) => b.likeCount - a.likeCount);
+    if (!isUsingApi) {
+      if (filter === "saved") return posts.filter((p) => savedPostIds.has(p.id));
+      if (filter === "following") return posts.filter((p) => followingUserIds.has(p.userId));
+      if (filter === "trending") return [...posts].sort((a, b) => b.likeCount - a.likeCount);
     }
     return posts;
   })();
@@ -35,8 +34,8 @@ export function AllOOTDs() {
     sort === "most_liked"
       ? [...filtered].sort((a, b) => b.likeCount - a.likeCount)
       : [...filtered].sort(
-          (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-        );
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
 
   return (
     <div className="min-h-screen bg-[#FAFAF8]">
@@ -154,7 +153,7 @@ export function AllOOTDs() {
 
       {/* Scrollable feed — single column, Beli/BeReal style */}
       <main className="mx-auto max-w-lg px-4 pb-24">
-        {loading ? (
+        {feedLoading ? (
           <div className="space-y-5 pt-2">
             {[1, 2, 3, 4, 5, 6].map((i) => (
               <Skeleton key={i} className="aspect-[4/5] w-full rounded-2xl" />

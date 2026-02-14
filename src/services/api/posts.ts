@@ -1,15 +1,51 @@
 import { supabase } from '../../lib/supabase';
 import { Post, CreatePostRequest, Comment } from '../../types/database';
 
+export type FeedFilter = 'following' | 'trending' | 'saved';
+export type FeedSort = 'recent' | 'most_liked';
+
+async function enrichPostsWithLikeAndSave(
+  posts: any[],
+  userId: string
+): Promise<Post[]> {
+  if (posts.length === 0) return [];
+
+  const postIds = posts.map((p) => p.id);
+
+  const [likesRes, savesRes] = await Promise.all([
+    supabase.from('likes').select('post_id').eq('user_id', userId).in('post_id', postIds),
+    supabase.from('saves').select('post_id').eq('user_id', userId).in('post_id', postIds),
+  ]);
+
+  const likedSet = new Set((likesRes.data || []).map((r) => r.post_id));
+  const savedSet = new Set((savesRes.data || []).map((r) => r.post_id));
+
+  return posts.map((post) => ({
+    ...post,
+    is_liked: likedSet.has(post.id),
+    is_saved: savedSet.has(post.id),
+    items: post.items?.map((pi: any) => pi.closet_item) || [],
+  }));
+}
+
 /**
- * Get feed posts (posts from followed users + own posts)
+ * Get feed posts with optional filter and sort
+ * @param filter - 'following' (default), 'trending', or 'saved'
+ * @param sort - 'recent' (default) or 'most_liked'
  */
-export async function getFeedPosts(limit: number = 20, offset: number = 0): Promise<Post[]> {
+export async function getFeedPosts(
+  limit: number = 20,
+  offset: number = 0,
+  filter: FeedFilter = 'following',
+  sort: FeedSort = 'recent'
+): Promise<Post[]> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
 
-  // Get posts from followed users + own posts
-  const { data, error } = await supabase
+  const orderBy = sort === 'most_liked' ? 'likes_count' : 'created_at';
+  const ascending = sort === 'most_liked';
+
+  let query = supabase
     .from('posts')
     .select(`
       *,
@@ -17,34 +53,92 @@ export async function getFeedPosts(limit: number = 20, offset: number = 0): Prom
       items:post_items(
         closet_item:closet_items(*)
       )
-    `)
-    .or(`user_id.eq.${user.id},user_id.in.(
-      select following_id from follows where follower_id = '${user.id}'
-    )`)
-    .order('created_at', { ascending: false })
-    .range(offset, offset + limit - 1);
+    `);
+
+  if (filter === 'saved') {
+    const { data: savedRows } = await supabase
+      .from('saves')
+      .select('post_id')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    const savedPostIds = (savedRows || []).map((r) => r.post_id);
+    if (savedPostIds.length === 0) return [];
+
+    query = query.in('id', savedPostIds);
+  } else if (filter === 'trending') {
+    query = query.order(orderBy, { ascending }).range(offset, offset + limit - 1);
+  } else {
+    // following: posts from followed users + own posts
+    query = query
+      .or(`user_id.eq.${user.id},user_id.in.(
+        select following_id from follows where follower_id = '${user.id}'
+      )`)
+      .order(orderBy, { ascending })
+      .range(offset, offset + limit - 1);
+  }
+
+  const { data, error } = await query;
 
   if (error) throw error;
 
-  // Check if current user liked each post
-  const postsWithLikes = await Promise.all(
-    (data || []).map(async (post) => {
-      const { data: like } = await supabase
-        .from('likes')
-        .select('id')
-        .eq('user_id', user.id)
-        .eq('post_id', post.id)
-        .single();
+  let list = data || [];
+  if (filter === 'saved') {
+    list = list.sort((a: any, b: any) => {
+      if (sort === 'most_liked') return (b.likes_count ?? 0) - (a.likes_count ?? 0);
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
+  }
 
-      return {
-        ...post,
-        is_liked: !!like,
-        items: post.items?.map((pi: any) => pi.closet_item) || [],
-      };
-    })
-  );
+  return enrichPostsWithLikeAndSave(list, user.id);
+}
 
-  return postsWithLikes;
+/**
+ * Save (bookmark) a post
+ */
+export async function savePost(postId: string): Promise<void> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
+  const { error } = await supabase.from('saves').insert({
+    user_id: user.id,
+    post_id: postId,
+  });
+
+  if (error) throw error;
+}
+
+/**
+ * Unsave (remove bookmark) a post
+ */
+export async function unsavePost(postId: string): Promise<void> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
+  const { error } = await supabase
+    .from('saves')
+    .delete()
+    .eq('user_id', user.id)
+    .eq('post_id', postId);
+
+  if (error) throw error;
+}
+
+/**
+ * Get IDs of posts the current user has saved
+ */
+export async function getSavedPostIds(): Promise<Set<string>> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return new Set();
+
+  const { data, error } = await supabase
+    .from('saves')
+    .select('post_id')
+    .eq('user_id', user.id);
+
+  if (error) throw error;
+  return new Set((data || []).map((r) => r.post_id));
 }
 
 /**
@@ -92,21 +186,22 @@ export async function getPost(postId: string): Promise<Post | null> {
   if (error) throw error;
   if (!data) return null;
 
-  // Check if liked
+  // Check if liked and saved
   let is_liked = false;
+  let is_saved = false;
   if (user) {
-    const { data: like } = await supabase
-      .from('likes')
-      .select('id')
-      .eq('user_id', user.id)
-      .eq('post_id', postId)
-      .single();
-    is_liked = !!like;
+    const [likeRes, saveRes] = await Promise.all([
+      supabase.from('likes').select('id').eq('user_id', user.id).eq('post_id', postId).single(),
+      supabase.from('saves').select('id').eq('user_id', user.id).eq('post_id', postId).single(),
+    ]);
+    is_liked = !!likeRes.data;
+    is_saved = !!saveRes.data;
   }
 
   return {
     ...data,
     is_liked,
+    is_saved,
     items: data.items?.map((pi: any) => pi.closet_item) || [],
   };
 }
@@ -266,9 +361,6 @@ export async function addComment(postId: string, content: string): Promise<Comme
 
   if (error) throw error;
 
-  // Update comments count
-  await supabase.rpc('increment_comments_count', { post_id: postId });
-
   return data;
 }
 
@@ -282,7 +374,4 @@ export async function deleteComment(commentId: string, postId: string): Promise<
     .eq('id', commentId);
 
   if (error) throw error;
-
-  // Update comments count
-  await supabase.rpc('decrement_comments_count', { post_id: postId });
 }

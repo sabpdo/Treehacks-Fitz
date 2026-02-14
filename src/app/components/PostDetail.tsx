@@ -1,8 +1,8 @@
+import React, { useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router";
 import { ArrowLeft } from "lucide-react";
 import { motion } from "motion/react";
 import { useAppStore } from "../context/AppStore";
-import { mockUsers } from "../data/mockData";
 import { formatPostTime } from "../data/mockData";
 import {
   ActionRow,
@@ -11,20 +11,62 @@ import {
 } from "./feed";
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
-import { useState } from "react";
 import { cn } from "./ui/utils";
-
-function getUser(id: string) {
-  return mockUsers.find((u) => u.id === id);
-}
+import { getPost } from "../../services/api";
+import { apiPostToOOTDPost } from "../../lib/adapters";
 
 export function PostDetail() {
   const { postId } = useParams<{ postId: string }>();
   const navigate = useNavigate();
-  const { posts, getCommentsForPost, isSaved, isLiked, toggleSave, toggleLike, addComment } = useAppStore();
+  const {
+    posts,
+    getCommentsForPost,
+    loadCommentsForPost,
+    isSaved,
+    isLiked,
+    toggleSave,
+    toggleLike,
+    addComment,
+    getUser,
+    currentUserId,
+  } = useAppStore();
   const [commentText, setCommentText] = useState("");
+  const [fetchedPost, setFetchedPost] = useState<ReturnType<typeof apiPostToOOTDPost> | null>(null);
+  const [loading, setLoading] = useState(!!postId);
 
-  const post = posts.find((p) => p.id === postId);
+  const postFromStore = posts.find((p) => p.id === postId);
+  const post = postFromStore ?? fetchedPost;
+
+  useEffect(() => {
+    if (!postId) return;
+    if (postFromStore) {
+      loadCommentsForPost(postId);
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    getPost(postId)
+      .then((apiPost) => {
+        if (cancelled || !apiPost) return;
+        setFetchedPost(apiPostToOOTDPost(apiPost, currentUserId));
+        return loadCommentsForPost(postId);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [postId, postFromStore, currentUserId, loadCommentsForPost]);
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-[#FAFAF8]">
+        <p className="text-neutral-500">Loading...</p>
+      </div>
+    );
+  }
+
   if (!post) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-[#FAFAF8]">
@@ -109,7 +151,7 @@ export function PostDetail() {
           commentCount={post.commentCount}
           onLike={() => toggleLike(post.id)}
           onSave={() => toggleSave(post.id)}
-          onComment={() => {}}
+          onComment={() => { }}
         />
 
         <div className="border-t border-neutral-200/60 px-4 py-4">

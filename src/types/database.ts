@@ -76,6 +76,7 @@ export interface Post {
   user?: Profile;
   items?: ClosetItem[];
   is_liked?: boolean;
+  is_saved?: boolean;
   compatibility_score?: number;
 }
 

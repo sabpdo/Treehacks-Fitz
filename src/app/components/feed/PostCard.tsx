@@ -2,17 +2,12 @@ import { Link } from "react-router";
 import { motion } from "motion/react";
 import { Bookmark } from "lucide-react";
 import { formatPostTime } from "../../data/mockData";
-import { mockUsers } from "../../data/mockData";
-import type { OOTDPost, User } from "../../data/mockData";
+import type { OOTDPost } from "../../data/mockData";
 import { useAppStore } from "../../context/AppStore";
 import { Badge } from "./Badge";
 import { cn } from "../ui/utils";
 
 const MotionLink = motion(Link);
-
-function getUser(id: string): User | undefined {
-  return mockUsers.find((u) => u.id === id);
-}
 
 type PostCardProps = {
   post: OOTDPost;
@@ -30,9 +25,9 @@ export function PostCard({
   showFeedMeta = false,
   className,
 }: PostCardProps) {
+  const { getUser, getCommentsForPost, isSaved, toggleSave } = useAppStore();
   const user = getUser(post.userId);
   const score = compatibilityScore ?? post.compatibilityScore;
-  const { getCommentsForPost, isSaved, toggleSave } = useAppStore();
 
   const comments = showFeedMeta ? getCommentsForPost(post.id) : [];
   const firstComment = comments[0];

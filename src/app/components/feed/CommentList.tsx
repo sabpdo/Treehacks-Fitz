@@ -1,13 +1,10 @@
 import { formatPostTime } from "../../data/mockData";
-import { mockUsers } from "../../data/mockData";
-import type { Comment as CommentType, User } from "../../data/mockData";
+import type { Comment as CommentType } from "../../data/mockData";
+import { useAppStore } from "../../context/AppStore";
 import { cn } from "../ui/utils";
 
-function getUser(id: string): User | undefined {
-  return mockUsers.find((u) => u.id === id);
-}
-
 function CommentItem({ comment }: { comment: CommentType }) {
+  const { getUser } = useAppStore();
   const user = getUser(comment.userId);
   return (
     <div className="flex gap-3 py-3">

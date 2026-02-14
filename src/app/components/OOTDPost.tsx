@@ -7,14 +7,26 @@ import { CURRENT_USER_ID, presetGalleryImages } from "../data/mockData";
 import type { OOTDPost } from "../data/mockData";
 import { cn } from "./ui/utils";
 import { createItemsFromOutfitPhoto } from "../../services/api/closet";
+import { createPost, uploadImage } from "../../services/api";
+import { apiPostToOOTDPost } from "../../lib/adapters";
 import { MultiItemRankingFlow } from "./MultiItemRankingFlow";
 import type { AIImageAnalysis } from "../../types/database";
+
+function dataURLtoFile(dataUrl: string, filename: string): File {
+  const arr = dataUrl.split(",");
+  const mime = (arr[0].match(/:(.*?);/) || [])[1] || "image/png";
+  const bstr = atob(arr[1] || "");
+  let n = bstr.length;
+  const u8arr = new Uint8Array(n);
+  while (n--) u8arr[n] = bstr.charCodeAt(n);
+  return new File([u8arr], filename, { type: mime });
+}
 
 const VIBE_OPTIONS = ["Date night", "Casual", "Work", "Grunge", "Cafe study"];
 
 export function OOTDPost() {
   const navigate = useNavigate();
-  const { addPost } = useAppStore();
+  const { addPost, isUsingApi, currentUserId } = useAppStore();
   const [caption, setCaption] = useState("");
   const [vibeTag, setVibeTag] = useState("");
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -56,8 +68,24 @@ export function OOTDPost() {
     }
   };
 
-  const handleRankingComplete = () => {
-    // After ranking is complete, create the OOTD post
+  const handleRankingComplete = async () => {
+    if (isUsingApi && selectedImage) {
+      try {
+        const file = dataURLtoFile(selectedImage, "ootd.jpg");
+        const imageUrl = await uploadImage(file);
+        const apiPost = await createPost({
+          image_url: imageUrl,
+          caption: caption.trim(),
+          item_ids: createdItemIds.length > 0 ? createdItemIds : undefined,
+        });
+        addPost(apiPostToOOTDPost(apiPost, currentUserId));
+        navigate("/");
+      } catch (e) {
+        console.error("Create post failed:", e);
+        setError("Failed to create post. Please try again.");
+      }
+      return;
+    }
     const now = new Date().toISOString();
     const newPost: OOTDPost = {
       id: `p-${Date.now()}`,

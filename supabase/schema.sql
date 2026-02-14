@@ -308,3 +308,47 @@ DROP TRIGGER IF EXISTS on_follow_change ON follows;
 CREATE TRIGGER on_follow_change
   AFTER INSERT OR DELETE ON follows
   FOR EACH ROW EXECUTE FUNCTION public.handle_follow_counts();
+
+-- =====================================================
+-- SAVES TABLE (saved posts / bookmarks)
+-- =====================================================
+CREATE TABLE IF NOT EXISTS saves (
+  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  user_id UUID REFERENCES profiles(id) ON DELETE CASCADE NOT NULL,
+  post_id UUID REFERENCES posts(id) ON DELETE CASCADE NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
+  UNIQUE(user_id, post_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_saves_user_id ON saves(user_id);
+CREATE INDEX IF NOT EXISTS idx_saves_post_id ON saves(post_id);
+
+ALTER TABLE saves ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Saves viewable by everyone"
+  ON saves FOR SELECT USING (true);
+
+CREATE POLICY "Users can insert own saves"
+  ON saves FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete own saves"
+  ON saves FOR DELETE USING (auth.uid() = user_id);
+
+-- Function to update post comments count
+CREATE OR REPLACE FUNCTION public.handle_post_comments_count()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    UPDATE posts SET comments_count = comments_count + 1 WHERE id = NEW.post_id;
+  ELSIF TG_OP = 'DELETE' THEN
+    UPDATE posts SET comments_count = comments_count - 1 WHERE id = OLD.post_id;
+  END IF;
+  RETURN NULL;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Trigger for comments count
+DROP TRIGGER IF EXISTS on_comment_change ON comments;
+CREATE TRIGGER on_comment_change
+  AFTER INSERT OR DELETE ON comments
+  FOR EACH ROW EXECUTE FUNCTION public.handle_post_comments_count();

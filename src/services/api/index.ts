@@ -26,9 +26,14 @@ export {
   deletePost,
   likePost,
   unlikePost,
+  savePost,
+  unsavePost,
+  getSavedPostIds,
   getPostComments,
   addComment,
   deleteComment,
+  type FeedFilter,
+  type FeedSort,
 } from './posts';
 
 // Profiles API

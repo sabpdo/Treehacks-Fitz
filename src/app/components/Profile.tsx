@@ -1,13 +1,8 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { useParams, useNavigate, Link } from "react-router";
 import { Settings, Flame, TrendingUp, ArrowLeft, LogOut } from "lucide-react";
 import { useAppStore } from "../context/AppStore";
-import {
-  currentUserProfile,
-  rankedItems,
-  mockUsers,
-  CURRENT_USER_ID,
-} from "../data/mockData";
+import { currentUserProfile, rankedItems } from "../data/mockData";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "./ui/tabs";
 import { PostGrid, RankingList } from "./feed";
 import { Button } from "./ui/button";
@@ -17,18 +12,20 @@ export function Profile() {
   const { userId } = useParams<{ userId?: string }>();
   const navigate = useNavigate();
   const { signOut } = useAuth();
-  const { posts, savedPostIds, isFollowing, toggleFollow } = useAppStore();
+  const { posts, savedPostIds, isFollowing, toggleFollow, getUser, loadUser, currentUserId } = useAppStore();
 
-  const isOwnProfile = !userId || userId === CURRENT_USER_ID;
-  const profileUser = isOwnProfile
-    ? mockUsers.find((u) => u.id === CURRENT_USER_ID)
-    : mockUsers.find((u) => u.id === userId);
+  const isOwnProfile = !userId || userId === currentUserId;
+  const profileUser = getUser(userId ?? currentUserId);
+
+  useEffect(() => {
+    if (userId && !profileUser) loadUser(userId);
+  }, [userId, profileUser, loadUser]);
 
   const displayName = isOwnProfile ? "You" : profileUser?.name ?? "User";
-  const displayHandle = isOwnProfile ? currentUserProfile.username : profileUser?.handle ?? "";
-  const avatarUrl = isOwnProfile ? currentUserProfile.userAvatar : profileUser?.avatarUrl ?? "";
-  const followerCount = isOwnProfile ? currentUserProfile.followers : profileUser?.followerCount ?? 0;
-  const followingCount = isOwnProfile ? currentUserProfile.following : profileUser?.followingCount ?? 0;
+  const displayHandle = isOwnProfile ? (profileUser?.handle || currentUserProfile.username) : (profileUser?.handle ?? "");
+  const avatarUrl = isOwnProfile ? (profileUser?.avatarUrl || currentUserProfile.userAvatar) : (profileUser?.avatarUrl ?? "");
+  const followerCount = isOwnProfile ? (profileUser?.followerCount ?? currentUserProfile.followers) : (profileUser?.followerCount ?? 0);
+  const followingCount = isOwnProfile ? (profileUser?.followingCount ?? currentUserProfile.following) : (profileUser?.followingCount ?? 0);
   const streak = isOwnProfile ? currentUserProfile.streak : 5;
   const closetUtilization = isOwnProfile ? currentUserProfile.closetUtilization : 68;
 

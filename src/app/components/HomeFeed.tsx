@@ -1,12 +1,16 @@
+import { useEffect } from "react";
 import { Link } from "react-router";
 import { Camera, Flame, Sparkles, ChevronRight, TrendingUp } from "lucide-react";
 import { motion } from "motion/react";
 import { useAppStore } from "../context/AppStore";
 import { PostGrid } from "./feed";
-import { mockOOTDPosts, mockUsers } from "../data/mockData";
 
 export function HomeFeed() {
-  const { posts, followingUserIds } = useAppStore();
+  const { posts, followingUserIds, refetchFeed, getUser } = useAppStore();
+
+  useEffect(() => {
+    refetchFeed("following", "recent");
+  }, [refetchFeed]);
   const todayDate = new Date().toLocaleDateString("en-US", {
     weekday: "long",
     month: "long",
@@ -99,9 +103,9 @@ export function HomeFeed() {
           </div>
 
           <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-hide">
-            {mockOOTDPosts.slice(0, 4).map((post, index) => {
-              const compatibility = 91 - index * 4;
-              const poster = mockUsers.find((u) => u.id === post.userId);
+            {posts.slice(0, 4).map((post, index) => {
+              const compatibility = post.compatibilityScore || 91 - index * 4;
+              const poster = getUser(post.userId);
               const insights = [
                 "Matches your neutral palette preference",
                 "Similar silhouette to your saved looks",
