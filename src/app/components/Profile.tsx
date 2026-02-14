@@ -35,6 +35,7 @@ export function Profile() {
     currentUserId,
     isUsingApi,
     refetchCurrentUser,
+    removePost,
   } = useAppStore();
 
   const [editOpen, setEditOpen] = useState(false);
@@ -284,7 +285,10 @@ export function Profile() {
               )}
               <div className="flex-1">
                 <h2 className="mb-1 text-xl font-medium text-neutral-900">{displayName}</h2>
-                <p className="mb-3 text-sm text-neutral-500">@{displayHandle}</p>
+                <p className="mb-1 text-sm text-neutral-500">@{displayHandle}</p>
+                {(profileUser?.bio ?? "").trim() ? (
+                  <p className="mb-3 text-sm text-neutral-600">{profileUser?.bio?.trim()}</p>
+                ) : null}
                 <div className="flex gap-6 text-sm">
                   <div>
                     <span className="block text-lg text-neutral-900">{followerCount}</span>
@@ -356,7 +360,7 @@ export function Profile() {
             <TabsTrigger value="saved" className="flex-1 rounded-lg">Saved</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="ootds" className="mt-0">
+          <TabsContent value="ootds" className="mt-0 w-full data-[state=inactive]:hidden" forceMount>
             {userPosts.length === 0 ? (
               <div className="flex min-h-[200px] flex-col items-center justify-center rounded-2xl border border-neutral-200/60 bg-white/50 py-12 text-center">
                 <p className="text-sm text-neutral-500">
@@ -369,13 +373,19 @@ export function Profile() {
                 )}
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
-                <PostGrid posts={userPosts} compact={false} columns={3} />
+              <div className="w-full">
+                <PostGrid
+                  posts={userPosts}
+                  compact={false}
+                  columns={3}
+                  showDelete={isOwnProfile}
+                  onDelete={removePost}
+                />
               </div>
             )}
           </TabsContent>
 
-          <TabsContent value="rankings" className="mt-0">
+          <TabsContent value="rankings" className="mt-0 w-full data-[state=inactive]:hidden" forceMount>
             {isOwnProfile ? (
               <>
                 {isUsingApi && (
@@ -405,7 +415,7 @@ export function Profile() {
             )}
           </TabsContent>
 
-          <TabsContent value="saved" className="mt-0">
+          <TabsContent value="saved" className="mt-0 w-full data-[state=inactive]:hidden" forceMount>
             {isOwnProfile ? (
               savedPosts.length === 0 ? (
                 <div className="flex min-h-[200px] flex-col items-center justify-center rounded-2xl border border-neutral-200/60 bg-white/50 py-12 text-center">
