@@ -131,7 +131,11 @@ export function HomeFeed() {
                     </div>
                     <div className="p-4">
                       <div className="mb-3 flex items-center justify-between">
-                        <div className="flex items-center gap-2">
+                        <Link
+                          to={`/profile/${post.userId}`}
+                          className="flex items-center gap-2 transition-opacity hover:opacity-70"
+                          onClick={(e) => e.stopPropagation()}
+                        >
                           <img
                             src={poster?.avatarUrl ?? ""}
                             alt=""
@@ -140,7 +144,7 @@ export function HomeFeed() {
                           <p className="text-xs text-neutral-900">
                             {poster?.handle ?? post.userId}
                           </p>
-                        </div>
+                        </Link>
                         <div className="rounded-full bg-[#8B9B8E]/10 px-2.5 py-0.5">
                           <p className="text-xs text-[#8B9B8E]">{compatibility}%</p>
                         </div>

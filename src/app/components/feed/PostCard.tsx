@@ -68,14 +68,18 @@ export function PostCard({
       </div>
       <div className="p-4">
         <div className="mb-2 flex items-center justify-between">
-          <div className="flex items-center gap-2">
+          <Link
+            to={`/profile/${post.userId}`}
+            className="flex items-center gap-2 transition-opacity hover:opacity-70"
+            onClick={(e) => e.stopPropagation()}
+          >
             <img
               src={user?.avatarUrl ?? ""}
               alt={user?.name ?? ""}
               className="h-6 w-6 rounded-full object-cover"
             />
             <p className="text-xs font-medium text-neutral-900">{user?.name ?? user?.handle}</p>
-          </div>
+          </Link>
         </div>
         <p className="text-[10px] text-neutral-400">{formatPostTime(post.createdAt)}</p>
         {post.caption && !showFeedMeta && (
@@ -134,7 +138,13 @@ export function PostCard({
           )}
         </div>
         <div className="p-3">
-          <p className="text-xs font-medium text-neutral-900">{user?.name ?? user?.handle}</p>
+          <Link
+            to={`/profile/${post.userId}`}
+            className="block transition-opacity hover:opacity-70"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="text-xs font-medium text-neutral-900">{user?.name ?? user?.handle}</p>
+          </Link>
           <p className="text-[10px] text-neutral-400">{formatPostTime(post.createdAt)}</p>
         </div>
       </>

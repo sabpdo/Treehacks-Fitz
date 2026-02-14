@@ -1,4 +1,4 @@
-import { useParams, useNavigate } from "react-router";
+import { useParams, useNavigate, Link } from "react-router";
 import { ArrowLeft } from "lucide-react";
 import { motion } from "motion/react";
 import { useAppStore } from "../context/AppStore";
@@ -73,7 +73,10 @@ export function PostDetail() {
 
         <div className="border-b border-neutral-200/60 px-4 py-3">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
+            <Link
+              to={`/profile/${post.userId}`}
+              className="flex items-center gap-3 transition-opacity hover:opacity-70"
+            >
               <img
                 src={user?.avatarUrl ?? ""}
                 alt={user?.name ?? ""}
@@ -83,7 +86,7 @@ export function PostDetail() {
                 <p className="font-medium text-neutral-900">{user?.name ?? user?.handle}</p>
                 <p className="text-xs text-neutral-400">{formatPostTime(post.createdAt)}</p>
               </div>
-            </div>
+            </Link>
             <Badge variant="accent">{post.compatibilityScore}%</Badge>
           </div>
           {post.caption && (
