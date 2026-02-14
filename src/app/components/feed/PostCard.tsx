@@ -1,13 +1,15 @@
-import { Link } from "react-router";
+import { useState } from "react";
+import { Link, useNavigate } from "react-router";
 import { motion } from "motion/react";
-import { Bookmark } from "lucide-react";
+import { Bookmark, ImageOff } from "lucide-react";
 import { formatPostTime } from "../../data/mockData";
 import type { OOTDPost } from "../../data/mockData";
 import { useAppStore } from "../../context/AppStore";
+import { ensurePublicStorageUrl, DEFAULT_AVATAR } from "../../../lib/adapters";
 import { Badge } from "./Badge";
 import { cn } from "../ui/utils";
 
-const MotionLink = motion(Link);
+const MotionDiv = motion.div;
 
 type PostCardProps = {
   post: OOTDPost;
@@ -25,6 +27,7 @@ export function PostCard({
   showFeedMeta = false,
   className,
 }: PostCardProps) {
+  const navigate = useNavigate();
   const { getUser, getCommentsForPost, isSaved, toggleSave } = useAppStore();
   const user = getUser(post.userId);
   const score = compatibilityScore ?? post.compatibilityScore;
@@ -33,6 +36,7 @@ export function PostCard({
   const firstComment = comments[0];
   const commentPreview = firstComment?.text;
   const saved = showFeedMeta && isSaved(post.id);
+  const [imageError, setImageError] = useState(false);
 
   const baseClass = cn(
     "group block overflow-hidden rounded-xl border border-neutral-200/60 bg-white shadow-sm transition-all duration-300 hover:border-neutral-300 hover:shadow-md active:scale-[0.995]",
@@ -41,12 +45,26 @@ export function PostCard({
 
   const cardContent = (
     <>
-      <div className="relative aspect-[4/5] overflow-hidden bg-neutral-50">
-        <img
-          src={post.imageUrl}
-          alt={post.caption}
-          className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-        />
+      <div className="relative aspect-[4/5] min-h-[200px] overflow-hidden bg-neutral-100">
+        {imageError ? (
+          <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-neutral-400">
+            <ImageOff className="h-10 w-10" />
+            <span className="text-xs">Image unavailable</span>
+          </div>
+        ) : (
+          <img
+            src={ensurePublicStorageUrl(post.imageUrl)}
+            alt={post.caption || "Post"}
+            className="h-full w-full object-cover object-center transition-transform duration-500 group-hover:scale-105"
+            loading="lazy"
+            decoding="async"
+            onError={(e) => {
+              setImageError(true);
+              const src = (e.target as HTMLImageElement)?.src;
+              if (src) console.warn("[PostCard] Image failed to load:", src);
+            }}
+          />
+        )}
         {score != null && (
           <div className="absolute left-3 top-3">
             <Badge variant="accent">{score}%</Badge>
@@ -61,7 +79,7 @@ export function PostCard({
             onClick={(e) => e.stopPropagation()}
           >
             <img
-              src={user?.avatarUrl ?? ""}
+              src={user?.avatarUrl ? ensurePublicStorageUrl(user.avatarUrl) : DEFAULT_AVATAR}
               alt={user?.name ?? ""}
               className="h-6 w-6 rounded-full object-cover"
             />
@@ -109,15 +127,42 @@ export function PostCard({
     </>
   );
 
+  const handleCardClick = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest('a, button')) return;
+    navigate(`/post/${post.id}`);
+  };
+
   if (compact) {
     return (
-      <MotionLink to={`/post/${post.id}`} className={baseClass} whileTap={{ scale: 0.995 }} transition={{ duration: 0.2 }}>
-        <div className="relative aspect-square overflow-hidden bg-neutral-50">
-          <img
-            src={post.imageUrl}
-            alt={post.caption}
-            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-          />
+      <MotionDiv
+        role="button"
+        tabIndex={0}
+        onClick={handleCardClick}
+        onKeyDown={(e) => e.key === 'Enter' && handleCardClick(e as unknown as React.MouseEvent)}
+        className={cn(baseClass, 'cursor-pointer')}
+        whileTap={{ scale: 0.995 }}
+        transition={{ duration: 0.2 }}
+      >
+        <div className="relative aspect-square min-h-[140px] overflow-hidden bg-neutral-100">
+          {imageError ? (
+            <div className="flex h-full w-full flex-col items-center justify-center gap-1 text-neutral-400">
+              <ImageOff className="h-8 w-8" />
+              <span className="text-[10px]">Unavailable</span>
+            </div>
+          ) : (
+            <img
+              src={ensurePublicStorageUrl(post.imageUrl)}
+              alt={post.caption || "Post"}
+              className="h-full w-full object-cover object-center transition-transform duration-500 group-hover:scale-105"
+              loading="lazy"
+              decoding="async"
+              onError={(e) => {
+                setImageError(true);
+                const src = (e.target as HTMLImageElement)?.src;
+                if (src) console.warn("[PostCard] Image failed to load:", src);
+              }}
+            />
+          )}
           {score != null && (
             <div className="absolute right-2 top-2">
               <Badge variant="accent">{score}%</Badge>
@@ -134,13 +179,21 @@ export function PostCard({
           </Link>
           <p className="text-[10px] text-neutral-400">{formatPostTime(post.createdAt)}</p>
         </div>
-      </MotionLink>
+      </MotionDiv>
     );
   }
 
   return (
-    <MotionLink to={`/post/${post.id}`} className={baseClass} whileTap={{ scale: 0.995 }} transition={{ duration: 0.2 }}>
+    <MotionDiv
+      role="button"
+      tabIndex={0}
+      onClick={handleCardClick}
+      onKeyDown={(e) => e.key === 'Enter' && handleCardClick(e as unknown as React.MouseEvent)}
+      className={cn(baseClass, 'cursor-pointer')}
+      whileTap={{ scale: 0.995 }}
+      transition={{ duration: 0.2 }}
+    >
       {cardContent}
-    </MotionLink>
+    </MotionDiv>
   );
 }

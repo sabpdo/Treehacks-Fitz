@@ -1,16 +1,25 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router";
-import { Camera, Flame, Sparkles, ChevronRight, TrendingUp } from "lucide-react";
+import { Camera, Flame, Sparkles, ChevronRight, TrendingUp, ImageOff } from "lucide-react";
 import { motion } from "motion/react";
 import { useAppStore } from "../context/AppStore";
+import { ensurePublicStorageUrl, DEFAULT_AVATAR } from "../../lib/adapters";
 import { PostGrid } from "./feed";
 
 export function HomeFeed() {
-  const { posts, followingUserIds, refetchFeed, getUser } = useAppStore();
+  const { posts, followingUserIds, refetchFeed, getUser, currentUserId, isUsingApi, refetchCurrentUser } = useAppStore();
+  const [brokenImageIds, setBrokenImageIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     refetchFeed("following", "recent");
   }, [refetchFeed]);
+
+  useEffect(() => {
+    if (isUsingApi && currentUserId) refetchCurrentUser();
+  }, [isUsingApi, currentUserId, refetchCurrentUser]);
+
+  const currentUser = getUser(currentUserId);
+  const streak = isUsingApi ? (currentUser?.streak ?? 0) : 7;
   const todayDate = new Date().toLocaleDateString("en-US", {
     weekday: "long",
     month: "long",
@@ -30,18 +39,18 @@ export function HomeFeed() {
   return (
     <div className="min-h-screen bg-[#FAFAF8]">
       <header className="sticky top-0 z-30 border-b border-neutral-200/60 bg-white/90 backdrop-blur-xl">
-        <div className="mx-auto max-w-5xl px-6 py-4">
+        <div className="mx-auto max-w-5xl px-4 py-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between">
             <h1 className="font-serif text-xl tracking-tight">ClosetRank</h1>
             <div className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-orange-400/10 to-rose-500/10 px-3 py-1">
               <Flame className="h-3 w-3 text-orange-500" />
-              <span className="text-xs text-neutral-700">7 day streak</span>
+              <span className="text-xs text-neutral-700">{streak} day streak</span>
             </div>
           </div>
         </div>
       </header>
 
-      <div className="mx-auto max-w-5xl px-6 pb-12">
+      <div className="mx-auto max-w-5xl px-4 pb-12 sm:px-6 lg:px-8">
         {/* Today's OOTD Prompt */}
         <section className="py-8">
           <div className="mx-auto max-w-md overflow-hidden rounded-2xl border border-neutral-200/60 bg-white shadow-sm">
@@ -106,6 +115,8 @@ export function HomeFeed() {
             {posts.slice(0, 4).map((post, index) => {
               const compatibility = post.compatibilityScore || 91 - index * 4;
               const poster = getUser(post.userId);
+              const imageBroken = brokenImageIds.has(post.id);
+              const imageSrc = ensurePublicStorageUrl(post.imageUrl);
               const insights = [
                 "Matches your neutral palette preference",
                 "Similar silhouette to your saved looks",
@@ -118,12 +129,21 @@ export function HomeFeed() {
                     to={`/post/${post.id}`}
                     className="block w-[280px] overflow-hidden rounded-xl border border-neutral-200/60 bg-white text-left shadow-sm transition-all duration-300 hover:border-neutral-300 hover:shadow-md"
                   >
-                    <div className="relative aspect-[4/5] overflow-hidden bg-neutral-50">
-                      <img
-                        src={post.imageUrl}
-                        alt={post.caption}
-                        className="h-full w-full object-cover"
-                      />
+                    <div className="relative aspect-[4/5] overflow-hidden bg-neutral-100">
+                      {imageBroken || !imageSrc ? (
+                        <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-neutral-400">
+                          <ImageOff className="h-10 w-10" />
+                          <span className="text-xs">Image unavailable</span>
+                        </div>
+                      ) : (
+                        <img
+                          src={imageSrc}
+                          alt={post.caption || "Post"}
+                          className="h-full w-full object-cover object-center"
+                          loading="lazy"
+                          onError={() => setBrokenImageIds((prev) => new Set(prev).add(post.id))}
+                        />
+                      )}
                     </div>
                     <div className="p-4">
                       <div className="mb-3 flex items-center justify-between">
@@ -133,9 +153,10 @@ export function HomeFeed() {
                           onClick={(e) => e.stopPropagation()}
                         >
                           <img
-                            src={poster?.avatarUrl ?? ""}
+                            src={poster?.avatarUrl ? ensurePublicStorageUrl(poster.avatarUrl) : DEFAULT_AVATAR}
                             alt=""
                             className="h-6 w-6 rounded-full object-cover"
+                            onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_AVATAR; }}
                           />
                           <p className="text-xs text-neutral-900">
                             {poster?.handle ?? post.userId}
