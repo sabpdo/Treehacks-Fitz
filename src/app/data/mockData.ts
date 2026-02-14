@@ -379,3 +379,283 @@ export const currentUserProfile = {
   closetUtilization: 73,
   posts: mockPosts.slice(0, 3)
 };
+
+// ——— New mock shape for full app (users, OOTD posts, comments) ———
+
+export interface User {
+  id: string;
+  name: string;
+  handle: string;
+  avatarUrl: string;
+  bio: string;
+  vibes: string[];
+  followerCount: number;
+  followingCount: number;
+}
+
+export interface OOTDPost {
+  id: string;
+  userId: string;
+  imageUrl: string;
+  caption: string;
+  vibeTag: string;
+  createdAt: string; // ISO or "Today 6:32 PM" style
+  likeCount: number;
+  savedCount: number;
+  commentCount: number;
+  likedByUserIds: string[];
+  compatibilityScore: number;
+  aiInsight: string;
+}
+
+export interface Comment {
+  id: string;
+  postId: string;
+  userId: string;
+  text: string;
+  createdAt: string;
+}
+
+export const CURRENT_USER_ID = "me";
+
+export const mockUsers: User[] = [
+  {
+    id: "u1",
+    name: "Sophia Lee",
+    handle: "sophia.style",
+    avatarUrl: "https://i.pravatar.cc/150?img=1",
+    bio: "Minimalist with a soft spot for neutrals",
+    vibes: ["Minimal", "Neutral", "Cafe"],
+    followerCount: 1200,
+    followingCount: 340,
+  },
+  {
+    id: "u2",
+    name: "Emma Chen",
+    handle: "emma.co",
+    avatarUrl: "https://i.pravatar.cc/150?img=5",
+    bio: "Street style & elevated basics",
+    vibes: ["Street", "Casual", "Chic"],
+    followerCount: 890,
+    followingCount: 210,
+  },
+  {
+    id: "u3",
+    name: "Olivia Ward",
+    handle: "olivia.wardrobe",
+    avatarUrl: "https://i.pravatar.cc/150?img=9",
+    bio: "Office-ready with a twist",
+    vibes: ["Work", "Tailored", "Neutral"],
+    followerCount: 2100,
+    followingCount: 500,
+  },
+  {
+    id: "u4",
+    name: "Ava Kim",
+    handle: "ava.minimal",
+    avatarUrl: "https://i.pravatar.cc/150?img=16",
+    bio: "Beige and cream everything",
+    vibes: ["Beige", "Brunch", "Soft"],
+    followerCount: 760,
+    followingCount: 180,
+  },
+  {
+    id: "u5",
+    name: "Mia Torres",
+    handle: "mia.closet",
+    avatarUrl: "https://i.pravatar.cc/150?img=25",
+    bio: "Less is more, always",
+    vibes: ["Minimalist", "Clean", "Quiet"],
+    followerCount: 3400,
+    followingCount: 420,
+  },
+  {
+    id: "u6",
+    name: "Zoe Park",
+    handle: "zoe.aesthetic",
+    avatarUrl: "https://i.pravatar.cc/150?img=12",
+    bio: "Golden hour and good fits",
+    vibes: ["Date night", "Aesthetic", "Warm"],
+    followerCount: 5200,
+    followingCount: 600,
+  },
+  {
+    id: "u7",
+    name: "Lily Brooks",
+    handle: "lily.wardrobe",
+    avatarUrl: "https://i.pravatar.cc/150?img=20",
+    bio: "Clean lines, clean mind",
+    vibes: ["Work", "Minimal", "Structured"],
+    followerCount: 1100,
+    followingCount: 290,
+  },
+  {
+    id: "u8",
+    name: "Grace Hill",
+    handle: "grace.style",
+    avatarUrl: "https://i.pravatar.cc/150?img=27",
+    bio: "Weekend energy and cozy vibes",
+    vibes: ["Cozy", "Casual", "Weekend"],
+    followerCount: 680,
+    followingCount: 150,
+  },
+  {
+    id: CURRENT_USER_ID,
+    name: "You",
+    handle: "you",
+    avatarUrl: "https://i.pravatar.cc/150?img=32",
+    bio: "Building a wardrobe that works",
+    vibes: ["Minimal", "Versatile", "Casual"],
+    followerCount: 1243,
+    followingCount: 567,
+  },
+];
+
+export function formatPostTime(iso: string): string {
+  const d = new Date();
+  const t = new Date(iso);
+  const isToday = t.toDateString() === d.toDateString();
+  return isToday
+    ? `Today ${t.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}`
+    : t.toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true });
+}
+
+export const mockOOTDPosts: OOTDPost[] = [
+  {
+    id: "p1",
+    userId: "u1",
+    imageUrl:
+      "https://images.unsplash.com/photo-1759726995149-d2d683fd38bf?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080",
+    caption: "Effortless Sunday vibes ☕️",
+    vibeTag: "Cafe study",
+    createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+    likeCount: 234,
+    savedCount: 45,
+    commentCount: 12,
+    likedByUserIds: ["u2", "u4"],
+    compatibilityScore: 82,
+    aiInsight: "Matches your neutral palette and relaxed silhouette preference.",
+  },
+  {
+    id: "p2",
+    userId: "u2",
+    imageUrl:
+      "https://images.unsplash.com/photo-1520483984082-37caa3093d0f?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080",
+    caption: "Street style essentials 🤍",
+    vibeTag: "Casual",
+    createdAt: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
+    likeCount: 567,
+    savedCount: 89,
+    commentCount: 28,
+    likedByUserIds: ["u1", "u3", "u5"],
+    compatibilityScore: 78,
+    aiInsight: "Similar silhouette to your saved looks.",
+  },
+  {
+    id: "p3",
+    userId: "u3",
+    imageUrl:
+      "https://images.unsplash.com/photo-1759229874914-c1ffdb3ebd0c?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080",
+    caption: "Neutral tones for the win",
+    vibeTag: "Work",
+    createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+    likeCount: 421,
+    savedCount: 67,
+    commentCount: 19,
+    likedByUserIds: ["u2"],
+    compatibilityScore: 91,
+    aiInsight: "Aligns with your minimal aesthetic and office-ready style.",
+  },
+  {
+    id: "p4",
+    userId: "u4",
+    imageUrl:
+      "https://images.unsplash.com/photo-1759873821340-24189bde9922?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080",
+    caption: "Beige everything 🥐",
+    vibeTag: "Casual",
+    createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+    likeCount: 389,
+    savedCount: 52,
+    commentCount: 15,
+    likedByUserIds: ["u1", "u5"],
+    compatibilityScore: 88,
+    aiInsight: "Complements your beige and cream palette.",
+  },
+  {
+    id: "p5",
+    userId: "u5",
+    imageUrl:
+      "https://images.unsplash.com/photo-1769107805465-bfd41863f1a0?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080",
+    caption: "Less is more",
+    vibeTag: "Minimalist",
+    createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+    likeCount: 502,
+    savedCount: 120,
+    commentCount: 22,
+    likedByUserIds: ["u1", "u2", "u6"],
+    compatibilityScore: 85,
+    aiInsight: "Clean lines that match your closet core.",
+  },
+  {
+    id: "p6",
+    userId: "u6",
+    imageUrl:
+      "https://images.unsplash.com/photo-1700557477628-c200fa4cd6da?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080",
+    caption: "Golden hour fits hit different ✨",
+    vibeTag: "Date night",
+    createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
+    likeCount: 892,
+    savedCount: 200,
+    commentCount: 45,
+    likedByUserIds: ["u1", "u3", "u4", "u5"],
+    compatibilityScore: 79,
+    aiInsight: "Warm tones and dressy-casual vibe align with your saved outfits.",
+  },
+  {
+    id: "p7",
+    userId: "u7",
+    imageUrl:
+      "https://images.unsplash.com/photo-1629922949137-e236a5ab497d?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080",
+    caption: "Clean lines, clean mind",
+    vibeTag: "Work",
+    createdAt: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toISOString(),
+    likeCount: 654,
+    savedCount: 98,
+    commentCount: 31,
+    likedByUserIds: ["u2", "u6"],
+    compatibilityScore: 84,
+    aiInsight: "Professional minimal look similar to your style.",
+  },
+  {
+    id: "p8",
+    userId: "u8",
+    imageUrl:
+      "https://images.unsplash.com/photo-1592327877233-90b9bfd92e48?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080",
+    caption: "Weekend energy",
+    vibeTag: "Casual",
+    createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
+    likeCount: 445,
+    savedCount: 61,
+    commentCount: 18,
+    likedByUserIds: [],
+    compatibilityScore: 76,
+    aiInsight: "Relaxed weekend vibe that fits your casual preferences.",
+  },
+];
+
+export const mockComments: Comment[] = [
+  { id: "c1", postId: "p1", userId: "u2", text: "Love this fit! Where’s the top from?", createdAt: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString() },
+  { id: "c2", postId: "p1", userId: "u4", text: "So cozy and chic 💚", createdAt: new Date(Date.now() - 50 * 60 * 1000).toISOString() },
+  { id: "c3", postId: "p2", userId: "u1", text: "Street style goals", createdAt: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString() },
+  { id: "c4", postId: "p3", userId: "u5", text: "Neutral perfection", createdAt: new Date(Date.now() - 20 * 60 * 60 * 1000).toISOString() },
+];
+
+// Preset gallery for "Post OOTD" (simulated upload)
+export const presetGalleryImages: string[] = [
+  "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=600",
+  "https://images.unsplash.com/photo-1496747611176-843222e1e57c?w=600",
+  "https://images.unsplash.com/photo-1509631179647-0177331693ae?w=600",
+  "https://images.unsplash.com/photo-1434389677669-e08b4cac3105?w=600",
+  "https://images.unsplash.com/photo-1485230895905-ec40ba36b9bc?w=600",
+  "https://images.unsplash.com/photo-1469334031218-e382a71b716b?w=600",
+];

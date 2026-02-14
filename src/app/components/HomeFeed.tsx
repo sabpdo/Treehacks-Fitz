@@ -1,32 +1,23 @@
-import { useState } from "react";
-import { Camera, Flame, Heart, Sparkles, ChevronRight, TrendingUp } from "lucide-react";
+import { Link } from "react-router";
+import { Camera, Flame, Sparkles, ChevronRight, TrendingUp } from "lucide-react";
 import { motion } from "motion/react";
-import { mockPosts } from "../data/mockData";
+import { useAppStore } from "../context/AppStore";
+import { usePostSheet } from "../context/PostSheetContext";
+import { PostGrid } from "./feed";
+import { mockOOTDPosts, mockUsers } from "../data/mockData";
 
 export function HomeFeed() {
-  const [likedPosts, setLikedPosts] = useState<Set<string>>(new Set());
-
-  const toggleLike = (postId: string) => {
-    setLikedPosts((prev) => {
-      const newSet = new Set(prev);
-      if (newSet.has(postId)) {
-        newSet.delete(postId);
-      } else {
-        newSet.add(postId);
-      }
-      return newSet;
-    });
-  };
-
+  const { posts, followingUserIds } = useAppStore();
+  const postSheet = usePostSheet();
   const todayDate = new Date().toLocaleDateString("en-US", {
     weekday: "long",
     month: "long",
     day: "numeric",
   });
 
-  const friendsPosts = mockPosts.slice(0, 6);
-  const compatibilityHighlights = mockPosts.slice(0, 4);
-  
+  const friendsToday = posts.filter((p) => followingUserIds.has(p.userId));
+  const friendsPosts = friendsToday.slice(0, 6);
+
   const topRanked = [
     { name: "Uniqlo White Tee", score: 9.4, category: "Essential Basics" },
     { name: "Aritzia Effortless Pant", score: 9.2, category: "Best Bottoms" },
@@ -36,7 +27,6 @@ export function HomeFeed() {
 
   return (
     <div className="min-h-screen bg-[#FAFAF8]">
-      {/* Header */}
       <header className="sticky top-0 z-30 border-b border-neutral-200/60 bg-white/90 backdrop-blur-xl">
         <div className="mx-auto max-w-5xl px-6 py-4">
           <div className="flex items-center justify-between">
@@ -52,11 +42,7 @@ export function HomeFeed() {
       <div className="mx-auto max-w-5xl px-6 pb-12">
         {/* Today's OOTD Prompt */}
         <section className="py-8">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="mx-auto max-w-md overflow-hidden rounded-2xl border border-neutral-200/60 bg-white shadow-sm"
-          >
+          <div className="mx-auto max-w-md overflow-hidden rounded-2xl border border-neutral-200/60 bg-white shadow-sm">
             <div className="p-8 text-center">
               <div className="mb-4 flex items-center justify-center gap-2">
                 <div className="flex h-10 w-10 items-center justify-center rounded-full bg-neutral-50">
@@ -65,11 +51,16 @@ export function HomeFeed() {
               </div>
               <h2 className="mb-2 text-lg text-neutral-900">Post Today's Fit</h2>
               <p className="mb-6 text-xs text-neutral-500">{todayDate}</p>
-              <button className="w-full rounded-xl bg-neutral-900 py-3.5 text-sm text-white transition-all hover:bg-neutral-800">
-                Open Camera
-              </button>
+              <motion.div whileTap={{ scale: 0.98 }} transition={{ duration: 0.2 }}>
+                <Link
+                  to="/post"
+                  className="block w-full rounded-xl bg-neutral-900 py-3.5 text-center text-sm text-white transition-colors duration-200 hover:bg-neutral-800"
+                >
+                  Open Camera
+                </Link>
+              </motion.div>
             </div>
-          </motion.div>
+          </div>
         </section>
 
         {/* Friends Today */}
@@ -81,63 +72,26 @@ export function HomeFeed() {
               </h3>
               <p className="text-xs text-neutral-400">What people are wearing</p>
             </div>
-            <button className="flex items-center gap-1 text-xs text-neutral-500 transition-colors hover:text-neutral-900">
-              View all
-              <ChevronRight className="h-3.5 w-3.5" />
-            </button>
+            <motion.div whileHover={{ x: 2 }} whileTap={{ scale: 0.98 }} transition={{ duration: 0.2 }}>
+              <Link
+                to="/ootds"
+                className="flex items-center gap-1 text-xs text-neutral-500 transition-colors duration-200 hover:text-neutral-900"
+              >
+                View all OOTDs
+                <ChevronRight className="h-3.5 w-3.5 transition-transform duration-200" />
+              </Link>
+            </motion.div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
-            {friendsPosts.map((post, index) => {
-              const isLiked = likedPosts.has(post.id);
-              const compatibility = 78 + (index * 3);
-
-              return (
-                <motion.div
-                  key={post.id}
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ delay: index * 0.05 }}
-                  className="group overflow-hidden rounded-xl border border-neutral-200/60 bg-white shadow-sm"
-                >
-                  <div className="relative aspect-square overflow-hidden bg-neutral-50">
-                    <img
-                      src={post.imageUrl}
-                      alt={post.username}
-                      className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-                    />
-                    
-                    {/* Compatibility Badge */}
-                    <div className="absolute right-2 top-2 rounded-full border border-white/60 bg-white/90 px-2 py-0.5 backdrop-blur-sm">
-                      <p className="text-[10px] text-neutral-900">{compatibility}%</p>
-                    </div>
-                  </div>
-
-                  <div className="p-3">
-                    <div className="mb-2 flex items-center justify-between">
-                      <p className="text-xs text-neutral-900">{post.username}</p>
-                      <motion.button
-                        whileTap={{ scale: 0.9 }}
-                        onClick={() => toggleLike(post.id)}
-                      >
-                        <Heart
-                          className={`h-3.5 w-3.5 transition-all ${
-                            isLiked
-                              ? "fill-rose-500 text-rose-500"
-                              : "text-neutral-400"
-                          }`}
-                        />
-                      </motion.button>
-                    </div>
-                    <p className="text-[10px] text-neutral-400">{post.timestamp}</p>
-                  </div>
-                </motion.div>
-              );
-            })}
-          </div>
+          <PostGrid
+            posts={friendsPosts}
+            compact
+            columns={3}
+            getCompatibility={(p) => p.compatibilityScore}
+          />
         </section>
 
-        {/* Compatibility Highlights */}
+        {/* Compatibility Highlights - keep existing style with first 4 from feed */}
         <section className="mb-12">
           <div className="mb-5">
             <h3 className="mb-0.5 text-sm uppercase tracking-wide text-neutral-500">
@@ -147,24 +101,27 @@ export function HomeFeed() {
           </div>
 
           <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-hide">
-            {compatibilityHighlights.map((post, index) => {
-              const compatibility = 91 - (index * 4);
+            {mockOOTDPosts.slice(0, 4).map((post, index) => {
+              const compatibility = 91 - index * 4;
+              const poster = mockUsers.find((u) => u.id === post.userId);
               const insights = [
                 "Matches your neutral palette preference",
                 "Similar silhouette to your saved looks",
                 "Complements your minimal aesthetic",
                 "Aligns with your casual-chic style",
               ];
-
+              const CardWrap = postSheet
+                ? "button"
+                : Link;
+              const cardProps = postSheet
+                ? { type: "button" as const, onClick: () => postSheet.openPost(post.id) }
+                : { to: `/post/${post.id}` };
               return (
-                <motion.div
-                  key={post.id}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: index * 0.1 }}
-                  className="flex-shrink-0"
-                >
-                  <div className="w-[280px] overflow-hidden rounded-xl border border-neutral-200/60 bg-white shadow-sm transition-all hover:shadow-md">
+                <div key={post.id} className="flex-shrink-0">
+                  <CardWrap
+                    {...cardProps}
+                    className="block w-[280px] overflow-hidden rounded-xl border border-neutral-200/60 bg-white text-left shadow-sm transition-all duration-300 hover:border-neutral-300 hover:shadow-md"
+                  >
                     <div className="relative aspect-[4/5] overflow-hidden bg-neutral-50">
                       <img
                         src={post.imageUrl}
@@ -176,11 +133,13 @@ export function HomeFeed() {
                       <div className="mb-3 flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <img
-                            src={post.userAvatar}
-                            alt={post.username}
+                            src={poster?.avatarUrl ?? ""}
+                            alt=""
                             className="h-6 w-6 rounded-full object-cover"
                           />
-                          <p className="text-xs text-neutral-900">{post.username}</p>
+                          <p className="text-xs text-neutral-900">
+                            {poster?.handle ?? post.userId}
+                          </p>
                         </div>
                         <div className="rounded-full bg-[#8B9B8E]/10 px-2.5 py-0.5">
                           <p className="text-xs text-[#8B9B8E]">{compatibility}%</p>
@@ -190,8 +149,8 @@ export function HomeFeed() {
                         {insights[index]}
                       </p>
                     </div>
-                  </div>
-                </motion.div>
+                  </CardWrap>
+                </div>
               );
             })}
           </div>
@@ -199,7 +158,6 @@ export function HomeFeed() {
 
         {/* Two Column Layout: Rankings + AI Suggestion */}
         <div className="grid gap-6 lg:grid-cols-2">
-          {/* Ranking Snapshot */}
           <section>
             <div className="mb-5">
               <h3 className="mb-0.5 text-sm uppercase tracking-wide text-neutral-500">
@@ -208,12 +166,7 @@ export function HomeFeed() {
               <p className="text-xs text-neutral-400">What's trending today</p>
             </div>
 
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 }}
-              className="overflow-hidden rounded-2xl border border-neutral-200/60 bg-white shadow-sm"
-            >
+            <div className="overflow-hidden rounded-2xl border border-neutral-200/60 bg-white shadow-sm">
               <div className="divide-y divide-neutral-200/60">
                 {topRanked.map((item, index) => (
                   <div key={index} className="px-5 py-4">
@@ -233,15 +186,17 @@ export function HomeFeed() {
               </div>
 
               <div className="border-t border-neutral-200/60 bg-neutral-50 p-4">
-                <button className="flex w-full items-center justify-center gap-2 text-xs text-neutral-600 transition-colors hover:text-neutral-900">
+                <Link
+                  to="/profile"
+                  className="flex w-full items-center justify-center gap-2 text-xs text-neutral-600 transition-colors duration-200 hover:text-neutral-900"
+                >
                   <TrendingUp className="h-3.5 w-3.5" />
                   View Full Rankings
-                </button>
+                </Link>
               </div>
-            </motion.div>
+            </div>
           </section>
 
-          {/* AI Suggestion */}
           <section>
             <div className="mb-5">
               <h3 className="mb-0.5 text-sm uppercase tracking-wide text-neutral-500">
@@ -250,20 +205,13 @@ export function HomeFeed() {
               <p className="text-xs text-neutral-400">Curated from your closet</p>
             </div>
 
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.3 }}
-              className="overflow-hidden rounded-2xl border border-neutral-200/60 bg-white shadow-sm"
-            >
+            <div className="overflow-hidden rounded-2xl border border-neutral-200/60 bg-white shadow-sm">
               <div className="relative aspect-[4/5] overflow-hidden bg-neutral-50">
                 <img
                   src="https://images.unsplash.com/photo-1618354691373-d851c5c3a990?w=600"
                   alt="AI generated outfit"
                   className="h-full w-full object-cover"
                 />
-                
-                {/* AI Badge */}
                 <div className="absolute left-4 top-4 flex items-center gap-1.5 rounded-full border border-white/60 bg-white/90 px-3 py-1.5 backdrop-blur-sm">
                   <Sparkles className="h-3 w-3 text-[#8B9B8E]" />
                   <span className="text-xs text-neutral-900">AI Generated</span>
@@ -292,23 +240,18 @@ export function HomeFeed() {
                   </div>
                 </div>
 
-                <button className="w-full rounded-xl border border-neutral-900 bg-neutral-900 py-2.5 text-sm text-white transition-all hover:bg-neutral-800">
+                <button className="w-full rounded-xl border border-neutral-900 bg-neutral-900 py-2.5 text-sm text-white transition-colors duration-200 hover:bg-neutral-800">
                   Save to Outfits
                 </button>
               </div>
-            </motion.div>
+            </div>
           </section>
         </div>
       </div>
 
       <style>{`
-        .scrollbar-hide::-webkit-scrollbar {
-          display: none;
-        }
-        .scrollbar-hide {
-          -ms-overflow-style: none;
-          scrollbar-width: none;
-        }
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
       `}</style>
     </div>
   );

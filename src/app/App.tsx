@@ -1,11 +1,18 @@
-import { RouterProvider } from 'react-router-dom';
-import { router } from './routes';
-import { AuthProvider } from '../contexts/AuthContext';
+import React from "react";
+import { RouterProvider } from "react-router";
+import { AppStoreProvider } from "./context/AppStore";
+import { PostSheetProvider } from "./context/PostSheetContext";
+import { AuthProvider } from "../contexts/AuthContext";
+import { router } from "./routes";
 
 function App() {
   return (
     <AuthProvider>
-      <RouterProvider router={router} />
+      <AppStoreProvider>
+        <PostSheetProvider>
+          <RouterProvider router={router} />
+        </PostSheetProvider>
+      </AppStoreProvider>
     </AuthProvider>
   );
 }

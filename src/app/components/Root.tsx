@@ -1,14 +1,14 @@
 import { Outlet, Link, useLocation } from "react-router";
-import { Home, Sparkles, User, ShoppingBag, Plus } from "lucide-react";
+import { Home, Users, Sparkles, User, ShoppingBag, Plus } from "lucide-react";
 import { motion } from "motion/react";
 
 export function Root() {
   const location = useLocation();
 
   const isActive = (path: string) => {
-    if (path === "/") {
-      return location.pathname === "/";
-    }
+    if (path === "/") return location.pathname === "/";
+    // Profile tab only active on own profile, not when viewing /profile/:userId
+    if (path === "/profile") return location.pathname === "/profile";
     return location.pathname.startsWith(path);
   };
 
@@ -40,7 +40,7 @@ export function Root() {
         <div className="mx-auto flex max-w-lg items-center justify-around px-6 py-3">
           <Link
             to="/"
-            className="relative flex flex-col items-center gap-1.5 transition-colors"
+            className="relative flex flex-col items-center gap-1.5 transition-colors duration-200"
           >
             <Home
               className={`h-6 w-6 transition-all ${
@@ -65,8 +65,34 @@ export function Root() {
           </Link>
 
           <Link
+            to="/community"
+            className="relative flex flex-col items-center gap-1.5 transition-colors duration-200"
+          >
+            <Users
+              className={`h-6 w-6 transition-all ${
+                isActive("/community") ? "text-[#8B9B8E]" : "text-neutral-400"
+              }`}
+              strokeWidth={isActive("/community") ? 2.5 : 2}
+            />
+            <span
+              className={`text-xs transition-all ${
+                isActive("/community") ? "text-[#8B9B8E]" : "text-neutral-400"
+              }`}
+            >
+              Community
+            </span>
+            {isActive("/community") && (
+              <motion.div
+                layoutId="nav-indicator"
+                className="absolute -top-3 h-1 w-8 rounded-full bg-[#8B9B8E]"
+                transition={{ type: "spring", stiffness: 300, damping: 30 }}
+              />
+            )}
+          </Link>
+
+          <Link
             to="/ai-generator"
-            className="relative flex flex-col items-center gap-1.5 transition-colors"
+            className="relative flex flex-col items-center gap-1.5 transition-colors duration-200"
           >
             <Sparkles
               className={`h-6 w-6 transition-all ${
@@ -92,7 +118,7 @@ export function Root() {
 
           <Link
             to="/closet"
-            className="relative flex flex-col items-center gap-1.5 transition-colors"
+            className="relative flex flex-col items-center gap-1.5 transition-colors duration-200"
           >
             <ShoppingBag
               className={`h-6 w-6 transition-all ${
@@ -118,7 +144,7 @@ export function Root() {
 
           <Link
             to="/profile"
-            className="relative flex flex-col items-center gap-1.5 transition-colors"
+            className="relative flex flex-col items-center gap-1.5 transition-colors duration-200"
           >
             <User
               className={`h-6 w-6 transition-all ${
