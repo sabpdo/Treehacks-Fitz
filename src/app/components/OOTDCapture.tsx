@@ -1,19 +1,34 @@
-import { useState, useEffect, useRef } from "react";
-import { X, Camera, Flame, Check, ChevronDown, Sparkles, Search, Plus, Upload, ChevronRight } from "lucide-react";
+import React, { useState, useEffect, useRef } from "react";
+import { X, Camera, Flame, Check, ChevronDown, Sparkles, Search, Plus, Upload, ChevronRight, GripVertical, ChevronLeft, Trash2 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-import { mockClosetItems } from "../data/mockData";
+import { mockClosetItems, type OOTDPost } from "../data/mockData";
+import { analyzeOutfitImage } from "../../services/openai";
+import type { AIImageAnalysis } from "../../types/database";
+import {
+  segmentOutfitImage,
+  uploadImage,
+  dataURLToFile,
+  createPost,
+  updateStreak,
+  type SegmentResult,
+} from "../../services/api";
+import { apiPostToOOTDPost } from "../../lib/adapters";
+import { useAppStore } from "../context/AppStore";
 
 type CaptureStep = "camera" | "scanning" | "tagging" | "confirm";
 type SwapModalView = "select" | "add-new";
 
 interface DetectedItem {
   id: string;
-  type: "top" | "bottom" | "shoes" | "accessory";
+  /** Display category — any string from AI (e.g. top, bottom, shoes, dress, jacket, accessory, handbag). */
+  type: string;
   position: { x: number; y: number };
   label: string;
   color: string;
   fabric?: string;
   silhouette?: string;
+  /** Crop image URL from segmentation (for "Add as New Item" form) */
+  imageUrl?: string;
   closetMatch?: {
     id: string;
     brand: string;
@@ -22,10 +37,101 @@ interface DetectedItem {
   isConfirmed: boolean;
 }
 
+/** Map API category to display type; pass through unknown as-is. */
+function categoryToType(category: string): string {
+  const lower = (category || "").toLowerCase().replace(/\s+/g, "_");
+  const map: Record<string, string> = {
+    shirts: "top",
+    pants: "bottom",
+    skirts_dresses: "dress",
+    jackets_outerwear: "jacket",
+    shoes: "shoes",
+    bags: "bag",
+  };
+  return map[lower] ?? (lower.replace(/_/g, " ") || "item");
+}
+
+function aiAnalysisToDetectedItems(items: AIImageAnalysis[]): DetectedItem[] {
+  return items.map((item, index) => {
+    const type = categoryToType(item.category);
+    const y = 25 + (index * 25);
+    return {
+      id: `item-${index}-${item.subcategory.replace(/\s/g, "-")}`,
+      type,
+      position: { x: 50, y: Math.min(y, 85) },
+      label: item.subcategory || item.description?.slice(0, 30) || "Item",
+      color: item.colors?.[0] ?? "—",
+      fabric: item.fabric,
+      silhouette: item.silhouette,
+      isConfirmed: false,
+    };
+  });
+}
+
+/** Map segmentation API result (one crop per clothing region) to DetectedItem for tagging UI. */
+function segmentsToDetectedItems(segments: SegmentResult[]): DetectedItem[] {
+  return segments.map((seg, index) => {
+    const type = categoryToType(seg.category);
+    const y = 25 + (index * 25);
+    return {
+      id: `segment-${index}-${seg.description.replace(/\s/g, "-").slice(0, 20)}`,
+      type,
+      position: { x: 50, y: Math.min(y, 85) },
+      label: seg.description || seg.category || "Item",
+      color: seg.color?.trim() && seg.color !== "—" ? seg.color : "—",
+      fabric: seg.fabric?.trim() || undefined,
+      silhouette: seg.silhouette?.trim() || undefined,
+      imageUrl: seg.crop_url,
+      isConfirmed: false,
+    };
+  });
+}
+
+const MOCK_DETECTED_ITEMS: DetectedItem[] = [
+  {
+    id: "item1",
+    type: "top",
+    position: { x: 50, y: 30 },
+    label: "White Linen Shirt",
+    color: "White",
+    fabric: "Linen",
+    silhouette: "Relaxed",
+    closetMatch: { id: "1", brand: "Everlane", imageUrl: mockClosetItems[0].imageUrl },
+    isConfirmed: false,
+  },
+  {
+    id: "item2",
+    type: "bottom",
+    position: { x: 50, y: 60 },
+    label: "Beige Wide-Leg Trousers",
+    color: "Beige",
+    fabric: "Cotton",
+    silhouette: "Wide Leg",
+    closetMatch: { id: "2", brand: "Aritzia", imageUrl: mockClosetItems[1].imageUrl },
+    isConfirmed: false,
+  },
+  {
+    id: "item3",
+    type: "shoes",
+    position: { x: 50, y: 85 },
+    label: "White Leather Sneakers",
+    color: "White",
+    fabric: "Leather",
+    silhouette: "Low-top",
+    closetMatch: { id: "9", brand: "Nike", imageUrl: mockClosetItems[8].imageUrl },
+    isConfirmed: false,
+  },
+];
+
 export function OOTDCapture({ onClose }: { onClose: () => void }) {
+  const { getUser, currentUserId, isUsingApi, addPost, refetchCurrentUser } = useAppStore();
+  const currentUser = getUser(currentUserId);
+  const streak = isUsingApi ? (currentUser?.streak ?? 0) : 7;
+
   const [step, setStep] = useState<CaptureStep>("camera");
   const [capturedImage, setCapturedImage] = useState<string>("");
   const [selectedPin, setSelectedPin] = useState<string | null>(null);
+  const [draggedItemId, setDraggedItemId] = useState<string | null>(null);
   const [caption, setCaption] = useState("");
   const [detectedItems, setDetectedItems] = useState<DetectedItem[]>([]);
   const [showSwapModal, setShowSwapModal] = useState(false);
@@ -35,6 +141,8 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [cameraReady, setCameraReady] = useState(false);
+  const [posting, setPosting] = useState(false);
+  const [postError, setPostError] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
@@ -131,64 +239,66 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
     e.target.value = "";
   };
 
-  // AI Scanning simulation
+  // AI scanning: try segmentation first (Replicate), then OpenAI Vision, then mock
   useEffect(() => {
-    if (step === "scanning") {
-      const timer = setTimeout(() => {
-        // Mock detected items
-        setDetectedItems([
-          {
-            id: "item1",
-            type: "top",
-            position: { x: 50, y: 30 },
-            label: "White Linen Shirt",
-            color: "White",
-            fabric: "Linen",
-            silhouette: "Relaxed",
-            closetMatch: {
-              id: "1",
-              brand: "Everlane",
-              imageUrl: mockClosetItems[0].imageUrl,
-            },
-            isConfirmed: false,
-          },
-          {
-            id: "item2",
-            type: "bottom",
-            position: { x: 50, y: 60 },
-            label: "Beige Wide-Leg Trousers",
-            color: "Beige",
-            fabric: "Cotton",
-            silhouette: "Wide Leg",
-            closetMatch: {
-              id: "2",
-              brand: "Aritzia",
-              imageUrl: mockClosetItems[1].imageUrl,
-            },
-            isConfirmed: false,
-          },
-          {
-            id: "item3",
-            type: "shoes",
-            position: { x: 50, y: 85 },
-            label: "White Leather Sneakers",
-            color: "White",
-            fabric: "Leather",
-            silhouette: "Low-top",
-            closetMatch: {
-              id: "9",
-              brand: "Nike",
-              imageUrl: mockClosetItems[8].imageUrl,
-            },
-            isConfirmed: false,
-          },
-        ]);
-        setStep("tagging");
-      }, 2500);
+    if (step !== "scanning" || !capturedImage) return;
 
-      return () => clearTimeout(timer);
-    }
-  }, [step]);
+    let cancelled = false;
+
+    const goToTagging = (items: DetectedItem[]) => {
+      if (!cancelled) {
+        setDetectedItems(items.length > 0 ? items : MOCK_DETECTED_ITEMS);
+        setStep("tagging");
+      }
+    };
+
+    const runSegmentation = async () => {
+      try {
+        const file = dataURLToFile(capturedImage, "capture.jpg");
+        const imageUrl = await uploadImage(file);
+        const { segments } = await segmentOutfitImage(imageUrl);
+        if (segments.length > 0) {
+          goToTagging(segmentsToDetectedItems(segments));
+          return true;
+        }
+      } catch (err) {
+        console.warn("Segmentation failed, falling back:", err);
+      }
+      return false;
+    };
+
+    const runOpenAI = async () => {
+      if (!import.meta.env.VITE_OPENAI_API_KEY) return false;
+      try {
+        const res = await analyzeOutfitImage(capturedImage);
+        const items = res?.items;
+        if (items && items.length > 0) {
+          goToTagging(aiAnalysisToDetectedItems(items));
+          return true;
+        }
+      } catch (err) {
+        console.warn("OpenAI analysis failed:", err);
+      }
+      return false;
+    };
+
+    let mockTimer: ReturnType<typeof setTimeout> | null = null;
+    (async () => {
+      const usedSegmentation = await runSegmentation();
+      if (cancelled) return;
+      if (!usedSegmentation) {
+        const usedOpenAI = await runOpenAI();
+        if (!cancelled && !usedOpenAI) {
+          mockTimer = setTimeout(() => goToTagging(MOCK_DETECTED_ITEMS), 2500);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (mockTimer) clearTimeout(mockTimer);
+    };
+  }, [step, capturedImage]);
 
   const confirmItem = (itemId: string) => {
     setDetectedItems((items) =>
@@ -209,7 +319,7 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
 
   const selectSwapItem = (closetItemId: string) => {
     if (!swappingItemId) return;
-    
+
     const closetItem = mockClosetItems.find((item) => item.id === closetItemId);
     if (!closetItem) return;
 
@@ -217,17 +327,17 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
       items.map((item) =>
         item.id === swappingItemId
           ? {
-              ...item,
-              closetMatch: {
-                id: closetItem.id,
-                brand: closetItem.brand || "Unknown",
-                imageUrl: closetItem.imageUrl,
-              },
-              label: `${closetItem.color} ${closetItem.category}`,
-              color: closetItem.color,
-              fabric: closetItem.fabric,
-              silhouette: closetItem.silhouette,
-            }
+            ...item,
+            closetMatch: {
+              id: closetItem.id,
+              brand: closetItem.brand || "Unknown",
+              imageUrl: closetItem.imageUrl,
+            },
+            label: `${closetItem.color} ${closetItem.category}`,
+            color: closetItem.color,
+            fabric: closetItem.fabric,
+            silhouette: closetItem.silhouette,
+          }
           : item
       )
     );
@@ -250,6 +360,102 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
     });
   };
 
+  /** Open the Add New Item form pre-filled from a detected item (for "Not in Closet" → Add as New Item). */
+  const openAddAsNewItem = (item: DetectedItem) => {
+    setSwappingItemId(item.id);
+    setNewItemData({
+      image: item.imageUrl ?? item.closetMatch?.imageUrl ?? "",
+      category: item.type ?? "",
+      brand: item.label ?? "",
+      color: item.color ?? "",
+      fabric: item.fabric ?? "",
+      silhouette: item.silhouette ?? "",
+    });
+    setSwapModalView("add-new");
+    setShowSwapModal(true);
+  };
+
+  /** Remove a tagged item from the list (e.g. wrong detection like a handbag that isn't there). */
+  const removeDetectedItem = (itemId: string) => {
+    setDetectedItems((prev) => prev.filter((i) => i.id !== itemId));
+    if (selectedPin === itemId) setSelectedPin(null);
+  };
+
+  /** Reorder detected items (drag and drop). */
+  const reorderItems = (fromIndex: number, toIndex: number) => {
+    if (fromIndex === toIndex) return;
+    setDetectedItems((prev) => {
+      const next = [...prev];
+      const [removed] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, removed);
+      return next;
+    });
+  };
+
+  /** Add a new item to the list for the user to tag (manual add). */
+  const handleAddTagItem = () => {
+    const newItem: DetectedItem = {
+      id: `new-${Date.now()}`,
+      type: "top",
+      position: { x: 50, y: 50 },
+      label: "New item",
+      color: "—",
+      isConfirmed: false,
+    };
+    setDetectedItems((prev) => [...prev, newItem]);
+    setSelectedPin(newItem.id);
+  };
+
+  /** Post the outfit to the feed and close capture. */
+  const handlePostToFeed = async () => {
+    setPostError(null);
+    if (isUsingApi) {
+      try {
+        setPosting(true);
+        const file = dataURLToFile(capturedImage, "ootd.jpg");
+        const imageUrl = await uploadImage(file);
+        const apiPost = await createPost({
+          image_url: imageUrl,
+          caption: caption.trim() || "Outfit of the day",
+        });
+        try {
+          await updateStreak();
+          if (refetchCurrentUser) await refetchCurrentUser();
+        } catch {
+          /* ignore */
+        }
+        const uiPost = apiPostToOOTDPost(apiPost, currentUserId);
+        const tags = detectedItems.map((i) => ({ label: i.label, type: i.type }));
+        addPost({ ...uiPost, tags });
+        onClose();
+      } catch (e) {
+        console.error("Create post failed:", e);
+        setPostError("Failed to post. Try again.");
+      } finally {
+        setPosting(false);
+      }
+      return;
+    }
+    const tags = detectedItems.map((i) => ({ label: i.label, type: i.type }));
+    const post: OOTDPost = {
+      id: `post-${Date.now()}`,
+      userId: currentUserId,
+      imageUrl: capturedImage,
+      caption: caption.trim() || "Outfit of the day",
+      vibeTag: "Casual",
+      createdAt: new Date().toISOString(),
+      likeCount: 0,
+      savedCount: 0,
+      commentCount: 0,
+      likedByUserIds: [],
+      compatibilityScore: 0,
+      aiInsight: "",
+      tags,
+    };
+    addPost(post);
+    onClose();
+  };
+
   // Filter closet items based on search and category
   const getFilteredClosetItems = () => {
     let filtered = mockClosetItems;
@@ -270,12 +476,19 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
     return filtered;
   };
 
-  // Map DetectedItem type to ClosetItem category (tops/bottoms/accessories/shoes)
+  // Map DetectedItem type (any string) to ClosetItem category for swap modal
   const typeToCategory: Record<string, string> = {
     top: "tops",
+    tops: "tops",
     bottom: "bottoms",
+    bottoms: "bottoms",
+    dress: "bottoms",
+    jacket: "tops",
     shoes: "shoes",
     accessory: "accessories",
+    accessories: "accessories",
+    bag: "accessories",
+    handbag: "accessories",
   };
 
   // Get AI suggested matches (mock - would use actual AI in production)
@@ -356,7 +569,7 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
 
               <div className="flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1.5 backdrop-blur-sm">
                 <Flame className="h-3 w-3 text-orange-400" />
-                <span className="text-xs text-white">7 day streak</span>
+                <span className="text-xs text-white">{streak} day streak</span>
               </div>
             </div>
 
@@ -415,263 +628,302 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
 
           {/* Overlay: dim + scanning UI */}
           <div className="absolute inset-0 bg-black/35">
-              <div className="flex h-full flex-col items-center justify-center">
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="text-center"
-                >
-                  <div className="mb-4 flex items-center justify-center gap-2">
-                    <motion.div
-                      animate={{ rotate: 360 }}
-                      transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-                      className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 backdrop-blur-sm"
-                    >
-                      <Sparkles className="h-5 w-5 text-white" />
-                    </motion.div>
-                  </div>
-                  <h2 className="mb-2 text-base text-white">Analyzing your fit...</h2>
-                  <p className="text-xs text-white/60">Detecting items and styles</p>
-                </motion.div>
+            <div className="flex h-full flex-col items-center justify-center">
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="text-center"
+              >
+                <div className="mb-4 flex items-center justify-center gap-2">
+                  <motion.div
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+                    className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 backdrop-blur-sm"
+                  >
+                    <Sparkles className="h-5 w-5 text-white" />
+                  </motion.div>
+                </div>
+                <h2 className="mb-2 text-base text-white">Analyzing your fit...</h2>
+                <p className="text-xs text-white/60">Detecting items and styles</p>
+              </motion.div>
 
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: [0.3, 0.6, 0.3] }}
-                  transition={{ duration: 1.5, repeat: Infinity }}
-                  className="absolute inset-0"
-                  style={{
-                    backgroundImage: `
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: [0.3, 0.6, 0.3] }}
+                transition={{ duration: 1.5, repeat: Infinity }}
+                className="absolute inset-0"
+                style={{
+                  backgroundImage: `
                       linear-gradient(0deg, transparent 24%, rgba(255, 255, 255, .05) 25%, rgba(255, 255, 255, .05) 26%, transparent 27%, transparent 74%, rgba(255, 255, 255, .05) 75%, rgba(255, 255, 255, .05) 76%, transparent 77%, transparent),
                       linear-gradient(90deg, transparent 24%, rgba(255, 255, 255, .05) 25%, rgba(255, 255, 255, .05) 26%, transparent 27%, transparent 74%, rgba(255, 255, 255, .05) 75%, rgba(255, 255, 255, .05) 76%, transparent 77%, transparent)
                     `,
-                    backgroundSize: "50px 50px",
-                  }}
-                />
+                  backgroundSize: "50px 50px",
+                }}
+              />
 
-                <motion.div
-                  initial={{ y: "-100%" }}
-                  animate={{ y: "200%" }}
-                  transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-                  className="absolute left-0 right-0 h-32 bg-gradient-to-b from-transparent via-white/10 to-transparent"
-                />
-              </div>
+              <motion.div
+                initial={{ y: "-100%" }}
+                animate={{ y: "200%" }}
+                transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+                className="absolute left-0 right-0 h-32 bg-gradient-to-b from-transparent via-white/10 to-transparent"
+              />
             </div>
+          </div>
         </motion.div>
       )}
 
-      {/* AI Tagging Screen */}
+      {/* AI Tagging Screen — list of detected items, drag to reorder, no pins on image */}
       {step === "tagging" && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          className="relative h-full w-full overflow-hidden"
+          className="flex h-full w-full flex-col bg-[#FAFAF8]"
         >
-          <div className="absolute left-0 right-0 top-0 z-20 border-b border-neutral-200/60 bg-white/90 backdrop-blur-xl">
-            <div className="flex items-center justify-between px-6 py-4">
+          <div className="flex shrink-0 items-center justify-between border-b border-neutral-200/60 bg-white px-6 py-4">
+            <button
+              onClick={onClose}
+              className="flex h-9 w-9 items-center justify-center rounded-full text-neutral-600 transition-colors hover:bg-neutral-100"
+            >
+              <X className="h-4 w-4" />
+            </button>
+            <h2 className="text-sm font-medium text-neutral-900">Tag your items</h2>
+            <button
+              onClick={() => setStep("confirm")}
+              disabled={!allItemsConfirmed}
+              className={`text-sm transition-colors ${allItemsConfirmed ? "text-neutral-900 hover:text-neutral-600" : "text-neutral-300"}`}
+            >
+              Next
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto">
+            <div className="mx-auto max-w-2xl px-4 py-4">
+              <div className="mb-4 overflow-hidden rounded-2xl border border-neutral-200/60 bg-white shadow-sm">
+                <img
+                  src={capturedImage}
+                  alt="Your outfit"
+                  className="w-full object-cover"
+                  style={{ maxHeight: "min(40vh, 280px)", objectFit: "cover" }}
+                />
+              </div>
+
+              <p className="mb-3 text-xs font-medium uppercase tracking-wide text-neutral-500">
+                Items we detected — drag to reorder
+              </p>
+              <ul className="space-y-2">
+                {detectedItems.map((item, index) => (
+                  <motion.li
+                    key={item.id}
+                    layout
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{
+                      opacity: 1,
+                      y: 0,
+                      scale: draggedItemId === item.id ? 1.02 : 1,
+                    }}
+                    className={`rounded-xl border bg-white shadow-sm transition-shadow ${selectedPin === item.id ? "border-neutral-400 shadow-md ring-1 ring-neutral-200" : "border-neutral-200/60"
+                      } ${draggedItemId === item.id ? "z-10 shadow-lg" : ""}`}
+                  >
+                    <div
+                      draggable
+                      onDragStart={(e) => {
+                        setDraggedItemId(item.id);
+                        e.dataTransfer.setData("text/plain", item.id);
+                        e.dataTransfer.effectAllowed = "move";
+                      }}
+                      onDragEnd={() => setDraggedItemId(null)}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        e.dataTransfer.dropEffect = "move";
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        const fromId = e.dataTransfer.getData("text/plain");
+                        if (!fromId || fromId === item.id) return;
+                        const fromIdx = detectedItems.findIndex((i) => i.id === fromId);
+                        if (fromIdx !== -1) reorderItems(fromIdx, index);
+                      }}
+                      className="flex cursor-grab active:cursor-grabbing items-center gap-3 p-3"
+                    >
+                      <span className="touch-none text-neutral-400" aria-hidden>
+                        <GripVertical className="h-5 w-5" />
+                      </span>
+                      {item.imageUrl || item.closetMatch?.imageUrl ? (
+                        <img
+                          src={item.imageUrl ?? item.closetMatch?.imageUrl}
+                          alt=""
+                          className="h-14 w-14 shrink-0 rounded-lg object-cover bg-neutral-100"
+                        />
+                      ) : (
+                        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-neutral-100 text-neutral-400">
+                          <Sparkles className="h-6 w-6" />
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setSelectedPin(selectedPin === item.id ? null : item.id)}
+                        className="min-w-0 flex-1 text-left"
+                      >
+                        <p className="truncate text-sm font-medium text-neutral-900">{item.label}</p>
+                        <p className="text-xs capitalize text-neutral-500">{item.type}</p>
+                      </button>
+                      {item.isConfirmed ? (
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#8B9B8E]">
+                          <Check className="h-4 w-4 text-white" />
+                        </div>
+                      ) : (
+                        <ChevronRight className="h-5 w-5 shrink-0 text-neutral-400" />
+                      )}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeDetectedItem(item.id);
+                        }}
+                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-neutral-400 transition-colors hover:bg-red-50 hover:text-red-600"
+                        aria-label="Remove item"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </motion.li>
+                ))}
+              </ul>
+
               <button
-                onClick={onClose}
-                className="flex h-9 w-9 items-center justify-center rounded-full text-neutral-600 transition-all hover:bg-neutral-100"
+                type="button"
+                onClick={handleAddTagItem}
+                className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-neutral-300 bg-white py-3.5 text-sm text-neutral-600 transition-colors hover:border-neutral-400 hover:bg-neutral-50"
               >
-                <X className="h-4 w-4" />
-              </button>
-              <h2 className="text-sm text-neutral-900">Tag Your Items</h2>
-              <button
-                onClick={() => setStep("confirm")}
-                disabled={!allItemsConfirmed}
-                className={`text-sm transition-colors ${
-                  allItemsConfirmed
-                    ? "text-neutral-900 hover:text-neutral-600"
-                    : "text-neutral-300"
-                }`}
-              >
-                Next
+                <Plus className="h-4 w-4" />
+                Add / tag item
               </button>
             </div>
           </div>
 
-          <div className="relative h-full w-full pt-[65px]">
-            <div className="relative mx-auto h-full max-w-2xl">
-              <img
-                src={capturedImage}
-                alt="Captured outfit"
-                className="h-full w-full object-cover"
-              />
-
-              <AnimatePresence>
-                {detectedItems.map((item, index) => (
-                  <motion.div
-                    key={item.id}
-                    initial={{ scale: 0, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    transition={{ delay: index * 0.2 }}
-                    className="absolute"
-                    style={{
-                      left: `${item.position.x}%`,
-                      top: `${item.position.y}%`,
-                      transform: "translate(-50%, -50%)",
-                    }}
-                  >
-                    <button
-                      onClick={() =>
-                        setSelectedPin(selectedPin === item.id ? null : item.id)
-                      }
-                      className="relative"
-                    >
-                      <motion.div
-                        animate={{
-                          scale: selectedPin === item.id ? 1.2 : 1,
-                        }}
-                        className={`h-3 w-3 rounded-full border-2 border-white shadow-lg transition-all ${
-                          item.isConfirmed ? "bg-[#8B9B8E]" : "bg-neutral-900"
-                        }`}
-                      />
-
-                      {!item.isConfirmed && (
-                        <motion.div
-                          initial={{ scale: 1, opacity: 0.5 }}
-                          animate={{ scale: 2, opacity: 0 }}
-                          transition={{ duration: 1.5, repeat: Infinity }}
-                          className="absolute inset-0 rounded-full bg-neutral-900"
-                        />
-                      )}
-                    </button>
-                  </motion.div>
-                ))}
-              </AnimatePresence>
-            </div>
-
-            <AnimatePresence>
-              {selectedPin && (
-                <>
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    onClick={() => setSelectedPin(null)}
-                    className="absolute inset-0 bg-black/20 backdrop-blur-[1px]"
-                  />
-
-                  <motion.div
-                    initial={{ y: "100%" }}
-                    animate={{ y: 0 }}
-                    exit={{ y: "100%" }}
-                    transition={{ type: "spring", damping: 30, stiffness: 300 }}
-                    className="absolute bottom-0 left-0 right-0 mx-auto max-w-2xl overflow-hidden rounded-t-3xl border-t border-neutral-200/60 bg-white shadow-2xl"
-                  >
-                    {detectedItems
-                      .filter((item) => item.id === selectedPin)
-                      .map((item) => (
-                        <div key={item.id} className="p-6">
-                          <div className="mb-5 flex items-start justify-between">
-                            <div>
-                              <p className="mb-1 text-xs uppercase tracking-wide text-neutral-400">
-                                {item.type}
-                              </p>
-                              <h3 className="mb-2 text-base text-neutral-900">
-                                {item.label}
-                              </h3>
-                              <div className="flex flex-wrap gap-2">
-                                <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-xs text-neutral-600">
-                                  {item.color}
-                                </span>
-                                {item.fabric && (
-                                  <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-xs text-neutral-600">
-                                    {item.fabric}
-                                  </span>
-                                )}
-                                {item.silhouette && (
-                                  <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-xs text-neutral-600">
-                                    {item.silhouette}
-                                  </span>
-                                )}
-                              </div>
+          <AnimatePresence>
+            {selectedPin && (
+              <>
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  onClick={() => setSelectedPin(null)}
+                  className="fixed inset-0 z-[60] bg-black/30 backdrop-blur-[1px]"
+                />
+                <motion.div
+                  initial={{ y: "100%" }}
+                  animate={{ y: 0 }}
+                  exit={{ y: "100%" }}
+                  transition={{ type: "spring", damping: 30, stiffness: 300 }}
+                  className="fixed bottom-0 left-0 right-0 z-[70] mx-auto max-h-[80vh] max-w-2xl overflow-y-auto rounded-t-3xl border-t border-neutral-200/60 bg-white shadow-2xl"
+                >
+                  {detectedItems
+                    .filter((item) => item.id === selectedPin)
+                    .map((item) => (
+                      <div key={item.id} className="p-6">
+                        <div className="mb-5 flex items-start justify-between">
+                          <div>
+                            <p className="mb-1 text-xs uppercase tracking-wide text-neutral-400">{item.type}</p>
+                            <h3 className="mb-2 text-base font-medium text-neutral-900">{item.label}</h3>
+                            <div className="flex flex-wrap gap-2">
+                              <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-xs text-neutral-600">{item.color}</span>
+                              {item.fabric && (
+                                <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-xs text-neutral-600">{item.fabric}</span>
+                              )}
+                              {item.silhouette && (
+                                <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-xs text-neutral-600">{item.silhouette}</span>
+                              )}
                             </div>
+                          </div>
+                          <button
+                            onClick={() => setSelectedPin(null)}
+                            className="flex h-8 w-8 items-center justify-center rounded-full text-neutral-400 transition-colors hover:bg-neutral-100"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+
+                        {item.closetMatch ? (
+                          <div className="mb-5">
+                            <p className="mb-3 text-xs uppercase tracking-wide text-neutral-500">Matched from Closet</p>
+                            <div className="flex items-center gap-3 rounded-xl border border-neutral-200/60 bg-neutral-50 p-3">
+                              <img
+                                src={item.closetMatch.imageUrl}
+                                alt={item.closetMatch.brand}
+                                className="h-16 w-16 rounded-lg object-cover"
+                              />
+                              <div className="flex-1 min-w-0">
+                                <p className="mb-0.5 text-sm font-medium text-neutral-900">{item.closetMatch.brand}</p>
+                                <p className="text-xs text-neutral-500">{item.label}</p>
+                              </div>
+                              {item.isConfirmed && (
+                                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#8B9B8E]">
+                                  <Check className="h-4 w-4 text-white" />
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="mb-5">
+                            <p className="mb-3 text-xs uppercase tracking-wide text-neutral-500">Not in Closet</p>
                             <button
-                              onClick={() => setSelectedPin(null)}
-                              className="flex h-8 w-8 items-center justify-center rounded-full text-neutral-400 transition-colors hover:bg-neutral-100"
+                              type="button"
+                              onClick={() => openAddAsNewItem(item)}
+                              className="w-full rounded-xl border border-neutral-300 bg-white py-2.5 text-sm text-neutral-900 transition-all hover:bg-neutral-50"
                             >
-                              <X className="h-4 w-4" />
+                              Add as New Item
                             </button>
                           </div>
+                        )}
 
-                          {item.closetMatch ? (
-                            <div className="mb-5">
-                              <p className="mb-3 text-xs uppercase tracking-wide text-neutral-500">
-                                Matched from Closet
-                              </p>
-                              <div className="flex items-center gap-3 rounded-xl border border-neutral-200/60 bg-neutral-50 p-3">
-                                <img
-                                  src={item.closetMatch.imageUrl}
-                                  alt={item.closetMatch.brand}
-                                  className="h-16 w-16 rounded-lg object-cover"
-                                />
-                                <div className="flex-1">
-                                  <p className="mb-0.5 text-sm text-neutral-900">
-                                    {item.closetMatch.brand}
-                                  </p>
-                                  <p className="text-xs text-neutral-500">
-                                    {item.label}
-                                  </p>
-                                </div>
-                                {item.isConfirmed && (
-                                  <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[#8B9B8E]">
-                                    <Check className="h-4 w-4 text-white" />
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="mb-5">
-                              <p className="mb-3 text-xs uppercase tracking-wide text-neutral-500">
-                                Not in Closet
-                              </p>
-                              <button className="w-full rounded-xl border border-neutral-300 bg-white py-2.5 text-sm text-neutral-900 transition-all hover:bg-neutral-50">
-                                Add as New Item
-                              </button>
-                            </div>
-                          )}
-
-                          <div className="grid grid-cols-2 gap-3">
-                            {!item.isConfirmed ? (
-                              <>
-                                <button
-                                  onClick={() => confirmItem(item.id)}
-                                  className="rounded-xl bg-neutral-900 py-2.5 text-sm text-white transition-all hover:bg-neutral-800"
-                                >
-                                  Confirm
-                                </button>
-                                <button
-                                  onClick={() => openSwapModal(item.id)}
-                                  className="flex items-center justify-center gap-2 rounded-xl border border-neutral-300 bg-white py-2.5 text-sm text-neutral-900 transition-all hover:bg-neutral-50"
-                                >
-                                  Swap
-                                  <ChevronDown className="h-3.5 w-3.5" />
-                                </button>
-                              </>
-                            ) : (
+                        <div className="grid grid-cols-2 gap-3">
+                          {!item.isConfirmed ? (
+                            <>
                               <button
-                                onClick={() =>
-                                  setDetectedItems((items) =>
-                                    items.map((i) =>
-                                      i.id === item.id
-                                        ? { ...i, isConfirmed: false }
-                                        : i
-                                    )
-                                  )
-                                }
-                                className="col-span-2 rounded-xl border border-neutral-300 bg-white py-2.5 text-sm text-neutral-600 transition-all hover:bg-neutral-50"
+                                onClick={() => confirmItem(item.id)}
+                                className="rounded-xl bg-neutral-900 py-2.5 text-sm text-white transition-all hover:bg-neutral-800"
                               >
-                                Edit Selection
+                                Confirm
                               </button>
-                            )}
-                          </div>
+                              <button
+                                onClick={() => openSwapModal(item.id)}
+                                className="flex items-center justify-center gap-2 rounded-xl border border-neutral-300 bg-white py-2.5 text-sm text-neutral-900 transition-all hover:bg-neutral-50"
+                              >
+                                Swap
+                                <ChevronDown className="h-3.5 w-3.5" />
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              onClick={() =>
+                                setDetectedItems((items) =>
+                                  items.map((i) => (i.id === item.id ? { ...i, isConfirmed: false } : i))
+                                )
+                              }
+                              className="col-span-2 rounded-xl border border-neutral-300 bg-white py-2.5 text-sm text-neutral-600 transition-all hover:bg-neutral-50"
+                            >
+                              Edit Selection
+                            </button>
+                          )}
                         </div>
-                      ))}
-                  </motion.div>
-                </>
-              )}
-            </AnimatePresence>
-          </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            removeDetectedItem(item.id);
+                            setSelectedPin(null);
+                          }}
+                          className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-red-200 bg-white py-2.5 text-sm text-red-600 transition-all hover:bg-red-50"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          Remove item
+                        </button>
+                      </div>
+                    ))}
+                </motion.div>
+              </>
+            )}
+          </AnimatePresence>
         </motion.div>
       )}
 
@@ -685,14 +937,21 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
           <div className="sticky top-0 z-20 border-b border-neutral-200/60 bg-white/90 backdrop-blur-xl">
             <div className="flex items-center justify-between px-6 py-4">
               <button
+                type="button"
                 onClick={() => setStep("tagging")}
                 className="flex h-9 w-9 items-center justify-center rounded-full text-neutral-600 transition-all hover:bg-neutral-100"
+                aria-label="Back to tags"
               >
-                <X className="h-4 w-4" />
+                <ChevronLeft className="h-5 w-5" />
               </button>
-              <h2 className="text-sm text-neutral-900">Post</h2>
-              <button className="text-sm text-neutral-900 transition-colors hover:text-neutral-600">
-                Share
+              <h2 className="text-sm font-medium text-neutral-900">Post</h2>
+              <button
+                type="button"
+                onClick={handlePostToFeed}
+                disabled={posting}
+                className="text-sm font-medium text-neutral-900 transition-colors hover:text-neutral-600 disabled:opacity-50"
+              >
+                {posting ? "Posting…" : "Share"}
               </button>
             </div>
           </div>
@@ -705,24 +964,6 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
                   alt="Final outfit"
                   className="h-full w-full object-cover"
                 />
-
-                {detectedItems.map((item) => (
-                  <div
-                    key={item.id}
-                    className="absolute"
-                    style={{
-                      left: `${item.position.x}%`,
-                      top: `${item.position.y}%`,
-                      transform: "translate(-50%, -50%)",
-                    }}
-                  >
-                    <div className="h-2 w-2 rounded-full border border-white bg-white/50 shadow-sm backdrop-blur-sm" />
-                  </div>
-                ))}
-
-                <div className="absolute left-4 top-4 rounded-full border border-white/60 bg-white/90 px-3 py-1.5 backdrop-blur-sm">
-                  <p className="text-xs text-neutral-900">86% aligned</p>
-                </div>
               </div>
             </div>
 
@@ -769,8 +1010,16 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
               </div>
             </div>
 
-            <button className="w-full rounded-xl bg-neutral-900 py-3.5 text-sm text-white transition-all hover:bg-neutral-800">
-              Post to Feed
+            {postError && (
+              <p className="mb-4 text-sm text-red-600">{postError}</p>
+            )}
+            <button
+              type="button"
+              onClick={handlePostToFeed}
+              disabled={posting}
+              className="w-full rounded-xl bg-neutral-900 py-3.5 text-sm font-medium text-white transition-all hover:bg-neutral-800 disabled:opacity-50"
+            >
+              {posting ? "Posting…" : "Post to Feed"}
             </button>
           </div>
         </motion.div>
@@ -838,11 +1087,10 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
                         <button
                           key={cat.value}
                           onClick={() => setCategoryFilter(cat.value)}
-                          className={`flex-shrink-0 rounded-full px-3 py-1.5 text-xs transition-all ${
-                            categoryFilter === cat.value
-                              ? "bg-neutral-900 text-white"
-                              : "border border-neutral-200 bg-white text-neutral-600 hover:border-neutral-300"
-                          }`}
+                          className={`flex-shrink-0 rounded-full px-3 py-1.5 text-xs transition-all ${categoryFilter === cat.value
+                            ? "bg-neutral-900 text-white"
+                            : "border border-neutral-200 bg-white text-neutral-600 hover:border-neutral-300"
+                            }`}
                         >
                           {cat.label}
                         </button>

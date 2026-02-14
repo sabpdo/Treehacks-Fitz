@@ -393,6 +393,12 @@ export interface User {
   followingCount: number;
 }
 
+/** Tag from "tag your items" flow — one per confirmed item on the OOTD */
+export interface OOTDPostTag {
+  label: string;
+  type: string; // e.g. top, bottom, shoes, dress, jacket
+}
+
 export interface OOTDPost {
   id: string;
   userId: string;
@@ -406,6 +412,8 @@ export interface OOTDPost {
   likedByUserIds: string[];
   compatibilityScore: number;
   aiInsight: string;
+  /** Tagged items from capture flow (label + category) */
+  tags?: OOTDPostTag[];
 }
 
 export interface Comment {

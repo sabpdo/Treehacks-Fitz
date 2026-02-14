@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { motion } from "motion/react";
 import { Bookmark, ImageOff, Trash2 } from "lucide-react";
@@ -102,6 +102,18 @@ export function PostCard({
             >
               <Trash2 className="h-4 w-4" />
             </button>
+          </div>
+        )}
+        {post.tags && post.tags.length > 0 && (
+          <div className="absolute bottom-0 left-0 right-0 flex flex-wrap gap-1.5 bg-gradient-to-t from-black/70 to-transparent p-2.5 pt-6">
+            {post.tags.slice(0, 4).map((tag, i) => (
+              <span
+                key={`${tag.label}-${i}`}
+                className="rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-medium text-neutral-800 backdrop-blur-sm"
+              >
+                {tag.label}
+              </span>
+            ))}
           </div>
         )}
       </div>
@@ -249,6 +261,18 @@ export function PostCard({
             {score != null && (
               <div className="absolute right-2 top-2">
                 <Badge variant="accent">{score}%</Badge>
+              </div>
+            )}
+            {post.tags && post.tags.length > 0 && (
+              <div className="absolute bottom-0 left-0 right-0 flex flex-wrap gap-1 bg-gradient-to-t from-black/60 to-transparent p-2 pt-5">
+                {post.tags.slice(0, 3).map((tag, i) => (
+                  <span
+                    key={`${tag.label}-${i}`}
+                    className="rounded-full bg-white/90 px-1.5 py-0.5 text-[9px] font-medium text-neutral-800"
+                  >
+                    {tag.label}
+                  </span>
+                ))}
               </div>
             )}
           </div>

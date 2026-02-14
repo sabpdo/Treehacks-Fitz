@@ -158,6 +158,26 @@ export function PostDetail() {
           {post.caption && (
             <p className="mt-3 text-sm text-neutral-700">{post.caption}</p>
           )}
+          {"tags" in post && post.tags && post.tags.length > 0 && (
+            <div className="mt-3">
+              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-500">
+                Tagged items
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {post.tags.map((tag, i) => (
+                  <span
+                    key={`${tag.label}-${i}`}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200/80 bg-neutral-50 px-3 py-1.5 text-sm text-neutral-800"
+                  >
+                    <span>{tag.label}</span>
+                    <span className="text-[10px] uppercase tracking-wide text-neutral-400">
+                      {tag.type.replace(/_/g, " ")}
+                    </span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
           {post.aiInsight && (
             <p className="mt-2 text-xs text-neutral-500 italic">{post.aiInsight}</p>
           )}

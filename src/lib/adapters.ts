@@ -48,6 +48,11 @@ export interface UIUser {
   closetUtilization?: number;
 }
 
+export interface UIOOTDPostTag {
+  label: string;
+  type: string;
+}
+
 export interface UIOOTDPost {
   id: string;
   userId: string;
@@ -61,6 +66,7 @@ export interface UIOOTDPost {
   likedByUserIds: string[];
   compatibilityScore: number;
   aiInsight: string;
+  tags?: UIOOTDPostTag[];
 }
 
 export interface UIComment {

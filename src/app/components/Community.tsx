@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect } from "react";
+import React, { useState, useMemo, useRef, useEffect } from "react";
 import { Search, Grid3x3, List } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useAppStore } from "../context/AppStore";
@@ -283,9 +283,14 @@ export function Community() {
             <motion.div
               key={tab}
               custom={slideDirectionRef.current}
-              initial={(d: number) => ({ opacity: 0, x: (d || 0) * 40 })}
-              animate={{ opacity: 1, x: 0 }}
-              exit={(d: number) => ({ opacity: 0, x: (d || 0) * -40 })}
+              variants={{
+                slideEnter: (d: number) => ({ opacity: 0, x: (d || 0) * 40 }),
+                slideCenter: { opacity: 1, x: 0 },
+                slideExit: (d: number) => ({ opacity: 0, x: (d || 0) * -40 }),
+              }}
+              initial="slideEnter"
+              animate="slideCenter"
+              exit="slideExit"
               transition={{ duration: 0.25, ease: "easeInOut" }}
               className="w-full"
             >

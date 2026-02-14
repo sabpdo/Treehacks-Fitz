@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { Plus, Grid3x3, List, X, ChevronRight, TrendingUp } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { mockClosetItems, type ClosetItem } from "../data/mockData";
@@ -38,21 +38,19 @@ export function Closet() {
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setViewMode("grid")}
-                className={`flex h-9 w-9 items-center justify-center rounded-lg transition-all ${
-                  viewMode === "grid"
+                className={`flex h-9 w-9 items-center justify-center rounded-lg transition-all ${viewMode === "grid"
                     ? "bg-neutral-900 text-white"
                     : "text-neutral-400 hover:bg-neutral-100"
-                }`}
+                  }`}
               >
                 <Grid3x3 className="h-4 w-4" />
               </button>
               <button
                 onClick={() => setViewMode("list")}
-                className={`flex h-9 w-9 items-center justify-center rounded-lg transition-all ${
-                  viewMode === "list"
+                className={`flex h-9 w-9 items-center justify-center rounded-lg transition-all ${viewMode === "list"
                     ? "bg-neutral-900 text-white"
                     : "text-neutral-400 hover:bg-neutral-100"
-                }`}
+                  }`}
               >
                 <List className="h-4 w-4" />
               </button>
@@ -153,11 +151,10 @@ export function Closet() {
             <button
               key={cat.value}
               onClick={() => setFilter(cat.value as CategoryFilter)}
-              className={`flex-shrink-0 rounded-full px-4 py-1.5 text-xs transition-all ${
-                filter === cat.value
+              className={`flex-shrink-0 rounded-full px-4 py-1.5 text-xs transition-all ${filter === cat.value
                   ? "bg-neutral-900 text-white"
                   : "border border-neutral-200 bg-white text-neutral-600 hover:border-neutral-300"
-              }`}
+                }`}
             >
               {cat.label}
             </button>
@@ -190,24 +187,24 @@ export function Closet() {
                         item.color.toLowerCase() === "white"
                           ? "#F5F5F5"
                           : item.color.toLowerCase() === "black"
-                          ? "#1a1a1a"
-                          : item.color.toLowerCase() === "beige"
-                          ? "#D4C5B9"
-                          : item.color.toLowerCase() === "navy"
-                          ? "#1F2937"
-                          : item.color.toLowerCase() === "gray"
-                          ? "#9CA3AF"
-                          : item.color.toLowerCase() === "sage"
-                          ? "#8B9B8E"
-                          : item.color.toLowerCase() === "cream"
-                          ? "#F5F1E8"
-                          : item.color.toLowerCase() === "camel"
-                          ? "#C19A6B"
-                          : item.color.toLowerCase() === "tan"
-                          ? "#D2B48C"
-                          : item.color.toLowerCase() === "gold"
-                          ? "#FFD700"
-                          : "#E5E7EB",
+                            ? "#1a1a1a"
+                            : item.color.toLowerCase() === "beige"
+                              ? "#D4C5B9"
+                              : item.color.toLowerCase() === "navy"
+                                ? "#1F2937"
+                                : item.color.toLowerCase() === "gray"
+                                  ? "#9CA3AF"
+                                  : item.color.toLowerCase() === "sage"
+                                    ? "#8B9B8E"
+                                    : item.color.toLowerCase() === "cream"
+                                      ? "#F5F1E8"
+                                      : item.color.toLowerCase() === "camel"
+                                        ? "#C19A6B"
+                                        : item.color.toLowerCase() === "tan"
+                                          ? "#D2B48C"
+                                          : item.color.toLowerCase() === "gold"
+                                            ? "#FFD700"
+                                            : "#E5E7EB",
                     }}
                   />
                 </div>
@@ -271,24 +268,24 @@ export function Closet() {
                           item.color.toLowerCase() === "white"
                             ? "#F5F5F5"
                             : item.color.toLowerCase() === "black"
-                            ? "#1a1a1a"
-                            : item.color.toLowerCase() === "beige"
-                            ? "#D4C5B9"
-                            : item.color.toLowerCase() === "navy"
-                            ? "#1F2937"
-                            : item.color.toLowerCase() === "gray"
-                            ? "#9CA3AF"
-                            : item.color.toLowerCase() === "sage"
-                            ? "#8B9B8E"
-                            : item.color.toLowerCase() === "cream"
-                            ? "#F5F1E8"
-                            : item.color.toLowerCase() === "camel"
-                            ? "#C19A6B"
-                            : item.color.toLowerCase() === "tan"
-                            ? "#D2B48C"
-                            : item.color.toLowerCase() === "gold"
-                            ? "#FFD700"
-                            : "#E5E7EB",
+                              ? "#1a1a1a"
+                              : item.color.toLowerCase() === "beige"
+                                ? "#D4C5B9"
+                                : item.color.toLowerCase() === "navy"
+                                  ? "#1F2937"
+                                  : item.color.toLowerCase() === "gray"
+                                    ? "#9CA3AF"
+                                    : item.color.toLowerCase() === "sage"
+                                      ? "#8B9B8E"
+                                      : item.color.toLowerCase() === "cream"
+                                        ? "#F5F1E8"
+                                        : item.color.toLowerCase() === "camel"
+                                          ? "#C19A6B"
+                                          : item.color.toLowerCase() === "tan"
+                                            ? "#D2B48C"
+                                            : item.color.toLowerCase() === "gold"
+                                              ? "#FFD700"
+                                              : "#E5E7EB",
                       }}
                     />
                     <span className="text-xs text-neutral-600">{item.color}</span>
@@ -372,24 +369,24 @@ export function Closet() {
                               selectedItem.color.toLowerCase() === "white"
                                 ? "#F5F5F5"
                                 : selectedItem.color.toLowerCase() === "black"
-                                ? "#1a1a1a"
-                                : selectedItem.color.toLowerCase() === "beige"
-                                ? "#D4C5B9"
-                                : selectedItem.color.toLowerCase() === "navy"
-                                ? "#1F2937"
-                                : selectedItem.color.toLowerCase() === "gray"
-                                ? "#9CA3AF"
-                                : selectedItem.color.toLowerCase() === "sage"
-                                ? "#8B9B8E"
-                                : selectedItem.color.toLowerCase() === "cream"
-                                ? "#F5F1E8"
-                                : selectedItem.color.toLowerCase() === "camel"
-                                ? "#C19A6B"
-                                : selectedItem.color.toLowerCase() === "tan"
-                                ? "#D2B48C"
-                                : selectedItem.color.toLowerCase() === "gold"
-                                ? "#FFD700"
-                                : "#E5E7EB",
+                                  ? "#1a1a1a"
+                                  : selectedItem.color.toLowerCase() === "beige"
+                                    ? "#D4C5B9"
+                                    : selectedItem.color.toLowerCase() === "navy"
+                                      ? "#1F2937"
+                                      : selectedItem.color.toLowerCase() === "gray"
+                                        ? "#9CA3AF"
+                                        : selectedItem.color.toLowerCase() === "sage"
+                                          ? "#8B9B8E"
+                                          : selectedItem.color.toLowerCase() === "cream"
+                                            ? "#F5F1E8"
+                                            : selectedItem.color.toLowerCase() === "camel"
+                                              ? "#C19A6B"
+                                              : selectedItem.color.toLowerCase() === "tan"
+                                                ? "#D2B48C"
+                                                : selectedItem.color.toLowerCase() === "gold"
+                                                  ? "#FFD700"
+                                                  : "#E5E7EB",
                           }}
                         />
                         <span className="text-neutral-900">{selectedItem.color}</span>
