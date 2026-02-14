@@ -1,5 +1,5 @@
 import { Outlet, Link, useLocation } from "react-router";
-import { Home, Users, Sparkles, User, ShoppingBag, Plus } from "lucide-react";
+import { Home, Sparkles, User, ShoppingBag, Plus } from "lucide-react";
 import { motion } from "motion/react";
 
 export function Root() {
@@ -37,15 +37,13 @@ export function Root() {
             className="relative flex flex-col items-center gap-1.5 transition-colors duration-200"
           >
             <Home
-              className={`h-6 w-6 transition-all ${
-                isActive("/") ? "text-[#8B9B8E]" : "text-neutral-400"
-              }`}
+              className={`h-6 w-6 transition-all ${isActive("/") ? "text-[#8B9B8E]" : "text-neutral-400"
+                }`}
               strokeWidth={isActive("/") ? 2.5 : 2}
             />
             <span
-              className={`text-xs transition-all ${
-                isActive("/") ? "text-[#8B9B8E]" : "text-neutral-400"
-              }`}
+              className={`text-xs transition-all ${isActive("/") ? "text-[#8B9B8E]" : "text-neutral-400"
+                }`}
             >
               Feed
             </span>
@@ -59,45 +57,17 @@ export function Root() {
           </Link>
 
           <Link
-            to="/community"
-            className="relative flex flex-col items-center gap-1.5 transition-colors duration-200"
-          >
-            <Users
-              className={`h-6 w-6 transition-all ${
-                isActive("/community") ? "text-[#8B9B8E]" : "text-neutral-400"
-              }`}
-              strokeWidth={isActive("/community") ? 2.5 : 2}
-            />
-            <span
-              className={`text-xs transition-all ${
-                isActive("/community") ? "text-[#8B9B8E]" : "text-neutral-400"
-              }`}
-            >
-              Community
-            </span>
-            {isActive("/community") && (
-              <motion.div
-                layoutId="nav-indicator"
-                className="absolute -top-3 h-1 w-8 rounded-full bg-[#8B9B8E]"
-                transition={{ type: "spring", stiffness: 300, damping: 30 }}
-              />
-            )}
-          </Link>
-
-          <Link
             to="/ai-generator"
             className="relative flex flex-col items-center gap-1.5 transition-colors duration-200"
           >
             <Sparkles
-              className={`h-6 w-6 transition-all ${
-                isActive("/ai-generator") ? "text-[#8B9B8E]" : "text-neutral-400"
-              }`}
+              className={`h-6 w-6 transition-all ${isActive("/ai-generator") ? "text-[#8B9B8E]" : "text-neutral-400"
+                }`}
               strokeWidth={isActive("/ai-generator") ? 2.5 : 2}
             />
             <span
-              className={`text-xs transition-all ${
-                isActive("/ai-generator") ? "text-[#8B9B8E]" : "text-neutral-400"
-              }`}
+              className={`text-xs transition-all ${isActive("/ai-generator") ? "text-[#8B9B8E]" : "text-neutral-400"
+                }`}
             >
               AI
             </span>
@@ -115,15 +85,13 @@ export function Root() {
             className="relative flex flex-col items-center gap-1.5 transition-colors duration-200"
           >
             <ShoppingBag
-              className={`h-6 w-6 transition-all ${
-                isActive("/closet") ? "text-[#8B9B8E]" : "text-neutral-400"
-              }`}
+              className={`h-6 w-6 transition-all ${isActive("/closet") ? "text-[#8B9B8E]" : "text-neutral-400"
+                }`}
               strokeWidth={isActive("/closet") ? 2.5 : 2}
             />
             <span
-              className={`text-xs transition-all ${
-                isActive("/closet") ? "text-[#8B9B8E]" : "text-neutral-400"
-              }`}
+              className={`text-xs transition-all ${isActive("/closet") ? "text-[#8B9B8E]" : "text-neutral-400"
+                }`}
             >
               Closet
             </span>
@@ -141,15 +109,13 @@ export function Root() {
             className="relative flex flex-col items-center gap-1.5 transition-colors duration-200"
           >
             <User
-              className={`h-6 w-6 transition-all ${
-                isActive("/profile") ? "text-[#8B9B8E]" : "text-neutral-400"
-              }`}
+              className={`h-6 w-6 transition-all ${isActive("/profile") ? "text-[#8B9B8E]" : "text-neutral-400"
+                }`}
               strokeWidth={isActive("/profile") ? 2.5 : 2}
             />
             <span
-              className={`text-xs transition-all ${
-                isActive("/profile") ? "text-[#8B9B8E]" : "text-neutral-400"
-              }`}
+              className={`text-xs transition-all ${isActive("/profile") ? "text-[#8B9B8E]" : "text-neutral-400"
+                }`}
             >
               Profile
             </span>

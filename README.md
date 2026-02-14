@@ -123,7 +123,13 @@ Routes are defined in `src/app/routes.ts`. The application uses React Router wit
 ### "Bucket not found" or "Failed to create post" when posting a photo
 
 1. Create the bucket: **Supabase Dashboard → Storage → New bucket** → name **`closet-images`**, set **Public** → Create.
-2. If you see **"new row violates row-level security policy"**, run the SQL in **supabase/storage-policies.sql** in the Supabase SQL Editor (see **BACKEND_SETUP.md** Step 6.2).
+2. If you see **"new row violates row-level security policy"**, run the SQL in **supabase/storage-policies.sql** in the Supabase SQL Editor (see **BACKEND_SETUP.md** Step 6.3).
+
+### Post images show "Image unavailable" in the feed
+
+1. In Supabase **Storage** → open the **closet-images** bucket → ensure **Public bucket** is **ON** (bucket settings / ⋮ menu).
+2. Check **.env** has **`VITE_SUPABASE_URL`** set correctly (e.g. `https://your-project.supabase.co`, no trailing slash).
+3. Open DevTools → Console; when an image fails you’ll see the URL that was tried. In Network tab, open that request to see the status (403 = bucket not public or RLS; 404 = wrong path).
 
 ### Port Already in Use
 

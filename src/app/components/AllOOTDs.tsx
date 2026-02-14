@@ -25,7 +25,12 @@ export function AllOOTDs() {
     if (!isUsingApi) {
       if (filter === "saved") return posts.filter((p) => savedPostIds.has(p.id));
       if (filter === "following") return posts.filter((p) => followingUserIds.has(p.userId));
-      if (filter === "trending") return [...posts].sort((a, b) => b.likeCount - a.likeCount);
+      if (filter === "trending") {
+        const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+        return [...posts]
+          .filter((p) => new Date(p.createdAt).getTime() >= weekAgo)
+          .sort((a, b) => b.likeCount - a.likeCount);
+      }
     }
     return posts;
   })();
@@ -40,7 +45,7 @@ export function AllOOTDs() {
   return (
     <div className="min-h-screen bg-[#FAFAF8]">
       <header className="sticky top-0 z-30 border-b border-neutral-200/60 bg-white/95 backdrop-blur-xl">
-        <div className="mx-auto max-w-lg px-4 py-3">
+        <div className="mx-auto max-w-3xl px-4 py-3 sm:px-6">
           <div className="flex items-center justify-between">
             <motion.button
               whileHover={{ scale: 1.02 }}
@@ -59,7 +64,7 @@ export function AllOOTDs() {
         </div>
 
         {/* Filter pills — Closet-style */}
-        <div className="mx-auto max-w-lg px-4 pb-3">
+        <div className="mx-auto max-w-3xl px-4 pb-3 sm:px-6">
           <div className="flex gap-2">
             {(
               [
@@ -88,7 +93,7 @@ export function AllOOTDs() {
         </div>
 
         {/* Sort + count */}
-        <div className="mx-auto flex max-w-lg items-center justify-between px-4 pb-4">
+        <div className="mx-auto flex max-w-3xl items-center justify-between px-4 pb-4 sm:px-6">
           <span className="text-xs text-neutral-500">{sorted.length} outfits</span>
           <div className="relative">
             <motion.button
@@ -151,8 +156,8 @@ export function AllOOTDs() {
         </div>
       </header>
 
-      {/* Scrollable feed — single column, Beli/BeReal style */}
-      <main className="mx-auto max-w-lg px-4 pb-24">
+      {/* Scrollable feed — single column, comfortable width on desktop */}
+      <main className="mx-auto max-w-3xl px-4 pb-24 sm:px-6">
         {feedLoading ? (
           <div className="space-y-5 pt-2">
             {[1, 2, 3, 4, 5, 6].map((i) => (
