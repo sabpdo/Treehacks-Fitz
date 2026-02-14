@@ -120,6 +120,10 @@ export interface CreateClosetItemRequest {
   category: Category;
   vibe_tags?: VibeTag[];
   price_tier?: PriceTier;
+  colors?: string[];
+  fabric?: string;
+  silhouette?: Silhouette;
+  subcategory?: string;
 }
 
 export interface UpdateClosetItemRequest {

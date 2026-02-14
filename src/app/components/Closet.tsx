@@ -1,10 +1,16 @@
 import React, { useState, useEffect } from "react";
-import { Plus, Grid3x3, List, X, ChevronRight, Flame } from "lucide-react";
+import { Plus, Grid3x3, List, X, ChevronRight, Flame, Upload } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { mockClosetItems, type ClosetItem, currentUserProfile } from "../data/mockData";
 import { useAppStore } from "../context/AppStore";
-import { getCurrentProfile, getClosetItems } from "../../services/api";
+import { getCurrentProfile, getClosetItems, createClosetItem, uploadImage } from "../../services/api";
 import { apiClosetItemToUI } from "../../lib/adapters";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
+import { Button } from "./ui/button";
+import { Input } from "./ui/input";
+import { Label } from "./ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
+import type { Category, VibeTag, PriceTier, Silhouette } from "../../types/database";
 
 type CategoryFilter = "all" | "tops" | "bottoms" | "outerwear" | "shoes" | "accessories";
 type ViewMode = "grid" | "list";
@@ -17,6 +23,21 @@ export function Closet() {
   const [closetItems, setClosetItems] = useState<ClosetItem[]>(mockClosetItems);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [addItemOpen, setAddItemOpen] = useState(false);
+  const [addingItem, setAddingItem] = useState(false);
+  const [addItemError, setAddItemError] = useState<string | null>(null);
+  const [formData, setFormData] = useState({
+    image: null as File | null,
+    imagePreview: null as string | null,
+    brand: "",
+    category: "" as Category | "",
+    vibeTags: [] as VibeTag[],
+    priceTier: "" as PriceTier | "",
+    colors: [] as string[],
+    fabric: "",
+    silhouette: "" as Silhouette | "",
+    subcategory: "",
+  });
   const { isUsingApi, currentUserId, getUser } = useAppStore();
 
   // Load closet items from API
@@ -150,10 +171,335 @@ export function Closet() {
 
             {/* Add Item Button */}
             <div className="flex items-center justify-center bg-white p-6">
-              <button className="flex w-full items-center justify-center gap-2 rounded-xl border border-neutral-900 bg-neutral-900 py-3 text-sm text-white transition-all hover:bg-neutral-800">
-                <Plus className="h-4 w-4" />
-                Add Item
-              </button>
+              <Dialog open={addItemOpen} onOpenChange={setAddItemOpen}>
+                <DialogTrigger asChild>
+                  <button className="flex w-full items-center justify-center gap-2 rounded-xl border border-neutral-900 bg-neutral-900 py-3 text-sm text-white transition-all hover:bg-neutral-800">
+                    <Plus className="h-4 w-4" />
+                    Add Item
+                  </button>
+                </DialogTrigger>
+                <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden bg-white flex flex-col">
+                  <DialogHeader>
+                    <DialogTitle>Add New Item to Closet</DialogTitle>
+                  </DialogHeader>
+                  <form
+                    onSubmit={async (e) => {
+                      e.preventDefault();
+                      if (!formData.image || !formData.category) {
+                        setAddItemError("Please select an image and category");
+                        return;
+                      }
+
+                      if (!isUsingApi || !currentUserId) {
+                        setAddItemError("Please log in to add items");
+                        return;
+                      }
+
+                      setAddingItem(true);
+                      setAddItemError(null);
+
+                      try {
+                        // Upload image first
+                        const imageUrl = await uploadImage(formData.image);
+
+                        // Create closet item
+                        const newItem = await createClosetItem({
+                          image_url: imageUrl,
+                          brand: formData.brand || undefined,
+                          category: formData.category as Category,
+                          vibe_tags: formData.vibeTags.length > 0 ? formData.vibeTags : undefined,
+                          price_tier: formData.priceTier || undefined,
+                          colors: formData.colors.length > 0 ? formData.colors : undefined,
+                          fabric: formData.fabric || undefined,
+                          silhouette: formData.silhouette || undefined,
+                          subcategory: formData.subcategory || undefined,
+                        });
+
+                        // Convert to UI format and add to list
+                        const uiItem = apiClosetItemToUI(newItem);
+                        setClosetItems((prev) => [uiItem, ...prev]);
+
+                        // Reset form and close dialog
+                        setFormData({
+                          image: null,
+                          imagePreview: null,
+                          brand: "",
+                          category: "" as Category | "",
+                          vibeTags: [],
+                          priceTier: "" as PriceTier | "",
+                          colors: [],
+                          fabric: "",
+                          silhouette: "" as Silhouette | "",
+                          subcategory: "",
+                        });
+                        setAddItemOpen(false);
+                      } catch (err) {
+                        console.error("Failed to add item:", err);
+                        setAddItemError(err instanceof Error ? err.message : "Failed to add item");
+                      } finally {
+                        setAddingItem(false);
+                      }
+                    }}
+                    className="space-y-4 overflow-y-auto flex-1 pr-2"
+                  >
+                    {/* Image Upload */}
+                    <div className="space-y-2">
+                      <Label htmlFor="image">Item Image *</Label>
+                      <div className="flex items-center gap-4">
+                        {formData.imagePreview ? (
+                          <div className="relative">
+                            <img
+                              src={formData.imagePreview}
+                              alt="Preview"
+                              className="h-32 w-32 rounded-lg object-cover border border-neutral-200"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setFormData((prev) => ({ ...prev, image: null, imagePreview: null }));
+                              }}
+                              className="absolute -top-2 -right-2 flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-white hover:bg-red-600"
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
+                          </div>
+                        ) : (
+                          <label
+                            htmlFor="image-upload"
+                            className="flex h-32 w-32 cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-neutral-300 bg-neutral-50 hover:border-neutral-400"
+                          >
+                            <Upload className="mb-2 h-6 w-6 text-neutral-400" />
+                            <span className="text-xs text-neutral-500">Upload Image</span>
+                          </label>
+                        )}
+                        <input
+                          id="image-upload"
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              const reader = new FileReader();
+                              reader.onloadend = () => {
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  image: file,
+                                  imagePreview: reader.result as string,
+                                }));
+                              };
+                              reader.readAsDataURL(file);
+                            }
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Brand */}
+                    <div className="space-y-2">
+                      <Label htmlFor="brand">Brand</Label>
+                      <Input
+                        id="brand"
+                        value={formData.brand}
+                        onChange={(e) => setFormData((prev) => ({ ...prev, brand: e.target.value }))}
+                        placeholder="e.g., Nike, Zara"
+                      />
+                    </div>
+
+                    {/* Category */}
+                    <div className="space-y-2">
+                      <Label htmlFor="category">Category *</Label>
+                      <Select
+                        value={formData.category}
+                        onValueChange={(value) => setFormData((prev) => ({ ...prev, category: value as Category }))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select category" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="shirts">Shirts/Tops</SelectItem>
+                          <SelectItem value="pants">Pants</SelectItem>
+                          <SelectItem value="skirts_dresses">Skirts/Dresses</SelectItem>
+                          <SelectItem value="jackets_outerwear">Jackets/Outerwear</SelectItem>
+                          <SelectItem value="shoes">Shoes</SelectItem>
+                          <SelectItem value="bags">Bags</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Price Tier */}
+                    <div className="space-y-2">
+                      <Label htmlFor="priceTier">Price Tier</Label>
+                      <Select
+                        value={formData.priceTier}
+                        onValueChange={(value) => setFormData((prev) => ({ ...prev, priceTier: value as PriceTier }))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select price tier" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="budget">Budget</SelectItem>
+                          <SelectItem value="mid">Mid-range</SelectItem>
+                          <SelectItem value="luxury">Luxury</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Colors */}
+                    <div className="space-y-2">
+                      <Label htmlFor="colors">Colors</Label>
+                      <div className="flex flex-wrap gap-2">
+                        {["black", "white", "gray", "navy", "beige", "sage", "cream", "camel", "tan", "gold", "red", "blue", "green", "pink", "brown"].map((color) => (
+                          <button
+                            key={color}
+                            type="button"
+                            onClick={() => {
+                              setFormData((prev) => ({
+                                ...prev,
+                                colors: prev.colors.includes(color)
+                                  ? prev.colors.filter((c) => c !== color)
+                                  : [...prev.colors, color],
+                              }));
+                            }}
+                            className={`rounded-full px-3 py-1 text-xs capitalize transition-colors ${
+                              formData.colors.includes(color)
+                                ? "bg-neutral-900 text-white"
+                                : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
+                            }`}
+                          >
+                            {color}
+                          </button>
+                        ))}
+                      </div>
+                      <Input
+                        id="custom-color"
+                        placeholder="Or enter custom color"
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            const input = e.target as HTMLInputElement;
+                            const value = input.value.trim().toLowerCase();
+                            if (value && !formData.colors.includes(value)) {
+                              setFormData((prev) => ({
+                                ...prev,
+                                colors: [...prev.colors, value],
+                              }));
+                              input.value = "";
+                            }
+                          }
+                        }}
+                      />
+                    </div>
+
+                    {/* Fabric */}
+                    <div className="space-y-2">
+                      <Label htmlFor="fabric">Fabric</Label>
+                      <Input
+                        id="fabric"
+                        value={formData.fabric}
+                        onChange={(e) => setFormData((prev) => ({ ...prev, fabric: e.target.value }))}
+                        placeholder="e.g., cotton, denim, silk, wool"
+                      />
+                    </div>
+
+                    {/* Silhouette */}
+                    <div className="space-y-2">
+                      <Label htmlFor="silhouette">Silhouette</Label>
+                      <Select
+                        value={formData.silhouette}
+                        onValueChange={(value) => setFormData((prev) => ({ ...prev, silhouette: value as Silhouette }))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select silhouette" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="fitted">Fitted</SelectItem>
+                          <SelectItem value="oversized">Oversized</SelectItem>
+                          <SelectItem value="loose">Loose</SelectItem>
+                          <SelectItem value="tailored">Tailored</SelectItem>
+                          <SelectItem value="relaxed">Relaxed</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Subcategory */}
+                    <div className="space-y-2">
+                      <Label htmlFor="subcategory">Subcategory</Label>
+                      <Input
+                        id="subcategory"
+                        value={formData.subcategory}
+                        onChange={(e) => setFormData((prev) => ({ ...prev, subcategory: e.target.value }))}
+                        placeholder="e.g., t-shirt, jeans, sweater, sneakers"
+                      />
+                    </div>
+
+                    {/* Vibe Tags */}
+                    <div className="space-y-2">
+                      <Label>Vibe Tags</Label>
+                      <div className="flex flex-wrap gap-2">
+                        {(["date night", "casual", "workout", "office"] as VibeTag[]).map((vibe) => (
+                          <button
+                            key={vibe}
+                            type="button"
+                            onClick={() => {
+                              setFormData((prev) => ({
+                                ...prev,
+                                vibeTags: prev.vibeTags.includes(vibe)
+                                  ? prev.vibeTags.filter((v) => v !== vibe)
+                                  : [...prev.vibeTags, vibe],
+                              }));
+                            }}
+                            className={`rounded-full px-3 py-1 text-xs transition-colors ${
+                              formData.vibeTags.includes(vibe)
+                                ? "bg-neutral-900 text-white"
+                                : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
+                            }`}
+                          >
+                            {vibe}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Error Message */}
+                    {addItemError && (
+                      <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                        {addItemError}
+                      </div>
+                    )}
+
+                    {/* Submit Button */}
+                    <div className="flex justify-end gap-3 pt-4">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                          setAddItemOpen(false);
+                          setFormData({
+                            image: null,
+                            imagePreview: null,
+                            brand: "",
+                            category: "" as Category | "",
+                            vibeTags: [],
+                            priceTier: "" as PriceTier | "",
+                            colors: [],
+                            fabric: "",
+                            silhouette: "" as Silhouette | "",
+                            subcategory: "",
+                          });
+                          setAddItemError(null);
+                        }}
+                        disabled={addingItem}
+                      >
+                        Cancel
+                      </Button>
+                      <Button type="submit" disabled={addingItem || !formData.image || !formData.category}>
+                        {addingItem ? "Adding..." : "Add Item"}
+                      </Button>
+                    </div>
+                  </form>
+                </DialogContent>
+              </Dialog>
             </div>
           </div>
 
@@ -420,8 +766,17 @@ export function Closet() {
                     />
                   </div>
 
-                  {/* Metadata Grid */}
-                  <div className="mb-6 grid gap-4 sm:grid-cols-2">
+                  {/* Metadata Grid - Matching form field order */}
+                  <div className="mb-6 space-y-4">
+                    {/* Brand */}
+                    <div>
+                      <p className="mb-1 text-xs uppercase tracking-wide text-neutral-400">
+                        Brand
+                      </p>
+                      <p className="text-neutral-900">{selectedItem.brand || "—"}</p>
+                    </div>
+
+                    {/* Category */}
                     <div>
                       <p className="mb-1 text-xs uppercase tracking-wide text-neutral-400">
                         Category
@@ -430,87 +785,108 @@ export function Closet() {
                         {selectedItem.category}
                       </p>
                     </div>
+
+                    {/* Price Tier */}
+                    {(selectedItem as any).priceTier && (
+                      <div>
+                        <p className="mb-1 text-xs uppercase tracking-wide text-neutral-400">
+                          Price Tier
+                        </p>
+                        <p className="capitalize text-neutral-900">
+                          {(selectedItem as any).priceTier}
+                        </p>
+                      </div>
+                    )}
+                    
+                    {/* Colors */}
                     <div>
-                      <p className="mb-1 text-xs uppercase tracking-wide text-neutral-400">
-                        Brand
+                      <p className="mb-2 text-xs uppercase tracking-wide text-neutral-400">
+                        Colors
                       </p>
-                      <p className="text-neutral-900">{selectedItem.brand || "—"}</p>
-                    </div>
-                    <div>
-                      <p className="mb-1 text-xs uppercase tracking-wide text-neutral-400">
-                        Color
-                      </p>
-                      <div className="flex items-center gap-2">
-                        <div
-                          className="h-4 w-4 rounded-full border border-neutral-300"
-                          style={{
-                            backgroundColor:
-                              selectedItem.color.toLowerCase() === "white"
-                                ? "#F5F5F5"
-                                : selectedItem.color.toLowerCase() === "black"
-                                ? "#1a1a1a"
-                                : selectedItem.color.toLowerCase() === "beige"
-                                ? "#D4C5B9"
-                                : selectedItem.color.toLowerCase() === "navy"
-                                ? "#1F2937"
-                                : selectedItem.color.toLowerCase() === "gray"
-                                ? "#9CA3AF"
-                                : selectedItem.color.toLowerCase() === "sage"
-                                ? "#8B9B8E"
-                                : selectedItem.color.toLowerCase() === "cream"
-                                ? "#F5F1E8"
-                                : selectedItem.color.toLowerCase() === "camel"
-                                ? "#C19A6B"
-                                : selectedItem.color.toLowerCase() === "tan"
-                                ? "#D2B48C"
-                                : selectedItem.color.toLowerCase() === "gold"
-                                ? "#FFD700"
-                                : "#E5E7EB",
-                          }}
-                        />
-                        <span className="text-neutral-900">{selectedItem.color}</span>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {((selectedItem as any).allColors && (selectedItem as any).allColors.length > 0
+                          ? (selectedItem as any).allColors
+                          : [selectedItem.color]
+                        ).map((color: string, idx: number) => (
+                          <div key={idx} className="flex items-center gap-2">
+                            <div
+                              className="h-4 w-4 rounded-full border border-neutral-300"
+                              style={{
+                                backgroundColor:
+                                  color.toLowerCase() === "white"
+                                    ? "#F5F5F5"
+                                    : color.toLowerCase() === "black"
+                                    ? "#1a1a1a"
+                                    : color.toLowerCase() === "beige"
+                                    ? "#D4C5B9"
+                                    : color.toLowerCase() === "navy"
+                                    ? "#1F2937"
+                                    : color.toLowerCase() === "gray"
+                                    ? "#9CA3AF"
+                                    : color.toLowerCase() === "sage"
+                                    ? "#8B9B8E"
+                                    : color.toLowerCase() === "cream"
+                                    ? "#F5F1E8"
+                                    : color.toLowerCase() === "camel"
+                                    ? "#C19A6B"
+                                    : color.toLowerCase() === "tan"
+                                    ? "#D2B48C"
+                                    : color.toLowerCase() === "gold"
+                                    ? "#FFD700"
+                                    : "#E5E7EB",
+                              }}
+                            />
+                            <span className="text-neutral-900 capitalize text-sm">{color}</span>
+                          </div>
+                        ))}
                       </div>
                     </div>
+
+                    {/* Fabric */}
                     <div>
                       <p className="mb-1 text-xs uppercase tracking-wide text-neutral-400">
                         Fabric
                       </p>
                       <p className="text-neutral-900">{selectedItem.fabric || "—"}</p>
                     </div>
+
+                    {/* Silhouette */}
                     <div>
                       <p className="mb-1 text-xs uppercase tracking-wide text-neutral-400">
                         Silhouette
                       </p>
-                      <p className="text-neutral-900">
+                      <p className="text-neutral-900 capitalize">
                         {selectedItem.silhouette || "—"}
                       </p>
                     </div>
+
+                    {/* Subcategory */}
                     <div>
                       <p className="mb-1 text-xs uppercase tracking-wide text-neutral-400">
-                        Style
+                        Subcategory
                       </p>
-                      <p className="text-neutral-900">{selectedItem.style}</p>
+                      <p className="text-neutral-900">{selectedItem.style || "—"}</p>
                     </div>
-                  </div>
 
-                  {/* AI Tags */}
-                  {selectedItem.aiTags && selectedItem.aiTags.length > 0 && (
-                    <div className="mb-6">
-                      <p className="mb-3 text-xs uppercase tracking-wide text-neutral-400">
-                        AI-Generated Tags
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        {selectedItem.aiTags.map((tag) => (
-                          <span
-                            key={tag}
-                            className="rounded-full bg-neutral-100 px-3 py-1.5 text-xs text-neutral-700"
-                          >
-                            {tag}
-                          </span>
-                        ))}
+                    {/* Vibe Tags */}
+                    {selectedItem.aiTags && selectedItem.aiTags.length > 0 && (
+                      <div>
+                        <p className="mb-2 text-xs uppercase tracking-wide text-neutral-400">
+                          Vibe Tags
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          {selectedItem.aiTags.map((tag) => (
+                            <span
+                              key={tag}
+                              className="rounded-full bg-neutral-100 px-3 py-1.5 text-xs text-neutral-700"
+                            >
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
+                  </div>
 
                   {/* Stats */}
                   <div className="grid grid-cols-2 gap-4 rounded-xl border border-neutral-200/60 bg-neutral-50 p-4">
