@@ -6,11 +6,18 @@ import { useAppStore } from "../context/AppStore";
 import { PostGrid } from "./feed";
 
 export function HomeFeed() {
-  const { posts, followingUserIds, refetchFeed, getUser } = useAppStore();
+  const { posts, followingUserIds, refetchFeed, getUser, currentUserId, isUsingApi, refetchCurrentUser } = useAppStore();
 
   useEffect(() => {
     refetchFeed("following", "recent");
   }, [refetchFeed]);
+
+  useEffect(() => {
+    if (isUsingApi && currentUserId) refetchCurrentUser();
+  }, [isUsingApi, currentUserId, refetchCurrentUser]);
+
+  const currentUser = getUser(currentUserId);
+  const streak = isUsingApi ? (currentUser?.streak ?? 0) : 7;
   const todayDate = new Date().toLocaleDateString("en-US", {
     weekday: "long",
     month: "long",
@@ -35,7 +42,7 @@ export function HomeFeed() {
             <h1 className="font-serif text-xl tracking-tight">ClosetRank</h1>
             <div className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-orange-400/10 to-rose-500/10 px-3 py-1">
               <Flame className="h-3 w-3 text-orange-500" />
-              <span className="text-xs text-neutral-700">7 day streak</span>
+              <span className="text-xs text-neutral-700">{streak} day streak</span>
             </div>
           </div>
         </div>

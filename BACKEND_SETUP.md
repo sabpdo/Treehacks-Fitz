@@ -331,14 +331,16 @@ async function showRankings() {
 
 ---
 
-## Step 6: Image Upload (Supabase Storage)
+## Step 6: Image Upload (Supabase Storage) — **Required for posting OOTDs**
+
+If you get **"Bucket not found"** or **"Failed to create post"** when posting a photo, create this bucket first.
 
 ### 6.1 Create Storage Bucket
 
 1. In Supabase dashboard, go to **Storage**
 2. Click **Create a new bucket**
-3. Name it `closet-images`
-4. Make it **Public**
+3. Name it exactly **`closet-images`**
+4. Enable **Public bucket** (so post images can be displayed)
 5. Click **Create bucket**
 
 ### 6.2 Upload Function

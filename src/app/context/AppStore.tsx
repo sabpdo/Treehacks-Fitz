@@ -28,6 +28,7 @@ import {
   getPost,
   getFollowing,
   getCurrentProfile,
+  ensureProfile,
   followUser,
   unfollowUser,
   getProfile,
@@ -140,10 +141,14 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     (async () => {
       try {
-        const [saved, followingList, currentProfile] = await Promise.all([
+        let currentProfile = await getCurrentProfile();
+        if (!currentProfile) {
+          await ensureProfile();
+          currentProfile = await getCurrentProfile();
+        }
+        const [saved, followingList] = await Promise.all([
           getSavedPostIds(),
           getFollowing(authUser.id),
-          getCurrentProfile(),
         ]);
         if (cancelled) return;
         setSavedPostIds(saved);

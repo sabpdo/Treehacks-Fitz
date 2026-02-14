@@ -36,6 +36,7 @@ export function OOTDPost() {
   const [createdItemIds, setCreatedItemIds] = useState<string[]>([]);
   const [detectedItems, setDetectedItems] = useState<AIImageAnalysis[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [isPosting, setIsPosting] = useState(false);
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -48,6 +49,12 @@ export function OOTDPost() {
 
   const handlePost = async () => {
     if (!selectedImage || !caption.trim()) return;
+
+    // If OpenAI is not configured, post directly without AI analysis
+    if (!import.meta.env.VITE_OPENAI_API_KEY) {
+      await handlePostSimple();
+      return;
+    }
 
     try {
       setIsAnalyzing(true);
@@ -64,7 +71,7 @@ export function OOTDPost() {
       setShowRankingFlow(true);
     } catch (err) {
       console.error('Error creating items:', err);
-      setError('Failed to analyze photo. Please try again.');
+      setError('Failed to analyze photo. You can still post without AI tagging below.');
       setIsAnalyzing(false);
     }
   };
@@ -79,6 +86,7 @@ export function OOTDPost() {
     if (isUsingApi) {
       try {
         setError(null);
+        setIsPosting(true);
         const file = dataURLtoFile(selectedImage, "ootd.jpg");
         const imageUrl = await uploadImage(file);
         const apiPost = await createPost({
@@ -87,14 +95,17 @@ export function OOTDPost() {
         });
         try {
           await updateStreak();
+          await refetchCurrentUser();
         } catch {
-          // ignore streak update failure
+          // ignore streak/refetch failure
         }
         addPost(apiPostToOOTDPost(apiPost, currentUserId));
         navigate("/");
       } catch (e) {
         console.error("Create post failed:", e);
         setError("Failed to create post. Please try again.");
+      } finally {
+        setIsPosting(false);
       }
       return;
     }
@@ -165,8 +176,8 @@ export function OOTDPost() {
     handleRankingComplete();
   };
 
-  const canPost = selectedImage && caption.trim() && !isAnalyzing;
-  const canPostSimple = selectedImage && caption.trim();
+  const canPost = selectedImage && caption.trim() && !isAnalyzing && !isPosting;
+  const canPostSimple = selectedImage && caption.trim() && !isPosting;
 
   // Show ranking flow if items were created
   if (showRankingFlow && createdItemIds.length > 0 && selectedImage) {
@@ -188,7 +199,7 @@ export function OOTDPost() {
           <button
             onClick={() => navigate("/")}
             className="flex items-center gap-2 text-neutral-600 transition-colors hover:text-neutral-900"
-            disabled={isAnalyzing}
+            disabled={isAnalyzing || isPosting}
           >
             <ArrowLeft className="h-5 w-5" />
             <span className="text-sm">Cancel</span>
@@ -199,7 +210,7 @@ export function OOTDPost() {
             disabled={!canPost}
             className="rounded-full bg-[#8B9B8E] px-5 py-2 text-sm text-white transition-all hover:bg-[#7A8A7D] disabled:bg-neutral-300 disabled:opacity-50"
           >
-            {isAnalyzing ? 'Analyzing...' : 'Post'}
+            {isPosting ? 'Posting...' : isAnalyzing ? 'Analyzing...' : 'Post'}
           </button>
         </div>
       </header>
@@ -217,7 +228,7 @@ export function OOTDPost() {
               disabled={!canPostSimple}
               className="rounded-lg bg-red-600 text-white hover:bg-red-700"
             >
-              Post without tagging
+              {isPosting ? 'Posting...' : 'Post without tagging'}
             </Button>
           </div>
         </div>

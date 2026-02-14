@@ -19,6 +19,39 @@ export async function getCurrentProfile(): Promise<Profile | null> {
 }
 
 /**
+ * Ensure current user has a profile row (creates one if missing).
+ * Call this when the DB trigger may not have run (e.g. trigger not applied).
+ */
+export async function ensureProfile(): Promise<Profile | null> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+
+  const existing = await getCurrentProfile();
+  if (existing) return existing;
+
+  const displayName = (user.user_metadata?.display_name ?? user.user_metadata?.displayName ?? user.email) as string;
+  const username = (user.user_metadata?.username ?? user.email) as string;
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .insert({
+      id: user.id,
+      display_name: displayName || null,
+      username: username || null,
+      avatar_url: (user.user_metadata?.avatar_url as string) || null,
+    })
+    .select()
+    .maybeSingle();
+
+  if (error) {
+    // Ignore unique violation (trigger may have created row between get and insert)
+    if (error.code === '23505') return getCurrentProfile();
+    throw error;
+  }
+  return data;
+}
+
+/**
  * Get a profile by user ID
  */
 export async function getProfile(userId: string): Promise<Profile | null> {
@@ -39,12 +72,22 @@ export async function updateProfile(updates: Partial<Profile>): Promise<Profile>
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
 
-  const { data, error } = await supabase
-    .from('profiles')
-    .update(updates)
-    .eq('id', user.id)
-    .select()
-    .maybeSingle();
+  let data: Profile | null = null;
+  let error: { message: string; code?: string } | null = null;
+
+  const runUpdate = async () => {
+    const result = await supabase
+      .from('profiles')
+      .update(updates)
+      .eq('id', user.id)
+      .select()
+      .maybeSingle();
+    return result;
+  };
+
+  const result = await runUpdate();
+  data = result.data;
+  error = result.error;
 
   if (error) {
     const message = error.message || 'Unknown error';
@@ -54,6 +97,11 @@ export async function updateProfile(updates: Partial<Profile>): Promise<Profile>
     throw err;
   }
   if (data === null) {
+    // Profile row may be missing if DB trigger didn't run; create it and retry once
+    await ensureProfile();
+    const retry = await runUpdate();
+    if (retry.error) throw retry.error;
+    if (retry.data) return retry.data;
     throw new Error('Profile not found or update not allowed. Make sure the profiles table exists and RLS allows updates.');
   }
   return data;
@@ -119,7 +167,7 @@ export async function getFollowers(userId: string): Promise<Profile[]> {
     .eq('following_id', userId);
 
   if (error) throw error;
-  return (data || []).map(f => f.follower);
+  return ((data || []).map(f => f.follower) as unknown) as Profile[];
 }
 
 /**
@@ -132,7 +180,7 @@ export async function getFollowing(userId: string): Promise<Profile[]> {
     .eq('follower_id', userId);
 
   if (error) throw error;
-  return (data || []).map(f => f.following);
+  return ((data || []).map(f => f.following) as unknown) as Profile[];
 }
 
 /**
@@ -161,6 +209,24 @@ export async function updateStreak(): Promise<number> {
   }
 
   return profile.streak;
+}
+
+/**
+ * Get suggested users for Discover (other people on the platform, excluding current user)
+ */
+export async function getDiscoverProfiles(limit = 50): Promise<Profile[]> {
+  const { data: { user } } = await supabase.auth.getUser();
+  let query = supabase
+    .from('profiles')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (user) {
+    query = query.neq('id', user.id);
+  }
+  const { data, error } = await query;
+  if (error) throw error;
+  return data || [];
 }
 
 /**

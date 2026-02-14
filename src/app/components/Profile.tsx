@@ -112,13 +112,13 @@ export function Profile() {
     : isOwnProfile
       ? (profileUser?.followingCount ?? currentUserProfile.following)
       : (profileUser?.followingCount ?? 0);
-  const streak = isUsingApi && profileUser && profileUser.streak != null
-    ? profileUser.streak
+  const streak = isUsingApi
+    ? (profileUser?.streak ?? 0)
     : isOwnProfile
       ? currentUserProfile.streak
       : 5;
-  const closetUtilization = isUsingApi && profileUser && profileUser.closetUtilization != null
-    ? profileUser.closetUtilization
+  const closetUtilization = isUsingApi
+    ? (profileUser?.closetUtilization ?? 0)
     : isOwnProfile
       ? currentUserProfile.closetUtilization
       : 68;
@@ -139,12 +139,18 @@ export function Profile() {
       await refetchCurrentUser();
       setEditOpen(false);
     } catch (e) {
-      const message =
+      const rawMessage =
         e instanceof Error
           ? e.message
           : typeof e === "object" && e !== null && "message" in e
             ? String((e as { message: unknown }).message)
             : "Failed to update profile";
+      const isAborted =
+        rawMessage.toLowerCase().includes("abort") ||
+        (e instanceof Error && e.name === "AbortError");
+      const message = isAborted
+        ? "Request was cancelled. Please try again without closing the dialog."
+        : rawMessage;
       setEditError(message);
       console.error("[Profile] Update failed:", e);
       if (e instanceof Error && "details" in e) {
@@ -372,7 +378,13 @@ export function Profile() {
         </Tabs>
       </div>
 
-      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+      <Dialog
+        open={editOpen}
+        onOpenChange={(open) => {
+          if (!open && editSaving) return;
+          setEditOpen(open);
+        }}
+      >
         <DialogContent className="sm:max-w-md" aria-describedby={undefined}>
           <DialogHeader>
             <DialogTitle>Edit Profile</DialogTitle>

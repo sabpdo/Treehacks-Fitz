@@ -117,6 +117,10 @@ Routes are defined in `src/app/routes.ts`. The application uses React Router wit
 
 ## Troubleshooting
 
+### "Bucket not found" or "Failed to create post" when posting a photo
+
+Create the Supabase Storage bucket: in **Supabase Dashboard → Storage → Create a new bucket**, name it **`closet-images`**, set it to **Public**, then Create. See **BACKEND_SETUP.md** Step 6 for details.
+
 ### Port Already in Use
 
 If port 5173 is already in use, Vite will automatically try the next available port. Check the terminal output for the actual URL.

@@ -10,7 +10,7 @@ import { UserCard } from "./feed";
 import { Input } from "./ui/input";
 import { Skeleton } from "./ui/skeleton";
 import { Button } from "./ui/button";
-import { getFollowing, getFollowers, searchUsers } from "../../services/api";
+import { getFollowing, getFollowers, getDiscoverProfiles, searchUsers } from "../../services/api";
 import { apiProfileToUser, type UIUser } from "../../lib/adapters";
 
 type ViewMode = "list" | "grid";
@@ -85,21 +85,36 @@ export function Community() {
     };
   }, [isUsingApi, currentUserId]);
 
+  const [discoverLoading, setDiscoverLoading] = useState(false);
   useEffect(() => {
     if (!isUsingApi) return;
-    if (!search.trim()) {
-      setDiscoverList([]);
-      return;
-    }
     let cancelled = false;
-    searchUsers(search)
-      .then((profiles) => {
-        if (cancelled) return;
-        setDiscoverList(profiles.map(apiProfileToUser).filter((u): u is UIUser => u !== null));
-      })
-      .catch(() => {
-        if (!cancelled) setDiscoverList([]);
-      });
+    setDiscoverLoading(true);
+    if (search.trim()) {
+      searchUsers(search)
+        .then((profiles) => {
+          if (cancelled) return;
+          setDiscoverList(profiles.map(apiProfileToUser).filter((u): u is UIUser => u !== null));
+        })
+        .catch(() => {
+          if (!cancelled) setDiscoverList([]);
+        })
+        .finally(() => {
+          if (!cancelled) setDiscoverLoading(false);
+        });
+    } else {
+      getDiscoverProfiles(50)
+        .then((profiles) => {
+          if (cancelled) return;
+          setDiscoverList(profiles.map(apiProfileToUser).filter((u): u is UIUser => u !== null));
+        })
+        .catch(() => {
+          if (!cancelled) setDiscoverList([]);
+        })
+        .finally(() => {
+          if (!cancelled) setDiscoverLoading(false);
+        });
+    }
     return () => {
       cancelled = true;
     };
@@ -119,7 +134,7 @@ export function Community() {
     ? followersList.slice(0, 6)
     : mockUsers.filter((u) => u.id !== "me").slice(0, 6);
   const discover = isUsingApi
-    ? (search.trim() ? discoverList : [])
+    ? discoverList
     : mockUsers.filter((u) => u.id !== "me");
 
   const filteredDiscover = useMemo(() => {
@@ -138,8 +153,9 @@ export function Community() {
   const getRecentOotdUrls = (userId: string) =>
     posts.filter((p) => p.userId === userId).slice(0, 4).map((p) => p.imageUrl);
 
-  const renderUserList = (users: typeof discover, emptyMessage: string) => {
-    if (loading) {
+  const renderUserList = (users: typeof discover, emptyMessage: string, useDiscoverLoading = false) => {
+    const isLoading = useDiscoverLoading ? discoverLoading : loading;
+    if (isLoading) {
       return (
         <div className="space-y-4">
           {[1, 2, 3].map((i) => (
@@ -188,7 +204,11 @@ export function Community() {
   const renderTabContent = () => {
     if (tab === "following") return renderUserList(following, "No one followed yet. Discover people to follow.");
     if (tab === "followers") return renderUserList(followers, "No followers yet.");
-    return renderUserList(filteredDiscover, "No people match your search.");
+    return renderUserList(
+      filteredDiscover,
+      search.trim() ? "No people match your search." : "No other people on the platform yet.",
+      true
+    );
   };
 
   return (
@@ -205,8 +225,8 @@ export function Community() {
                   type="button"
                   onClick={() => setViewMode("list")}
                   className={`flex h-9 w-9 items-center justify-center rounded-lg transition-all duration-200 ${viewMode === "list"
-                      ? "bg-neutral-900 text-white"
-                      : "text-neutral-400 hover:bg-neutral-100"
+                    ? "bg-neutral-900 text-white"
+                    : "text-neutral-400 hover:bg-neutral-100"
                     }`}
                 >
                   <List className="h-4 w-4" />
@@ -215,8 +235,8 @@ export function Community() {
                   type="button"
                   onClick={() => setViewMode("grid")}
                   className={`flex h-9 w-9 items-center justify-center rounded-lg transition-all duration-200 ${viewMode === "grid"
-                      ? "bg-neutral-900 text-white"
-                      : "text-neutral-400 hover:bg-neutral-100"
+                    ? "bg-neutral-900 text-white"
+                    : "text-neutral-400 hover:bg-neutral-100"
                     }`}
                 >
                   <Grid3x3 className="h-4 w-4" />
