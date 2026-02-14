@@ -1,0 +1,157 @@
+import { supabase } from '../../lib/supabase';
+
+/**
+ * Upload an image to Supabase Storage
+ * @param file - The image file to upload
+ * @param bucket - The storage bucket name (default: 'closet-images')
+ * @returns Public URL of the uploaded image
+ */
+export async function uploadImage(file: File, bucket: string = 'closet-images'): Promise<string> {
+  // Validate file type
+  if (!file.type.startsWith('image/')) {
+    throw new Error('File must be an image');
+  }
+
+  // Validate file size (max 5MB)
+  const maxSize = 5 * 1024 * 1024; // 5MB in bytes
+  if (file.size > maxSize) {
+    throw new Error('Image must be less than 5MB');
+  }
+
+  // Generate unique filename
+  const fileExt = file.name.split('.').pop();
+  const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+  const filePath = fileName;
+
+  // Upload to Supabase Storage
+  const { error: uploadError } = await supabase.storage
+    .from(bucket)
+    .upload(filePath, file, {
+      cacheControl: '3600',
+      upsert: false,
+    });
+
+  if (uploadError) {
+    throw new Error(`Upload failed: ${uploadError.message}`);
+  }
+
+  // Get public URL
+  const { data } = supabase.storage
+    .from(bucket)
+    .getPublicUrl(filePath);
+
+  return data.publicUrl;
+}
+
+/**
+ * Delete an image from Supabase Storage
+ * @param url - The public URL of the image to delete
+ * @param bucket - The storage bucket name
+ */
+export async function deleteImage(url: string, bucket: string = 'closet-images'): Promise<void> {
+  // Extract file path from URL
+  const urlParts = url.split('/');
+  const filePath = urlParts[urlParts.length - 1];
+
+  const { error } = await supabase.storage
+    .from(bucket)
+    .remove([filePath]);
+
+  if (error) {
+    throw new Error(`Delete failed: ${error.message}`);
+  }
+}
+
+/**
+ * Compress and resize image before upload
+ * @param file - The original image file
+ * @param maxWidth - Maximum width in pixels
+ * @param maxHeight - Maximum height in pixels
+ * @param quality - JPEG quality (0-1)
+ * @returns Compressed image as File
+ */
+export async function compressImage(
+  file: File,
+  maxWidth: number = 1200,
+  maxHeight: number = 1200,
+  quality: number = 0.8
+): Promise<File> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = (e) => {
+      const img = new Image();
+
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+
+        // Calculate new dimensions
+        if (width > height) {
+          if (width > maxWidth) {
+            height *= maxWidth / width;
+            width = maxWidth;
+          }
+        } else {
+          if (height > maxHeight) {
+            width *= maxHeight / height;
+            height = maxHeight;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          reject(new Error('Could not get canvas context'));
+          return;
+        }
+
+        ctx.drawImage(img, 0, 0, width, height);
+
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) {
+              reject(new Error('Failed to compress image'));
+              return;
+            }
+
+            const compressedFile = new File([blob], file.name, {
+              type: 'image/jpeg',
+              lastModified: Date.now(),
+            });
+
+            resolve(compressedFile);
+          },
+          'image/jpeg',
+          quality
+        );
+      };
+
+      img.onerror = () => reject(new Error('Failed to load image'));
+      img.src = e.target?.result as string;
+    };
+
+    reader.onerror = () => reject(new Error('Failed to read file'));
+    reader.readAsDataURL(file);
+  });
+}
+
+/**
+ * Upload image with compression
+ * @param file - The image file to upload
+ * @param bucket - The storage bucket name
+ * @returns Public URL of the uploaded image
+ */
+export async function uploadImageWithCompression(
+  file: File,
+  bucket: string = 'closet-images'
+): Promise<string> {
+  // Compress image first
+  const compressedFile = await compressImage(file);
+
+  // Upload compressed image
+  return uploadImage(compressedFile, bucket);
+}
