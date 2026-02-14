@@ -5,6 +5,7 @@ A modern React web application built for the TreeHacks hackathon featuring outfi
 ## Overview
 
 ClosetRank is a fashion and outfit management application that allows users to:
+
 - Track and share daily outfits (OOTD - Outfit of the Day)
 - Generate AI-powered outfit recommendations
 - Manage a digital closet
@@ -49,6 +50,7 @@ npm install
 ```
 
 Note: If you encounter issues with corrupted packages, run:
+
 ```bash
 rm -rf node_modules package-lock.json
 npm install
@@ -109,6 +111,7 @@ This project uses Tailwind CSS for utility-first styling. Customize the theme in
 ### Routing
 
 Routes are defined in `src/app/routes.ts`. The application uses React Router with the following routes:
+
 - `/` - Home feed
 - `/post` - Create OOTD post
 - `/profile` - User profile
@@ -119,7 +122,8 @@ Routes are defined in `src/app/routes.ts`. The application uses React Router wit
 
 ### "Bucket not found" or "Failed to create post" when posting a photo
 
-Create the Supabase Storage bucket: in **Supabase Dashboard → Storage → Create a new bucket**, name it **`closet-images`**, set it to **Public**, then Create. See **BACKEND_SETUP.md** Step 6 for details.
+1. Create the bucket: **Supabase Dashboard → Storage → New bucket** → name **`closet-images`**, set **Public** → Create.
+2. If you see **"new row violates row-level security policy"**, run the SQL in **supabase/storage-policies.sql** in the Supabase SQL Editor (see **BACKEND_SETUP.md** Step 6.2).
 
 ### Port Already in Use
 
@@ -132,6 +136,7 @@ Make sure you're importing from `react-router-dom` (not `react-router`) for web 
 ### Package Installation Issues
 
 If you see errors related to missing files in `node_modules`, clean install:
+
 ```bash
 rm -rf node_modules package-lock.json
 npm install

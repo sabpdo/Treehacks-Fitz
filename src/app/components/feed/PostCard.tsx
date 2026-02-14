@@ -1,4 +1,4 @@
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { motion } from "motion/react";
 import { Bookmark } from "lucide-react";
 import { formatPostTime } from "../../data/mockData";
@@ -7,7 +7,7 @@ import { useAppStore } from "../../context/AppStore";
 import { Badge } from "./Badge";
 import { cn } from "../ui/utils";
 
-const MotionLink = motion(Link);
+const MotionDiv = motion.div;
 
 type PostCardProps = {
   post: OOTDPost;
@@ -25,6 +25,7 @@ export function PostCard({
   showFeedMeta = false,
   className,
 }: PostCardProps) {
+  const navigate = useNavigate();
   const { getUser, getCommentsForPost, isSaved, toggleSave } = useAppStore();
   const user = getUser(post.userId);
   const score = compatibilityScore ?? post.compatibilityScore;
@@ -109,9 +110,22 @@ export function PostCard({
     </>
   );
 
+  const handleCardClick = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest('a, button')) return;
+    navigate(`/post/${post.id}`);
+  };
+
   if (compact) {
     return (
-      <MotionLink to={`/post/${post.id}`} className={baseClass} whileTap={{ scale: 0.995 }} transition={{ duration: 0.2 }}>
+      <MotionDiv
+        role="button"
+        tabIndex={0}
+        onClick={handleCardClick}
+        onKeyDown={(e) => e.key === 'Enter' && handleCardClick(e as unknown as React.MouseEvent)}
+        className={cn(baseClass, 'cursor-pointer')}
+        whileTap={{ scale: 0.995 }}
+        transition={{ duration: 0.2 }}
+      >
         <div className="relative aspect-square overflow-hidden bg-neutral-50">
           <img
             src={post.imageUrl}
@@ -134,13 +148,21 @@ export function PostCard({
           </Link>
           <p className="text-[10px] text-neutral-400">{formatPostTime(post.createdAt)}</p>
         </div>
-      </MotionLink>
+      </MotionDiv>
     );
   }
 
   return (
-    <MotionLink to={`/post/${post.id}`} className={baseClass} whileTap={{ scale: 0.995 }} transition={{ duration: 0.2 }}>
+    <MotionDiv
+      role="button"
+      tabIndex={0}
+      onClick={handleCardClick}
+      onKeyDown={(e) => e.key === 'Enter' && handleCardClick(e as unknown as React.MouseEvent)}
+      className={cn(baseClass, 'cursor-pointer')}
+      whileTap={{ scale: 0.995 }}
+      transition={{ duration: 0.2 }}
+    >
       {cardContent}
-    </MotionLink>
+    </MotionDiv>
   );
 }

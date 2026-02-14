@@ -48,6 +48,11 @@ export async function uploadImage(file: File, bucket: string = 'closet-images'):
         "Upload failed: Storage bucket 'closet-images' not found. Create it in Supabase: Storage → New bucket → name 'closet-images', set to Public. See BACKEND_SETUP.md Step 6."
       );
     }
+    if (msg.toLowerCase().includes('row-level security') || msg.toLowerCase().includes('violates')) {
+      throw new Error(
+        "Upload failed: Storage policy missing. In Supabase SQL Editor, run the statements in supabase/storage-policies.sql (see BACKEND_SETUP.md Step 6.2)."
+      );
+    }
     throw new Error(`Upload failed: ${msg}`);
   }
 

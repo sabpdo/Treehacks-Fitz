@@ -5,6 +5,7 @@ Complete guide for setting up the ClosetRank backend with Supabase, OpenAI, and 
 ## Overview
 
 The backend includes:
+
 - ✅ **Supabase Database** - PostgreSQL with Row Level Security
 - ✅ **OpenAI Vision API** - AI-powered clothing analysis
 - ✅ **Compatibility Algorithm** - Smart outfit matching
@@ -26,6 +27,7 @@ The backend includes:
 7. Click **Run** (or press Cmd/Ctrl + Enter)
 
 This will create:
+
 - `profiles` - User profiles with social stats
 - `closet_items` - Individual clothing items with AI analysis
 - `posts` - OOTD posts
@@ -55,11 +57,13 @@ This will create:
 ### 2.2 Add to Environment
 
 Add to your `.env` file:
+
 ```env
 VITE_OPENAI_API_KEY=sk-proj-xxxxxxxxxxxxx
 ```
 
 **Cost Estimate:**
+
 - GPT-4 Vision: ~$0.01-0.03 per image analysis
 - Text Embeddings: ~$0.0001 per search query
 - Budget: $5-10 for hackathon should be plenty!
@@ -71,7 +75,9 @@ VITE_OPENAI_API_KEY=sk-proj-xxxxxxxxxxxxx
 ### Core Tables
 
 #### `profiles`
+
 Extends Supabase auth.users with social features:
+
 ```typescript
 {
   id: UUID (references auth.users)
@@ -88,7 +94,9 @@ Extends Supabase auth.users with social features:
 ```
 
 #### `closet_items`
+
 Individual clothing pieces with AI-extracted data:
+
 ```typescript
 {
   id: UUID
@@ -115,7 +123,9 @@ Individual clothing pieces with AI-extracted data:
 ```
 
 #### `posts`
+
 OOTD posts linking to closet items:
+
 ```typescript
 {
   id: UUID
@@ -254,15 +264,15 @@ generateEmbedding(text: string): Promise<number[]>
 ### Example: Adding a Closet Item with AI
 
 ```typescript
-import { createClosetItem } from './services/api/closet';
+import { createClosetItem } from "./services/api/closet";
 
 async function addItem() {
   const item = await createClosetItem({
-    image_url: 'https://your-image-url.com/sweater.jpg',
-    brand: 'Uniqlo',
-    category: 'top',
-    vibe_tags: ['casual', 'minimalist'],
-    price_tier: 'budget'
+    image_url: "https://your-image-url.com/sweater.jpg",
+    brand: "Uniqlo",
+    category: "top",
+    vibe_tags: ["casual", "minimalist"],
+    price_tier: "budget",
   });
 
   // AI automatically extracts:
@@ -271,21 +281,21 @@ async function addItem() {
   // - fabric: 'cotton'
   // - subcategory: 'sweater'
 
-  console.log('Item created:', item);
+  console.log("Item created:", item);
 }
 ```
 
 ### Example: Creating a Post
 
 ```typescript
-import { createPost } from './services/api/posts';
-import { markItemAsWorn } from './services/api/closet';
+import { createPost } from "./services/api/posts";
+import { markItemAsWorn } from "./services/api/closet";
 
 async function createOOTD() {
   const post = await createPost({
-    image_url: 'https://outfit-photo.jpg',
-    caption: 'Cozy Sunday vibes ☕',
-    item_ids: ['item-1-id', 'item-2-id', 'item-3-id'] // Links to closet items
+    image_url: "https://outfit-photo.jpg",
+    caption: "Cozy Sunday vibes ☕",
+    item_ids: ["item-1-id", "item-2-id", "item-3-id"], // Links to closet items
   });
 
   // Automatically:
@@ -293,22 +303,22 @@ async function createOOTD() {
   // - Updates times_worn count
   // - Updates last_worn_at timestamp
 
-  console.log('Post created:', post);
+  console.log("Post created:", post);
 }
 ```
 
 ### Example: Get Feed with Compatibility
 
 ```typescript
-import { getFeedPosts } from './services/api/posts';
-import { calculateFeedCompatibility } from './services/api/compatibility';
+import { getFeedPosts } from "./services/api/posts";
+import { calculateFeedCompatibility } from "./services/api/compatibility";
 
 async function loadFeed() {
   const posts = await getFeedPosts(20);
   const postsWithScores = await calculateFeedCompatibility(posts);
 
   // Each post now has compatibility_score (0-100)
-  postsWithScores.forEach(post => {
+  postsWithScores.forEach((post) => {
     console.log(`Post ${post.id}: ${post.compatibility_score}% compatible`);
   });
 }
@@ -317,14 +327,16 @@ async function loadFeed() {
 ### Example: Get Rankings
 
 ```typescript
-import { getTopRatedItems } from './services/api/closet';
+import { getTopRatedItems } from "./services/api/closet";
 
 async function showRankings() {
   const tops = await getTopRatedItems(userId, 10);
 
   // Display top 10 items sorted by rating
   tops.forEach((item, index) => {
-    console.log(`#${index + 1}: ${item.brand} ${item.subcategory} - ${item.rating}/10`);
+    console.log(
+      `#${index + 1}: ${item.brand} ${item.subcategory} - ${item.rating}/10`
+    );
   });
 }
 ```
@@ -343,24 +355,44 @@ If you get **"Bucket not found"** or **"Failed to create post"** when posting a 
 4. Enable **Public bucket** (so post images can be displayed)
 5. Click **Create bucket**
 
-### 6.2 Upload Function
+### 6.2 Storage policies (required for uploads)
+
+If you get **"new row violates row-level security policy"** when posting a photo, run the storage policies:
+
+1. In Supabase dashboard, go to **SQL Editor**
+2. Open **`supabase/storage-policies.sql`** in this repo (or paste the SQL below)
+3. Run it
+
+```sql
+-- Allow authenticated users to upload to closet-images
+CREATE POLICY "Authenticated users can upload to closet-images"
+ON storage.objects FOR INSERT TO authenticated
+WITH CHECK (bucket_id = 'closet-images');
+
+-- Allow public read so post images can be displayed
+CREATE POLICY "Public read for closet-images"
+ON storage.objects FOR SELECT TO public
+USING (bucket_id = 'closet-images');
+```
+
+### 6.3 Upload Function
 
 ```typescript
-import { supabase } from './lib/supabase';
+import { supabase } from "./lib/supabase";
 
 export async function uploadImage(file: File): Promise<string> {
-  const fileExt = file.name.split('.').pop();
+  const fileExt = file.name.split(".").pop();
   const fileName = `${Math.random()}.${fileExt}`;
   const filePath = `${fileName}`;
 
   const { error: uploadError } = await supabase.storage
-    .from('closet-images')
+    .from("closet-images")
     .upload(filePath, file);
 
   if (uploadError) throw uploadError;
 
   const { data } = supabase.storage
-    .from('closet-images')
+    .from("closet-images")
     .getPublicUrl(filePath);
 
   return data.publicUrl;
@@ -374,11 +406,13 @@ export async function uploadImage(file: File): Promise<string> {
 ### Test Checklist:
 
 1. **Authentication** ✓
+
    - Sign up new user
    - Profile automatically created
    - Can update profile
 
 2. **Closet Items** ✓
+
    - Upload image → AI analyzes it
    - View all items
    - Filter by category
@@ -386,6 +420,7 @@ export async function uploadImage(file: File): Promise<string> {
    - Mark as worn
 
 3. **Posts** ✓
+
    - Create post with items
    - Items marked as worn
    - Like/unlike posts
@@ -393,6 +428,7 @@ export async function uploadImage(file: File): Promise<string> {
    - View feed
 
 4. **Social** ✓
+
    - Follow/unfollow users
    - See follower counts update
    - Search users
@@ -410,6 +446,7 @@ export async function uploadImage(file: File): Promise<string> {
 When deploying to Vercel:
 
 1. Add all env vars in Vercel dashboard:
+
    - `VITE_SUPABASE_URL`
    - `VITE_SUPABASE_ANON_KEY`
    - `VITE_OPENAI_API_KEY`
@@ -421,10 +458,12 @@ When deploying to Vercel:
 ### Security Best Practices
 
 1. **Row Level Security (RLS)** - ✅ Already enabled
+
    - Users can only edit their own items
    - All data is read-public (social app)
 
 2. **API Keys** - ⚠️ OpenAI key in browser
+
    - For hackathon: OK to use client-side
    - For production: Move to serverless function
 
@@ -437,18 +476,22 @@ When deploying to Vercel:
 ## Troubleshooting
 
 ### "relation does not exist" error
+
 - Run the `schema.sql` file in Supabase SQL Editor
 
 ### AI analysis fails
+
 - Check OpenAI API key is correct
 - Check you have credits in OpenAI account
 - Image URL must be publicly accessible
 
 ### Can't upload images
+
 - Make sure storage bucket is created and public
 - Check file size limits
 
 ### Compatibility score always 0
+
 - User needs items in their closet first
 - Posts need associated items
 
@@ -466,13 +509,13 @@ When deploying to Vercel:
 
 ## API Quick Reference
 
-| Feature | File | Key Functions |
-|---------|------|---------------|
-| Closet Items | `api/closet.ts` | `createClosetItem`, `getClosetItems`, `rateItem` |
-| Posts/Feed | `api/posts.ts` | `getFeedPosts`, `createPost`, `likePost` |
-| Profiles | `api/profiles.ts` | `getCurrentProfile`, `followUser` |
-| Compatibility | `api/compatibility.ts` | `calculateCompatibilityScore` |
-| AI Analysis | `openai.ts` | `analyzeClothingImage` |
+| Feature       | File                   | Key Functions                                    |
+| ------------- | ---------------------- | ------------------------------------------------ |
+| Closet Items  | `api/closet.ts`        | `createClosetItem`, `getClosetItems`, `rateItem` |
+| Posts/Feed    | `api/posts.ts`         | `getFeedPosts`, `createPost`, `likePost`         |
+| Profiles      | `api/profiles.ts`      | `getCurrentProfile`, `followUser`                |
+| Compatibility | `api/compatibility.ts` | `calculateCompatibilityScore`                    |
+| AI Analysis   | `openai.ts`            | `analyzeClothingImage`                           |
 
 ---
 
