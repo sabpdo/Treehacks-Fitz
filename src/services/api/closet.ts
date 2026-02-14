@@ -1,6 +1,7 @@
 import { supabase } from '../../lib/supabase';
-import { ClosetItem, CreateClosetItemRequest, UpdateClosetItemRequest } from '../../types/database';
-import { analyzeClothingImage } from '../openai';
+import { ClosetItem, CreateClosetItemRequest, UpdateClosetItemRequest, AIImageAnalysis } from '../../types/database';
+import { analyzeClothingImage, analyzeOutfitImage } from '../openai';
+import { getInitialElo, eloToScore } from '../../lib/ranking';
 
 /**
  * Get all closet items for a user
@@ -221,4 +222,71 @@ export async function calculateClosetUtilization(userId: string): Promise<number
     .eq('id', userId);
 
   return Math.round(utilization);
+}
+
+/**
+ * Create multiple closet items from an outfit photo
+ * Analyzes the photo with AI to detect multiple items (jacket + pants, etc.)
+ * Creates a separate closet item for each detected item
+ * Returns the created items and AI analysis for ranking flow
+ */
+export async function createItemsFromOutfitPhoto(
+  imageUrl: string,
+  brand?: string
+): Promise<{
+  items: ClosetItem[];
+  aiAnalysis: AIImageAnalysis[];
+}> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
+  // Analyze outfit image with OpenAI to detect multiple items
+  const outfitAnalysis = await analyzeOutfitImage(imageUrl);
+
+  if (!outfitAnalysis.items || outfitAnalysis.items.length === 0) {
+    throw new Error('No items detected in image');
+  }
+
+  // Create a closet item for each detected item
+  const createdItems: ClosetItem[] = [];
+
+  for (const detectedItem of outfitAnalysis.items) {
+    const itemData = {
+      user_id: user.id,
+      image_url: imageUrl,
+      brand: brand || null,
+      category: detectedItem.category,
+      vibe_tags: detectedItem.vibe_tags,
+      price_tier: null,
+      colors: detectedItem.colors,
+      silhouette: detectedItem.silhouette,
+      fabric: detectedItem.fabric,
+      subcategory: detectedItem.subcategory,
+      times_worn: 0,
+      rating: 0,
+      elo_rating: getInitialElo(),
+    };
+
+    const { data, error } = await supabase
+      .from('closet_items')
+      .insert(itemData)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error creating item:', error);
+      continue;
+    }
+
+    createdItems.push(data);
+  }
+
+  if (createdItems.length === 0) {
+    throw new Error('Failed to create any items');
+  }
+
+  return {
+    items: createdItems,
+    aiAnalysis: outfitAnalysis.items,
+  };
 }

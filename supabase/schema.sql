@@ -47,7 +47,8 @@ CREATE TABLE IF NOT EXISTS closet_items (
 
   -- Usage & Rankings
   times_worn INTEGER DEFAULT 0,
-  rating DECIMAL DEFAULT 0,
+  rating DECIMAL DEFAULT 0, -- 0-10 score (converted from Elo)
+  elo_rating DECIMAL DEFAULT 1500, -- Elo rating (800-2200, starts at 1500)
   last_worn_at TIMESTAMP WITH TIME ZONE,
 
   -- Metadata

@@ -53,7 +53,8 @@ export interface ClosetItem {
 
   // Usage & Rankings
   times_worn: number;
-  rating: number;
+  rating: number; // 0-10 score (converted from Elo)
+  elo_rating: number; // Elo rating (800-2200, starts at 1500)
   last_worn_at: string | null;
 
   // Metadata

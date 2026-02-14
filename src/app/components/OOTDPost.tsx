@@ -6,6 +6,9 @@ import { useAppStore } from "../context/AppStore";
 import { CURRENT_USER_ID, presetGalleryImages } from "../data/mockData";
 import type { OOTDPost } from "../data/mockData";
 import { cn } from "./ui/utils";
+import { createItemsFromOutfitPhoto } from "../../services/api/closet";
+import { MultiItemRankingFlow } from "./MultiItemRankingFlow";
+import type { AIImageAnalysis } from "../../types/database";
 
 const VIBE_OPTIONS = ["Date night", "Casual", "Work", "Grunge", "Cafe study"];
 
@@ -15,6 +18,11 @@ export function OOTDPost() {
   const [caption, setCaption] = useState("");
   const [vibeTag, setVibeTag] = useState("");
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [showRankingFlow, setShowRankingFlow] = useState(false);
+  const [createdItemIds, setCreatedItemIds] = useState<string[]>([]);
+  const [detectedItems, setDetectedItems] = useState<AIImageAnalysis[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -25,13 +33,36 @@ export function OOTDPost() {
     }
   };
 
-  const handlePost = () => {
+  const handlePost = async () => {
     if (!selectedImage || !caption.trim()) return;
+
+    try {
+      setIsAnalyzing(true);
+      setError(null);
+
+      // Create closet items from the photo with AI analysis
+      const { items, aiAnalysis } = await createItemsFromOutfitPhoto(selectedImage);
+
+      // Store the created items and AI analysis for ranking
+      setCreatedItemIds(items.map(item => item.id));
+      setDetectedItems(aiAnalysis);
+
+      // Show ranking flow
+      setShowRankingFlow(true);
+    } catch (err) {
+      console.error('Error creating items:', err);
+      setError('Failed to analyze photo. Please try again.');
+      setIsAnalyzing(false);
+    }
+  };
+
+  const handleRankingComplete = () => {
+    // After ranking is complete, create the OOTD post
     const now = new Date().toISOString();
     const newPost: OOTDPost = {
       id: `p-${Date.now()}`,
       userId: CURRENT_USER_ID,
-      imageUrl: selectedImage,
+      imageUrl: selectedImage!,
       caption: caption.trim(),
       vibeTag: vibeTag || "Casual",
       createdAt: now,
@@ -46,7 +77,25 @@ export function OOTDPost() {
     navigate("/");
   };
 
-  const canPost = selectedImage && caption.trim() && vibeTag;
+  const handleSkipRanking = () => {
+    // Skip ranking and go straight to posting
+    handleRankingComplete();
+  };
+
+  const canPost = selectedImage && caption.trim() && vibeTag && !isAnalyzing;
+
+  // Show ranking flow if items were created
+  if (showRankingFlow && createdItemIds.length > 0 && selectedImage) {
+    return (
+      <MultiItemRankingFlow
+        imageUrl={selectedImage}
+        detectedItems={detectedItems}
+        createdItemIds={createdItemIds}
+        onComplete={handleRankingComplete}
+        onSkip={handleSkipRanking}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#F8F7F4] to-[#FAFAF8]">
@@ -55,6 +104,7 @@ export function OOTDPost() {
           <button
             onClick={() => navigate("/")}
             className="flex items-center gap-2 text-neutral-600 transition-colors hover:text-neutral-900"
+            disabled={isAnalyzing}
           >
             <ArrowLeft className="h-5 w-5" />
             <span className="text-sm">Cancel</span>
@@ -65,10 +115,19 @@ export function OOTDPost() {
             disabled={!canPost}
             className="rounded-full bg-[#8B9B8E] px-5 py-2 text-sm text-white transition-all hover:bg-[#7A8A7D] disabled:bg-neutral-300 disabled:opacity-50"
           >
-            Post
+            {isAnalyzing ? 'Analyzing...' : 'Post'}
           </button>
         </div>
       </header>
+
+      {/* Error message */}
+      {error && (
+        <div className="mx-auto max-w-2xl px-6 py-4">
+          <div className="rounded-xl bg-red-50 p-4 text-sm text-red-600">
+            {error}
+          </div>
+        </div>
+      )}
 
       <div className="mx-auto max-w-2xl px-6 py-8">
         <motion.div
