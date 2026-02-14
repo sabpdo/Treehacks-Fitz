@@ -1,12 +1,16 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router";
-import { Camera, Flame, Sparkles, ChevronRight, TrendingUp } from "lucide-react";
+import { Camera, Flame, Sparkles, ChevronRight, TrendingUp, ImageOff } from "lucide-react";
 import { motion } from "motion/react";
 import { useAppStore } from "../context/AppStore";
+import { ensurePublicStorageUrl } from "../../lib/adapters";
 import { PostGrid } from "./feed";
+
+const AVATAR_FALLBACK = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%239ca3af'%3E%3Cpath d='M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z'/%3E%3C/svg%3E";
 
 export function HomeFeed() {
   const { posts, followingUserIds, refetchFeed, getUser, currentUserId, isUsingApi, refetchCurrentUser } = useAppStore();
+  const [brokenImageIds, setBrokenImageIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     refetchFeed("following", "recent");
@@ -113,6 +117,8 @@ export function HomeFeed() {
             {posts.slice(0, 4).map((post, index) => {
               const compatibility = post.compatibilityScore || 91 - index * 4;
               const poster = getUser(post.userId);
+              const imageBroken = brokenImageIds.has(post.id);
+              const imageSrc = ensurePublicStorageUrl(post.imageUrl);
               const insights = [
                 "Matches your neutral palette preference",
                 "Similar silhouette to your saved looks",
@@ -125,12 +131,21 @@ export function HomeFeed() {
                     to={`/post/${post.id}`}
                     className="block w-[280px] overflow-hidden rounded-xl border border-neutral-200/60 bg-white text-left shadow-sm transition-all duration-300 hover:border-neutral-300 hover:shadow-md"
                   >
-                    <div className="relative aspect-[4/5] overflow-hidden bg-neutral-50">
-                      <img
-                        src={post.imageUrl}
-                        alt={post.caption}
-                        className="h-full w-full object-cover"
-                      />
+                    <div className="relative aspect-[4/5] overflow-hidden bg-neutral-100">
+                      {imageBroken || !imageSrc ? (
+                        <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-neutral-400">
+                          <ImageOff className="h-10 w-10" />
+                          <span className="text-xs">Image unavailable</span>
+                        </div>
+                      ) : (
+                        <img
+                          src={imageSrc}
+                          alt={post.caption || "Post"}
+                          className="h-full w-full object-cover object-center"
+                          loading="lazy"
+                          onError={() => setBrokenImageIds((prev) => new Set(prev).add(post.id))}
+                        />
+                      )}
                     </div>
                     <div className="p-4">
                       <div className="mb-3 flex items-center justify-between">
@@ -140,9 +155,10 @@ export function HomeFeed() {
                           onClick={(e) => e.stopPropagation()}
                         >
                           <img
-                            src={poster?.avatarUrl ?? ""}
+                            src={ensurePublicStorageUrl(poster?.avatarUrl) || AVATAR_FALLBACK}
                             alt=""
                             className="h-6 w-6 rounded-full object-cover"
+                            onError={(e) => { (e.target as HTMLImageElement).src = AVATAR_FALLBACK; }}
                           />
                           <p className="text-xs text-neutral-900">
                             {poster?.handle ?? post.userId}

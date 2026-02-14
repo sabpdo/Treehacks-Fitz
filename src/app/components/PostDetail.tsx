@@ -13,7 +13,7 @@ import { Input } from "./ui/input";
 import { Button } from "./ui/button";
 import { cn } from "./ui/utils";
 import { getPost } from "../../services/api";
-import { apiPostToOOTDPost } from "../../lib/adapters";
+import { apiPostToOOTDPost, ensurePublicStorageUrl } from "../../lib/adapters";
 
 export function PostDetail() {
   const { postId } = useParams<{ postId: string }>();
@@ -131,7 +131,7 @@ export function PostDetail() {
       <div className="mx-auto max-w-lg bg-white">
         <div className="relative aspect-[4/5] overflow-hidden bg-neutral-50">
           <img
-            src={post.imageUrl}
+            src={ensurePublicStorageUrl(post.imageUrl)}
             alt={post.caption}
             className="h-full w-full object-cover"
           />

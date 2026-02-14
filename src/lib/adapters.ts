@@ -5,6 +5,22 @@
 
 import type { Post, Profile, Comment as ApiComment } from '../types/database';
 
+const SUPABASE_URL = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_URL) || '';
+
+/** Ensure Supabase storage URL is a full public URL so images load in the browser */
+export function ensurePublicStorageUrl(url: string | null | undefined): string {
+  if (!url || typeof url !== 'string') return url || '';
+  let full = url;
+  if (!full.startsWith('http')) {
+    const base = (SUPABASE_URL || '').replace(/\/$/, '');
+    full = base ? `${base}${full.startsWith('/') ? full : `/${full}`}` : full;
+  }
+  if (full.includes('/storage/v1/object/public/')) return full;
+  if (full.includes('/storage/v1/object/'))
+    return full.replace('/storage/v1/object/', '/storage/v1/object/public/');
+  return full;
+}
+
 // UI types (from mockData) - minimal shape used by components
 export interface UIUser {
   id: string;
@@ -70,7 +86,7 @@ export function apiPostToOOTDPost(
   return {
     id: post.id,
     userId: post.user_id,
-    imageUrl: post.image_url,
+    imageUrl: ensurePublicStorageUrl(post.image_url),
     caption: post.caption || '',
     vibeTag: typeof vibeTag === 'string' ? vibeTag : 'casual',
     createdAt: post.created_at,

@@ -5,6 +5,7 @@ import { Bookmark, ImageOff } from "lucide-react";
 import { formatPostTime } from "../../data/mockData";
 import type { OOTDPost } from "../../data/mockData";
 import { useAppStore } from "../../context/AppStore";
+import { ensurePublicStorageUrl } from "../../../lib/adapters";
 import { Badge } from "./Badge";
 import { cn } from "../ui/utils";
 
@@ -52,7 +53,7 @@ export function PostCard({
           </div>
         ) : (
           <img
-            src={post.imageUrl}
+            src={ensurePublicStorageUrl(post.imageUrl)}
             alt={post.caption || "Post"}
             className="h-full w-full object-cover object-center transition-transform duration-500 group-hover:scale-105"
             loading="lazy"
@@ -146,7 +147,7 @@ export function PostCard({
             </div>
           ) : (
             <img
-              src={post.imageUrl}
+              src={ensurePublicStorageUrl(post.imageUrl)}
               alt={post.caption || "Post"}
               className="h-full w-full object-cover object-center transition-transform duration-500 group-hover:scale-105"
               loading="lazy"

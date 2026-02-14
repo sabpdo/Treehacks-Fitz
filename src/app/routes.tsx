@@ -13,38 +13,44 @@ import { Login } from "./components/Login";
 import { SignUp } from "./components/SignUp";
 import { ConfirmEmail } from "./components/ConfirmEmail";
 import { ProtectedRoute } from "./components/ProtectedRoute";
+import { Providers } from "./Providers";
 
 export const router = createBrowserRouter([
   {
-    path: "/login",
-    Component: Login,
-  },
-  {
-    path: "/signup",
-    Component: SignUp,
-  },
-  {
-    path: "/confirm-email",
-    Component: ConfirmEmail,
-  },
-  {
-    path: "/",
-    element: (
-      <ProtectedRoute>
-        <Root />
-      </ProtectedRoute>
-    ),
+    element: <Providers />,
     children: [
-      { index: true, Component: HomeFeed },
-      { path: "post", Component: OOTDPost },
-      { path: "post/:postId", Component: PostDetail },
-      { path: "ootds", Component: AllOOTDs },
-      { path: "community", Component: Community },
-      { path: "profile", Component: Profile },
-      { path: "profile/:userId", Component: Profile },
-      { path: "ai-generator", Component: AIOutfitGenerator },
-      { path: "closet", Component: Closet },
-      { path: "rerank", Component: ReRank },
+      {
+        path: "/login",
+        Component: Login,
+      },
+      {
+        path: "/signup",
+        Component: SignUp,
+      },
+      {
+        path: "/confirm-email",
+        Component: ConfirmEmail,
+      },
+      {
+        path: "/",
+        element: (
+          <ProtectedRoute>
+            <Root />
+          </ProtectedRoute>
+        ),
+        children: [
+          { index: true, Component: HomeFeed },
+          { path: "post", Component: OOTDPost },
+          { path: "post/:postId", Component: PostDetail },
+          { path: "ootds", Component: AllOOTDs },
+          { path: "community", Component: Community },
+          { path: "profile", Component: Profile },
+          { path: "profile/:userId", Component: Profile },
+          { path: "ai-generator", Component: AIOutfitGenerator },
+          { path: "closet", Component: Closet },
+          { path: "rerank", Component: ReRank },
+        ],
+      },
     ],
   },
 ]);

@@ -2,7 +2,7 @@ import { supabase } from '../../lib/supabase';
 import { Profile } from '../../types/database';
 
 /**
- * Get current user's profile
+ * Get current user's profile (streak is computed from post dates)
  */
 export async function getCurrentProfile(): Promise<Profile | null> {
   const { data: { user } } = await supabase.auth.getUser();
@@ -15,7 +15,10 @@ export async function getCurrentProfile(): Promise<Profile | null> {
     .maybeSingle();
 
   if (error) throw error;
-  return data;
+  if (!data) return null;
+
+  const streak = await getStreakFromPosts(user.id);
+  return { ...data, streak };
 }
 
 /**
@@ -52,7 +55,7 @@ export async function ensureProfile(): Promise<Profile | null> {
 }
 
 /**
- * Get a profile by user ID
+ * Get a profile by user ID (streak is computed from post dates)
  */
 export async function getProfile(userId: string): Promise<Profile | null> {
   const { data, error } = await supabase
@@ -62,7 +65,10 @@ export async function getProfile(userId: string): Promise<Profile | null> {
     .maybeSingle();
 
   if (error) throw error;
-  return data;
+  if (!data) return null;
+
+  const streak = await getStreakFromPosts(userId);
+  return { ...data, streak };
 }
 
 /**
@@ -183,32 +189,50 @@ export async function getFollowing(userId: string): Promise<Profile[]> {
   return ((data || []).map(f => f.following) as unknown) as Profile[];
 }
 
+/** Previous calendar day in YYYY-MM-DD (UTC) */
+function prevDay(dateStr: string): string {
+  const d = new Date(dateStr + 'T12:00:00.000Z');
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().split('T')[0];
+}
+
 /**
- * Update streak (called daily when user posts)
+ * Compute streak from post timestamps: consecutive days (including today) the user posted.
+ * Uses UTC date for consistency.
+ */
+export async function getStreakFromPosts(userId: string): Promise<number> {
+  const { data: posts, error } = await supabase
+    .from('posts')
+    .select('created_at')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(500);
+
+  if (error) throw error;
+  if (!posts || posts.length === 0) return 0;
+
+  const today = new Date().toISOString().split('T')[0];
+  const dates = [...new Set(posts.map((p) => p.created_at.slice(0, 10)))].sort().reverse();
+
+  let streak = 0;
+  let expected = today;
+  while (dates.includes(expected)) {
+    streak++;
+    expected = prevDay(expected);
+  }
+  return streak;
+}
+
+/**
+ * Update streak from post timestamps and save to profile (call after user creates a post).
  */
 export async function updateStreak(): Promise<number> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
 
-  const profile = await getProfile(user.id);
-  if (!profile) throw new Error('Profile not found');
-
-  // Check if user posted today
-  const today = new Date().toISOString().split('T')[0];
-  const { data: todayPosts } = await supabase
-    .from('posts')
-    .select('id')
-    .eq('user_id', user.id)
-    .gte('created_at', `${today}T00:00:00`)
-    .limit(1);
-
-  if (todayPosts && todayPosts.length > 0) {
-    const newStreak = profile.streak + 1;
-    await updateProfile({ streak: newStreak });
-    return newStreak;
-  }
-
-  return profile.streak;
+  const streak = await getStreakFromPosts(user.id);
+  await updateProfile({ streak });
+  return streak;
 }
 
 /**
