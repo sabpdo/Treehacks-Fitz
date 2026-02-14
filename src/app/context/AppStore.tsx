@@ -69,6 +69,7 @@ type AppStoreActions = {
   getUser: (id: string) => UIUser | null;
   loadUser: (id: string) => Promise<void>;
   refetchFeed: (filter?: FeedFilter, sort?: FeedSort) => Promise<void>;
+  refetchCurrentUser: () => Promise<void>;
 };
 
 const defaultState: AppStoreState = {
@@ -394,6 +395,17 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const refetchCurrentUser = useCallback(async () => {
+    if (!useApi || !authUser) return;
+    try {
+      const profile = await getCurrentProfile();
+      const u = apiProfileToUser(profile);
+      if (u) setUsersCache((prev) => ({ ...prev, [authUser.id]: u }));
+    } catch (e) {
+      console.error("Refetch current user failed:", e);
+    }
+  }, [useApi, authUser?.id]);
+
   const value = useMemo(
     () => ({
       posts,
@@ -417,6 +429,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       getUser,
       loadUser,
       refetchFeed,
+      refetchCurrentUser,
     }),
     [
       posts,
@@ -440,6 +453,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       getUser,
       loadUser,
       refetchFeed,
+      refetchCurrentUser,
     ]
   );
 

@@ -80,13 +80,37 @@ export function PostDetail() {
 
   const user = getUser(post.userId);
   const comments = getCommentsForPost(post.id);
-  const likedByFriendsCount = post.likedByUserIds.length; // mock: "Liked by X friends"
+  const likedByFriendsCount = post.likedByUserIds.length;
+  const isLikedState = post.likedByUserIds.includes(currentUserId);
+
+  const handleLike = () => {
+    toggleLike(post.id);
+    if (fetchedPost && post.id === fetchedPost.id) {
+      const newLiked = !isLikedState;
+      setFetchedPost((prev) =>
+        prev
+          ? {
+              ...prev,
+              likeCount: prev.likeCount + (newLiked ? 1 : -1),
+              likedByUserIds: newLiked
+                ? [...prev.likedByUserIds, currentUserId]
+                : prev.likedByUserIds.filter((id) => id !== currentUserId),
+            }
+          : null
+      );
+    }
+  };
 
   const handleSubmitComment = () => {
     const t = commentText.trim();
     if (!t) return;
     addComment(post.id, t);
     setCommentText("");
+    if (fetchedPost && post.id === fetchedPost.id) {
+      setFetchedPost((prev) =>
+        prev ? { ...prev, commentCount: prev.commentCount + 1 } : null
+      );
+    }
   };
 
   return (
@@ -145,13 +169,13 @@ export function PostDetail() {
         </div>
 
         <ActionRow
-          isLiked={isLiked(post.id)}
+          isLiked={isLikedState}
           isSaved={isSaved(post.id)}
           likeCount={post.likeCount}
           commentCount={post.commentCount}
-          onLike={() => toggleLike(post.id)}
+          onLike={handleLike}
           onSave={() => toggleSave(post.id)}
-          onComment={() => { }}
+          onComment={() => {}}
         />
 
         <div className="border-t border-neutral-200/60 px-4 py-4">

@@ -15,6 +15,8 @@ export interface UIUser {
   vibes: string[];
   followerCount: number;
   followingCount: number;
+  streak?: number;
+  closetUtilization?: number;
 }
 
 export interface UIOOTDPost {
@@ -51,6 +53,8 @@ export function apiProfileToUser(profile: Profile | null | undefined): UIUser | 
     vibes: [],
     followerCount: profile.followers ?? 0,
     followingCount: profile.following ?? 0,
+    streak: profile.streak ?? 0,
+    closetUtilization: Number(profile.closet_utilization) ?? 0,
   };
 }
 

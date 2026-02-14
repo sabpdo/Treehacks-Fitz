@@ -6,8 +6,9 @@ import { useAppStore } from "../context/AppStore";
 import { CURRENT_USER_ID, presetGalleryImages } from "../data/mockData";
 import type { OOTDPost } from "../data/mockData";
 import { cn } from "./ui/utils";
+import { Button } from "./ui/button";
 import { createItemsFromOutfitPhoto } from "../../services/api/closet";
-import { createPost, uploadImage } from "../../services/api";
+import { createPost, uploadImage, updateStreak } from "../../services/api";
 import { apiPostToOOTDPost } from "../../lib/adapters";
 import { MultiItemRankingFlow } from "./MultiItemRankingFlow";
 import type { AIImageAnalysis } from "../../types/database";
@@ -26,7 +27,7 @@ const VIBE_OPTIONS = ["Date night", "Casual", "Work", "Grunge", "Cafe study"];
 
 export function OOTDPost() {
   const navigate = useNavigate();
-  const { addPost, isUsingApi, currentUserId } = useAppStore();
+  const { addPost, isUsingApi, currentUserId, refetchCurrentUser } = useAppStore();
   const [caption, setCaption] = useState("");
   const [vibeTag, setVibeTag] = useState("");
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -68,6 +69,54 @@ export function OOTDPost() {
     }
   };
 
+  const handlePostWithoutTagging = () => {
+    setError(null);
+    handlePostSimple();
+  };
+
+  const handlePostSimple = async () => {
+    if (!selectedImage || !caption.trim()) return;
+    if (isUsingApi) {
+      try {
+        setError(null);
+        const file = dataURLtoFile(selectedImage, "ootd.jpg");
+        const imageUrl = await uploadImage(file);
+        const apiPost = await createPost({
+          image_url: imageUrl,
+          caption: caption.trim(),
+        });
+        try {
+          await updateStreak();
+        } catch {
+          // ignore streak update failure
+        }
+        addPost(apiPostToOOTDPost(apiPost, currentUserId));
+        navigate("/");
+      } catch (e) {
+        console.error("Create post failed:", e);
+        setError("Failed to create post. Please try again.");
+      }
+      return;
+    }
+    const now = new Date().toISOString();
+    const newPost: OOTDPost = {
+      id: `p-${Date.now()}`,
+      userId: CURRENT_USER_ID,
+      imageUrl: selectedImage,
+      caption: caption.trim(),
+      vibeTag: vibeTag || "Casual",
+      createdAt: now,
+      likeCount: 0,
+      savedCount: 0,
+      commentCount: 0,
+      likedByUserIds: [],
+      compatibilityScore: 75 + Math.floor(Math.random() * 20),
+      aiInsight: "Fresh fit — your style is showing.",
+    };
+    addPost(newPost);
+    navigate("/");
+  };
+
   const handleRankingComplete = async () => {
     if (isUsingApi && selectedImage) {
       try {
@@ -78,6 +127,12 @@ export function OOTDPost() {
           caption: caption.trim(),
           item_ids: createdItemIds.length > 0 ? createdItemIds : undefined,
         });
+        try {
+          await updateStreak();
+          await refetchCurrentUser();
+        } catch {
+          // ignore streak/refetch failure
+        }
         addPost(apiPostToOOTDPost(apiPost, currentUserId));
         navigate("/");
       } catch (e) {
@@ -110,7 +165,8 @@ export function OOTDPost() {
     handleRankingComplete();
   };
 
-  const canPost = selectedImage && caption.trim() && vibeTag && !isAnalyzing;
+  const canPost = selectedImage && caption.trim() && !isAnalyzing;
+  const canPostSimple = selectedImage && caption.trim();
 
   // Show ranking flow if items were created
   if (showRankingFlow && createdItemIds.length > 0 && selectedImage) {
@@ -151,8 +207,18 @@ export function OOTDPost() {
       {/* Error message */}
       {error && (
         <div className="mx-auto max-w-2xl px-6 py-4">
-          <div className="rounded-xl bg-red-50 p-4 text-sm text-red-600">
-            {error}
+          <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+            <p className="mb-3">{error}</p>
+            <p className="mb-3 text-xs text-red-600">
+              You can still post your photo without AI tagging.
+            </p>
+            <Button
+              onClick={handlePostWithoutTagging}
+              disabled={!canPostSimple}
+              className="rounded-lg bg-red-600 text-white hover:bg-red-700"
+            >
+              Post without tagging
+            </Button>
           </div>
         </div>
       )}
@@ -294,6 +360,39 @@ export function OOTDPost() {
               Browse
             </button>
           </div>
+        </motion.div>
+
+        {/* Bottom Post actions */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          transition={{ delay: 0.5 }}
+          className="mt-8 flex flex-col gap-3"
+        >
+          <p className="text-center text-xs text-neutral-500">
+            Add a photo and caption above, then choose how to post.
+          </p>
+          <div className="flex gap-3">
+            <Button
+              onClick={handlePostSimple}
+              disabled={!canPostSimple}
+              className="flex-1 rounded-xl bg-neutral-900 py-4 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+            >
+              Post now (no tagging)
+            </Button>
+            <Button
+              onClick={handlePost}
+              disabled={!canPost}
+              variant="outline"
+              className="flex-1 rounded-xl border-[#8B9B8E] py-4 text-sm font-medium text-[#8B9B8E] hover:bg-[#8B9B8E]/10 disabled:opacity-50"
+            >
+              {isAnalyzing ? "Analyzing…" : "Analyze & tag items"}
+            </Button>
+          </div>
+          {!vibeTag && (
+            <p className="text-center text-[10px] text-neutral-400">
+              Optional: pick a vibe tag above for &quot;Analyze & tag items&quot;.
+            </p>
+          )}
         </motion.div>
       </div>
     </div>

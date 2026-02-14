@@ -12,7 +12,7 @@ export async function getCurrentProfile(): Promise<Profile | null> {
     .from('profiles')
     .select('*')
     .eq('id', user.id)
-    .single();
+    .maybeSingle();
 
   if (error) throw error;
   return data;
@@ -26,7 +26,7 @@ export async function getProfile(userId: string): Promise<Profile | null> {
     .from('profiles')
     .select('*')
     .eq('id', userId)
-    .single();
+    .maybeSingle();
 
   if (error) throw error;
   return data;
@@ -44,9 +44,18 @@ export async function updateProfile(updates: Partial<Profile>): Promise<Profile>
     .update(updates)
     .eq('id', user.id)
     .select()
-    .single();
+    .maybeSingle();
 
-  if (error) throw error;
+  if (error) {
+    const message = error.message || 'Unknown error';
+    const code = error.code ? ` (${error.code})` : '';
+    const err = new Error(`${message}${code}`);
+    (err as Error & { details?: unknown }).details = error;
+    throw err;
+  }
+  if (data === null) {
+    throw new Error('Profile not found or update not allowed. Make sure the profiles table exists and RLS allows updates.');
+  }
   return data;
 }
 

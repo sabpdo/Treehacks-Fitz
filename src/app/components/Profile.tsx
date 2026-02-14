@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router";
 import { Settings, Flame, TrendingUp, ArrowLeft, LogOut } from "lucide-react";
 import { useAppStore } from "../context/AppStore";
@@ -6,13 +6,44 @@ import { currentUserProfile, rankedItems } from "../data/mockData";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "./ui/tabs";
 import { PostGrid, RankingList } from "./feed";
 import { Button } from "./ui/button";
+import { Input } from "./ui/input";
 import { useAuth } from "../../contexts/AuthContext";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "./ui/dialog";
+import { updateProfile } from "../../services/api";
+import { getAllCategoryRankings } from "../../services/api/ranking";
+import type { RankedItem } from "../data/mockData";
 
 export function Profile() {
   const { userId } = useParams<{ userId?: string }>();
   const navigate = useNavigate();
   const { signOut } = useAuth();
-  const { posts, savedPostIds, isFollowing, toggleFollow, getUser, loadUser, currentUserId } = useAppStore();
+  const {
+    posts,
+    savedPostIds,
+    isFollowing,
+    toggleFollow,
+    getUser,
+    loadUser,
+    currentUserId,
+    isUsingApi,
+    refetchCurrentUser,
+  } = useAppStore();
+
+  const [editOpen, setEditOpen] = useState(false);
+  const [editName, setEditName] = useState("");
+  const [editHandle, setEditHandle] = useState("");
+  const [editBio, setEditBio] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [rankedItemsFromApi, setRankedItemsFromApi] = useState<RankedItem[]>([]);
+  const [rankingsLoading, setRankingsLoading] = useState(false);
 
   const isOwnProfile = !userId || userId === currentUserId;
   const profileUser = getUser(userId ?? currentUserId);
@@ -21,13 +52,108 @@ export function Profile() {
     if (userId && !profileUser) loadUser(userId);
   }, [userId, profileUser, loadUser]);
 
+  useEffect(() => {
+    if (isOwnProfile && isUsingApi) refetchCurrentUser();
+  }, [isOwnProfile, isUsingApi, refetchCurrentUser]);
+
+  useEffect(() => {
+    if (!isOwnProfile || !isUsingApi || !currentUserId) return;
+    let cancelled = false;
+    setRankingsLoading(true);
+    getAllCategoryRankings(currentUserId)
+      .then((byCategory) => {
+        if (cancelled) return;
+        const list: RankedItem[] = [];
+        Object.entries(byCategory).forEach(([cat, items]) => {
+          items.forEach((item: { id: string; image_url: string; brand: string | null; rating: number; vibe_tags?: string[]; price_tier?: string | null }) => {
+            list.push({
+              id: item.id,
+              category: cat.replace(/_/g, " "),
+              imageUrl: item.image_url,
+              brand: item.brand || "Item",
+              rating: Number(item.rating),
+              vibeTag: item.vibe_tags?.[0] ?? "casual",
+              priceTier: item.price_tier === "luxury" ? "$$$" : item.price_tier === "budget" ? "$" : "$$",
+            });
+          });
+        });
+        setRankedItemsFromApi(list);
+      })
+      .catch(() => {
+        if (!cancelled) setRankedItemsFromApi([]);
+      })
+      .finally(() => {
+        if (!cancelled) setRankingsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOwnProfile, isUsingApi, currentUserId]);
+
+  useEffect(() => {
+    if (editOpen && profileUser) {
+      setEditName(profileUser.name || "");
+      setEditHandle(profileUser.handle || "");
+      setEditBio(profileUser.bio || "");
+      setEditError(null);
+    }
+  }, [editOpen, profileUser]);
+
   const displayName = isOwnProfile ? "You" : profileUser?.name ?? "User";
   const displayHandle = isOwnProfile ? (profileUser?.handle || currentUserProfile.username) : (profileUser?.handle ?? "");
   const avatarUrl = isOwnProfile ? (profileUser?.avatarUrl || currentUserProfile.userAvatar) : (profileUser?.avatarUrl ?? "");
-  const followerCount = isOwnProfile ? (profileUser?.followerCount ?? currentUserProfile.followers) : (profileUser?.followerCount ?? 0);
-  const followingCount = isOwnProfile ? (profileUser?.followingCount ?? currentUserProfile.following) : (profileUser?.followingCount ?? 0);
-  const streak = isOwnProfile ? currentUserProfile.streak : 5;
-  const closetUtilization = isOwnProfile ? currentUserProfile.closetUtilization : 68;
+  const followerCount = isUsingApi && profileUser
+    ? profileUser.followerCount
+    : isOwnProfile
+      ? (profileUser?.followerCount ?? currentUserProfile.followers)
+      : (profileUser?.followerCount ?? 0);
+  const followingCount = isUsingApi && profileUser
+    ? profileUser.followingCount
+    : isOwnProfile
+      ? (profileUser?.followingCount ?? currentUserProfile.following)
+      : (profileUser?.followingCount ?? 0);
+  const streak = isUsingApi && profileUser && profileUser.streak != null
+    ? profileUser.streak
+    : isOwnProfile
+      ? currentUserProfile.streak
+      : 5;
+  const closetUtilization = isUsingApi && profileUser && profileUser.closetUtilization != null
+    ? profileUser.closetUtilization
+    : isOwnProfile
+      ? currentUserProfile.closetUtilization
+      : 68;
+
+  const handleSaveProfile = async () => {
+    if (!isUsingApi) {
+      setEditOpen(false);
+      return;
+    }
+    setEditSaving(true);
+    setEditError(null);
+    try {
+      await updateProfile({
+        display_name: editName.trim() || null,
+        username: editHandle.trim() || null,
+        bio: editBio.trim() || null,
+      });
+      await refetchCurrentUser();
+      setEditOpen(false);
+    } catch (e) {
+      const message =
+        e instanceof Error
+          ? e.message
+          : typeof e === "object" && e !== null && "message" in e
+            ? String((e as { message: unknown }).message)
+            : "Failed to update profile";
+      setEditError(message);
+      console.error("[Profile] Update failed:", e);
+      if (e instanceof Error && "details" in e) {
+        console.error("[Profile] Supabase details:", (e as Error & { details?: unknown }).details);
+      }
+    } finally {
+      setEditSaving(false);
+    }
+  };
 
   const userPosts = posts.filter((p) => p.userId === (profileUser?.id ?? ""));
   const savedPosts = posts.filter((p) => savedPostIds.has(p.id));
@@ -80,7 +206,9 @@ export function Profile() {
                 </button>
                 <button
                   type="button"
+                  onClick={() => setEditOpen(true)}
                   className="flex h-9 w-9 items-center justify-center rounded-lg text-neutral-600 transition-colors duration-200 hover:bg-neutral-100"
+                  title="Edit profile"
                 >
                   <Settings className="h-4 w-4" />
                 </button>
@@ -132,6 +260,7 @@ export function Profile() {
                 {isOwnProfile && (
                   <Button
                     variant="outline"
+                    onClick={() => setEditOpen(true)}
                     className="mt-4 w-full rounded-xl border-neutral-300 py-2.5 transition-colors duration-200 hover:bg-neutral-50"
                   >
                     Edit Profile
@@ -194,7 +323,27 @@ export function Profile() {
 
           <TabsContent value="rankings" className="mt-0">
             {isOwnProfile ? (
-              <RankingList items={rankedItems} groupByCategory emptyMessage="No ranked staples yet." />
+              <>
+                {isUsingApi && (
+                  <div className="mb-4">
+                    <Link
+                      to="/rerank"
+                      className="inline-flex items-center gap-2 rounded-xl border border-[#8B9B8E] bg-[#8B9B8E]/10 px-4 py-2.5 text-sm font-medium text-[#8B9B8E] transition-colors hover:bg-[#8B9B8E]/20"
+                    >
+                      Re-rank items
+                    </Link>
+                  </div>
+                )}
+                {rankingsLoading ? (
+                  <p className="py-8 text-center text-sm text-neutral-500">Loading rankings…</p>
+                ) : (
+                  <RankingList
+                    items={isUsingApi ? rankedItemsFromApi : rankedItems}
+                    groupByCategory
+                    emptyMessage="No ranked staples yet. Add items in Closet and rank them."
+                  />
+                )}
+              </>
             ) : (
               <div className="flex min-h-[200px] flex-col items-center justify-center rounded-2xl border border-neutral-200/60 bg-white/50 py-12 text-center">
                 <p className="text-sm text-neutral-500">Rankings are private.</p>
@@ -222,6 +371,74 @@ export function Profile() {
           </TabsContent>
         </Tabs>
       </div>
+
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="sm:max-w-md" aria-describedby={undefined}>
+          <DialogHeader>
+            <DialogTitle>Edit Profile</DialogTitle>
+            <DialogDescription className="sr-only">
+              Update your display name, username, and bio.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            {editError && (
+              <div
+                role="alert"
+                className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+              >
+                <p className="font-medium">{editError}</p>
+                <p className="mt-1 text-xs text-red-600">
+                  Open DevTools (F12 or right-click → Inspect) and check the Console tab for more details.
+                </p>
+              </div>
+            )}
+            <div className="grid gap-2">
+              <label className="text-xs font-medium text-neutral-500">Display name</label>
+              <Input
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                placeholder="Your name"
+                className="rounded-lg"
+              />
+            </div>
+            <div className="grid gap-2">
+              <label className="text-xs font-medium text-neutral-500">Username (handle)</label>
+              <Input
+                value={editHandle}
+                onChange={(e) => setEditHandle(e.target.value)}
+                placeholder="@handle"
+                className="rounded-lg"
+              />
+            </div>
+            <div className="grid gap-2">
+              <label className="text-xs font-medium text-neutral-500">Bio</label>
+              <textarea
+                value={editBio}
+                onChange={(e) => setEditBio(e.target.value)}
+                placeholder="Tell us about your style..."
+                className="min-h-[80px] w-full resize-none rounded-lg border border-neutral-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-neutral-400"
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setEditOpen(false)}
+              disabled={editSaving}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSaveProfile}
+              disabled={editSaving}
+              className="bg-neutral-900 text-white hover:bg-neutral-800"
+            >
+              {editSaving ? "Saving..." : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

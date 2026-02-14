@@ -8,6 +8,7 @@ import { Community } from "./components/Community";
 import { Profile } from "./components/Profile";
 import { AIOutfitGenerator } from "./components/AIOutfitGenerator";
 import { Closet } from "./components/Closet";
+import { ReRank } from "./components/ReRank";
 import { Login } from "./components/Login";
 import { SignUp } from "./components/SignUp";
 import { ProtectedRoute } from "./components/ProtectedRoute";
@@ -38,6 +39,7 @@ export const router = createBrowserRouter([
       { path: "profile/:userId", Component: Profile },
       { path: "ai-generator", Component: AIOutfitGenerator },
       { path: "closet", Component: Closet },
+      { path: "rerank", Component: ReRank },
     ],
   },
 ]);
