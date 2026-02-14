@@ -106,6 +106,19 @@ export function Closet() {
   const [editItemError, setEditItemError] = useState<string | null>(null);
   const [detailModalCategory, setDetailModalCategory] = useState<Category | "">("");
   const [savingCategory, setSavingCategory] = useState(false);
+  const [detailFormData, setDetailFormData] = useState({
+    image: null as File | null,
+    imagePreview: null as string | null,
+    brand: "",
+    category: "" as Category | "",
+    vibeTags: [] as VibeTag[],
+    priceTier: "" as PriceTier | "",
+    colors: [] as string[],
+    fabric: "",
+    silhouette: "" as Silhouette | "",
+  });
+  const [savingDetails, setSavingDetails] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     image: null as File | null,
     imagePreview: null as string | null,
@@ -132,10 +145,50 @@ export function Closet() {
     return categoryMap[uiCategory] || "shirts";
   };
 
-  // Initialize detail modal category when item is selected
+  // Initialize detail modal form data when item is selected
   useEffect(() => {
-    if (selectedItem) {
-      // Map UI category to database category for the dropdown
+    if (selectedItem && isUsingApi && selectedItem.id) {
+      getClosetItem(selectedItem.id)
+        .then((dbItem) => {
+          if (dbItem) {
+            setDetailFormData({
+              image: null,
+              imagePreview: dbItem.image_url || null,
+              brand: dbItem.brand || "",
+              category: dbItem.category,
+              vibeTags: (dbItem.vibe_tags || []) as VibeTag[],
+              priceTier: (dbItem.price_tier || "") as PriceTier | "",
+              colors: dbItem.colors || [],
+              fabric: dbItem.fabric || "",
+              silhouette: (dbItem.silhouette || "") as Silhouette | "",
+            });
+            setDetailModalCategory(dbItem.category);
+          }
+        })
+        .catch(() => {
+          // Fallback to UI data
+          const dbCategoryMap: Record<string, Category> = {
+            tops: "shirts",
+            bottoms: "pants",
+            outerwear: "jackets_outerwear",
+            shoes: "shoes",
+            accessories: "bags",
+          };
+          setDetailFormData({
+            image: null,
+            imagePreview: selectedItem.imageUrl,
+            brand: selectedItem.brand || "",
+            category: dbCategoryMap[selectedItem.category] || "shirts",
+            vibeTags: (selectedItem.aiTags || []) as VibeTag[],
+            priceTier: ((selectedItem as any).priceTier || "") as PriceTier | "",
+            colors: (selectedItem as any).allColors || [selectedItem.color],
+            fabric: selectedItem.fabric || "",
+            silhouette: (selectedItem.silhouette || "") as Silhouette | "",
+          });
+          setDetailModalCategory(dbCategoryMap[selectedItem.category] || "shirts");
+        });
+    } else if (selectedItem) {
+      // Fallback to UI data when not using API
       const dbCategoryMap: Record<string, Category> = {
         tops: "shirts",
         bottoms: "pants",
@@ -143,23 +196,18 @@ export function Closet() {
         shoes: "shoes",
         accessories: "bags",
       };
-      // Get the database category from the selected item
-      // We need to fetch the full item to get the actual DB category
-      if (isUsingApi && selectedItem.id) {
-        getClosetItem(selectedItem.id)
-          .then((dbItem) => {
-            if (dbItem) {
-              setDetailModalCategory(dbItem.category);
-            }
-          })
-          .catch(() => {
-            // Fallback to mapping from UI category
-            setDetailModalCategory(dbCategoryMap[selectedItem.category] || "shirts");
-          });
-      } else {
-        // Fallback to mapping from UI category
-        setDetailModalCategory(dbCategoryMap[selectedItem.category] || "shirts");
-      }
+      setDetailFormData({
+        image: null,
+        imagePreview: selectedItem.imageUrl,
+        brand: selectedItem.brand || "",
+        category: dbCategoryMap[selectedItem.category] || "shirts",
+        vibeTags: (selectedItem.aiTags || []) as VibeTag[],
+        priceTier: ((selectedItem as any).priceTier || "") as PriceTier | "",
+        colors: (selectedItem as any).allColors || [selectedItem.color],
+        fabric: selectedItem.fabric || "",
+        silhouette: (selectedItem.silhouette || "") as Silhouette | "",
+      });
+      setDetailModalCategory(dbCategoryMap[selectedItem.category] || "shirts");
     }
   }, [selectedItem, isUsingApi]);
 
@@ -881,53 +929,162 @@ export function Closet() {
                     />
                   </div>
 
-                  {/* Metadata Grid - Matching form field order */}
-                  <div className="mb-6 space-y-4">
+                  {/* Editable Form Fields - Matching edit form (without subcategory) */}
+                  <form
+                    onSubmit={async (e) => {
+                      e.preventDefault();
+                      if (!selectedItem || !detailFormData.category) {
+                        setDetailError("Please fill in required fields");
+                        return;
+                      }
+
+                      if (!isUsingApi || !currentUserId) {
+                        setDetailError("Please log in to save changes");
+                        return;
+                      }
+
+                      setSavingDetails(true);
+                      setDetailError(null);
+
+                      try {
+                        // Prepare update data
+                        const updates: any = {
+                          brand: detailFormData.brand || null,
+                          category: detailFormData.category as Category,
+                          vibe_tags: detailFormData.vibeTags.length > 0 ? detailFormData.vibeTags : [],
+                          price_tier: detailFormData.priceTier || null,
+                          colors: detailFormData.colors.length > 0 ? detailFormData.colors : [],
+                          fabric: detailFormData.fabric || null,
+                          silhouette: detailFormData.silhouette || null,
+                        };
+
+                        // If new image was uploaded, update image_url
+                        if (detailFormData.image) {
+                          const imageUrl = await uploadImage(detailFormData.image);
+                          updates.image_url = imageUrl;
+                        }
+
+                        // Update the item
+                        const updatedItem = await updateClosetItem(selectedItem.id, updates);
+
+                        // Convert to UI format and update in list
+                        const uiItem = apiClosetItemToUI(updatedItem);
+                        setClosetItems((prev) =>
+                          prev.map((item) => (item.id === selectedItem.id ? uiItem : item))
+                        );
+
+                        // Update selected item
+                        setSelectedItem(uiItem);
+                      } catch (err) {
+                        console.error("Failed to update item:", err);
+                        setDetailError(err instanceof Error ? err.message : "Failed to update item");
+                      } finally {
+                        setSavingDetails(false);
+                      }
+                    }}
+                    className="mb-6 space-y-4"
+                  >
+                    {/* Image Preview/Upload */}
+                    <div className="space-y-2">
+                      <Label htmlFor="detail-image">Item Image</Label>
+                      <div className="flex items-center gap-4">
+                        {detailFormData.imagePreview ? (
+                          <div className="relative">
+                            <img
+                              src={detailFormData.imagePreview}
+                              alt="Preview"
+                              className="h-32 w-32 rounded-lg object-cover border border-neutral-200"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setDetailFormData((prev) => ({ ...prev, image: null, imagePreview: null }));
+                              }}
+                              className="absolute -top-2 -right-2 flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-white hover:bg-red-600"
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
+                          </div>
+                        ) : (
+                          <label
+                            htmlFor="detail-image-upload"
+                            className="flex h-32 w-32 cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-neutral-300 bg-neutral-50 hover:border-neutral-400"
+                          >
+                            <Upload className="mb-2 h-6 w-6 text-neutral-400" />
+                            <span className="text-xs text-neutral-500">Change Image</span>
+                          </label>
+                        )}
+                        <input
+                          id="detail-image-upload"
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              const reader = new FileReader();
+                              reader.onloadend = () => {
+                                setDetailFormData((prev) => ({
+                                  ...prev,
+                                  image: file,
+                                  imagePreview: reader.result as string,
+                                }));
+                              };
+                              reader.readAsDataURL(file);
+                            }
+                          }}
+                        />
+                      </div>
+                    </div>
+
                     {/* Brand */}
-                    <div>
-                      <p className="mb-1 text-xs uppercase tracking-wide text-neutral-400">
-                        Brand
-                      </p>
-                      <p className="text-neutral-900">{selectedItem.brand || "—"}</p>
+                    <div className="space-y-2">
+                      <Label htmlFor="detail-brand">Brand</Label>
+                      <Select
+                        value={detailFormData.brand}
+                        onValueChange={(value) => setDetailFormData((prev) => ({ ...prev, brand: value }))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select brand" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="H&M">H&M</SelectItem>
+                          <SelectItem value="Zara">Zara</SelectItem>
+                          <SelectItem value="Nike">Nike</SelectItem>
+                          <SelectItem value="Adidas">Adidas</SelectItem>
+                          <SelectItem value="Uniqlo">Uniqlo</SelectItem>
+                          <SelectItem value="Forever 21">Forever 21</SelectItem>
+                          <SelectItem value="Gap">Gap</SelectItem>
+                          <SelectItem value="Old Navy">Old Navy</SelectItem>
+                          <SelectItem value="Target">Target</SelectItem>
+                          <SelectItem value="ASOS">ASOS</SelectItem>
+                          <SelectItem value="Shein">Shein</SelectItem>
+                          <SelectItem value="Urban Outfitters">Urban Outfitters</SelectItem>
+                          <SelectItem value="Aritzia">Aritzia</SelectItem>
+                          <SelectItem value="Lululemon">Lululemon</SelectItem>
+                          <SelectItem value="Levi's">Levi's</SelectItem>
+                          <SelectItem value="Madewell">Madewell</SelectItem>
+                          <SelectItem value="Everlane">Everlane</SelectItem>
+                          <SelectItem value="Reformation">Reformation</SelectItem>
+                          <SelectItem value="Other">Other</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {(detailFormData.brand === "Other" || (detailFormData.brand && !PREDEFINED_BRANDS.includes(detailFormData.brand))) && (
+                        <Input
+                          id="detail-brand-custom"
+                          value={detailFormData.brand === "Other" ? "" : detailFormData.brand}
+                          placeholder="Enter brand name"
+                          onChange={(e) => setDetailFormData((prev) => ({ ...prev, brand: e.target.value }))}
+                        />
+                      )}
                     </div>
 
                     {/* Category */}
-                    <div>
-                      <p className="mb-1 text-xs uppercase tracking-wide text-neutral-400">
-                        Category *
-                      </p>
+                    <div className="space-y-2">
+                      <Label htmlFor="detail-category">Category *</Label>
                       <Select
-                        value={detailModalCategory}
-                        onValueChange={async (value) => {
-                          if (!selectedItem || !isUsingApi || !currentUserId) return;
-                          const newCategory = value as Category;
-                          setDetailModalCategory(newCategory);
-                          setSavingCategory(true);
-                          try {
-                            const updatedItem = await updateClosetItem(selectedItem.id, {
-                              category: newCategory,
-                            });
-                            const uiItem = apiClosetItemToUI(updatedItem);
-                            setClosetItems((prev) =>
-                              prev.map((item) => (item.id === selectedItem.id ? uiItem : item))
-                            );
-                            setSelectedItem(uiItem);
-                          } catch (err) {
-                            console.error("Failed to update category:", err);
-                            // Revert on error
-                            const dbCategoryMap: Record<string, Category> = {
-                              tops: "shirts",
-                              bottoms: "pants",
-                              outerwear: "jackets_outerwear",
-                              shoes: "shoes",
-                              accessories: "bags",
-                            };
-                            setDetailModalCategory(dbCategoryMap[selectedItem.category] || "shirts");
-                          } finally {
-                            setSavingCategory(false);
-                          }
-                        }}
-                        disabled={savingCategory || !isUsingApi}
+                        value={detailFormData.category}
+                        onValueChange={(value) => setDetailFormData((prev) => ({ ...prev, category: value as Category }))}
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="Select category" />
@@ -944,88 +1101,150 @@ export function Closet() {
                     </div>
 
                     {/* Price Tier */}
-                    {(selectedItem as any).priceTier && (
-                      <div>
-                        <p className="mb-1 text-xs uppercase tracking-wide text-neutral-400">
-                          Price Tier
-                        </p>
-                        <p className="text-neutral-900">
-                          {(selectedItem as any).priceTier === "budget" ? "$" : 
-                           (selectedItem as any).priceTier === "mid" ? "$$" : 
-                           (selectedItem as any).priceTier === "luxury" ? "$$$" : 
-                           (selectedItem as any).priceTier}
-                        </p>
-                      </div>
-                    )}
-                    
+                    <div className="space-y-2">
+                      <Label htmlFor="detail-priceTier">Price Tier</Label>
+                      <Select
+                        value={detailFormData.priceTier}
+                        onValueChange={(value) => setDetailFormData((prev) => ({ ...prev, priceTier: value as PriceTier }))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select price tier" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="budget">$</SelectItem>
+                          <SelectItem value="mid">$$</SelectItem>
+                          <SelectItem value="luxury">$$$</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
                     {/* Colors */}
-                    <div>
-                      <p className="mb-2 text-xs uppercase tracking-wide text-neutral-400">
-                        Colors
-                      </p>
-                      <div className="flex flex-wrap items-center gap-2">
-                        {((selectedItem as any).allColors && (selectedItem as any).allColors.length > 0
-                          ? (selectedItem as any).allColors
-                          : [selectedItem.color]
-                        ).map((color: string, idx: number) => (
-                          <div key={idx} className="flex items-center gap-2">
-                            <div
-                              className="h-4 w-4 rounded-full border border-neutral-300"
-                              style={{
-                                backgroundColor: getColorHex(color),
-                              }}
-                            />
-                            <span className="text-neutral-900 capitalize text-sm">{color}</span>
-                          </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="detail-colors">Colors</Label>
+                      <div className="flex flex-wrap gap-2">
+                        {["black", "white", "gray", "navy", "beige", "sage", "cream", "camel", "tan", "gold", "red", "blue", "green", "pink", "brown"].map((color) => (
+                          <button
+                            key={color}
+                            type="button"
+                            onClick={() => {
+                              setDetailFormData((prev) => ({
+                                ...prev,
+                                colors: prev.colors.includes(color)
+                                  ? prev.colors.filter((c) => c !== color)
+                                  : [...prev.colors, color],
+                              }));
+                            }}
+                            className={`rounded-full px-3 py-1 text-xs capitalize transition-colors ${
+                              detailFormData.colors.includes(color)
+                                ? "bg-neutral-900 text-white"
+                                : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
+                            }`}
+                          >
+                            {color}
+                          </button>
+                        ))}
+                      </div>
+                      <Input
+                        id="detail-custom-color"
+                        placeholder="Or enter custom color"
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            const input = e.target as HTMLInputElement;
+                            const value = input.value.trim().toLowerCase();
+                            if (value && !detailFormData.colors.includes(value)) {
+                              setDetailFormData((prev) => ({
+                                ...prev,
+                                colors: [...prev.colors, value],
+                              }));
+                              input.value = "";
+                            }
+                          }
+                        }}
+                      />
+                    </div>
+
+                    {/* Fabric */}
+                    <div className="space-y-2">
+                      <Label htmlFor="detail-fabric">Fabric</Label>
+                      <Input
+                        id="detail-fabric"
+                        value={detailFormData.fabric}
+                        onChange={(e) => setDetailFormData((prev) => ({ ...prev, fabric: e.target.value }))}
+                        placeholder="e.g., cotton, denim, silk, wool"
+                      />
+                    </div>
+
+                    {/* Silhouette */}
+                    <div className="space-y-2">
+                      <Label htmlFor="detail-silhouette">Silhouette</Label>
+                      <Select
+                        value={detailFormData.silhouette}
+                        onValueChange={(value) => setDetailFormData((prev) => ({ ...prev, silhouette: value as Silhouette }))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select silhouette" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="fitted">Fitted</SelectItem>
+                          <SelectItem value="oversized">Oversized</SelectItem>
+                          <SelectItem value="loose">Loose</SelectItem>
+                          <SelectItem value="tailored">Tailored</SelectItem>
+                          <SelectItem value="relaxed">Relaxed</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Vibe Tags */}
+                    <div className="space-y-2">
+                      <Label>Vibe Tags</Label>
+                      <div className="flex flex-wrap gap-2">
+                        {(["date night", "casual", "workout", "office"] as VibeTag[]).map((vibe) => (
+                          <button
+                            key={vibe}
+                            type="button"
+                            onClick={() => {
+                              setDetailFormData((prev) => ({
+                                ...prev,
+                                vibeTags: prev.vibeTags.includes(vibe)
+                                  ? prev.vibeTags.filter((v) => v !== vibe)
+                                  : [...prev.vibeTags, vibe],
+                              }));
+                            }}
+                            className={`rounded-full px-3 py-1 text-xs transition-colors ${
+                              detailFormData.vibeTags.includes(vibe)
+                                ? "bg-neutral-900 text-white"
+                                : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
+                            }`}
+                          >
+                            {vibe}
+                          </button>
                         ))}
                       </div>
                     </div>
 
-                    {/* Fabric */}
-                    <div>
-                      <p className="mb-1 text-xs uppercase tracking-wide text-neutral-400">
-                        Fabric
-                      </p>
-                      <p className="text-neutral-900">{selectedItem.fabric || "—"}</p>
-                    </div>
-
-                    {/* Silhouette */}
-                    <div>
-                      <p className="mb-1 text-xs uppercase tracking-wide text-neutral-400">
-                        Silhouette
-                      </p>
-                      <p className="text-neutral-900 capitalize">
-                        {selectedItem.silhouette || "—"}
-                      </p>
-                    </div>
-
-                    {/* Subcategory */}
-                    <div>
-                      <p className="mb-1 text-xs uppercase tracking-wide text-neutral-400">
-                        Subcategory
-                      </p>
-                      <p className="text-neutral-900">{selectedItem.style || "—"}</p>
-                    </div>
-
-                    {/* Vibe Tags */}
-                    {selectedItem.aiTags && selectedItem.aiTags.length > 0 && (
-                      <div>
-                        <p className="mb-2 text-xs uppercase tracking-wide text-neutral-400">
-                          Vibe Tags
-                        </p>
-                        <div className="flex flex-wrap gap-2">
-                          {selectedItem.aiTags.map((tag) => (
-                            <span
-                              key={tag}
-                              className="rounded-full bg-neutral-100 px-3 py-1.5 text-xs text-neutral-700"
-                            >
-                              {tag}
-                            </span>
-                          ))}
-                        </div>
+                    {/* Error Message */}
+                    {detailError && (
+                      <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                        {detailError}
                       </div>
                     )}
-                  </div>
+
+                    {/* Save Button */}
+                    <div className="flex justify-end gap-3 pt-4">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => setSelectedItem(null)}
+                        disabled={savingDetails}
+                      >
+                        Cancel
+                      </Button>
+                      <Button type="submit" disabled={savingDetails || !detailFormData.category}>
+                        {savingDetails ? "Saving..." : "Save Changes"}
+                      </Button>
+                    </div>
+                  </form>
 
                   {/* Stats */}
                   <div className="grid grid-cols-2 gap-4 rounded-xl border border-neutral-200/60 bg-neutral-50 p-4">
@@ -1047,45 +1266,6 @@ export function Closet() {
                       </p>
                       <p className="text-xs text-neutral-500">this season</p>
                     </div>
-                  </div>
-
-                  {/* Action Buttons */}
-                  <div className="mt-6 grid grid-cols-2 gap-3">
-                    <button className="flex items-center justify-center gap-2 rounded-xl border border-neutral-900 bg-neutral-900 py-3 text-sm text-white transition-all hover:bg-neutral-800">
-                      View Outfits
-                      <ChevronRight className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={async () => {
-                        if (!selectedItem || !isUsingApi) return;
-                        try {
-                          // Fetch full database item to get all fields
-                          const dbItem = await getClosetItem(selectedItem.id);
-                          if (!dbItem) return;
-
-                          // Populate edit form with existing data
-                          setFormData({
-                            image: null,
-                            imagePreview: dbItem.image_url,
-                            brand: dbItem.brand || "",
-                            category: dbItem.category,
-                            vibeTags: dbItem.vibe_tags || [],
-                            priceTier: dbItem.price_tier || "",
-                            colors: dbItem.colors || [],
-                            fabric: dbItem.fabric || "",
-                            silhouette: dbItem.silhouette || "",
-                            subcategory: dbItem.subcategory || "",
-                          });
-                          setEditItemOpen(true);
-                        } catch (err) {
-                          console.error("Failed to load item for editing:", err);
-                          setEditItemError("Failed to load item details");
-                        }
-                      }}
-                      className="flex items-center justify-center gap-2 rounded-xl border border-neutral-300 bg-white py-3 text-sm text-neutral-900 transition-all hover:bg-neutral-50"
-                    >
-                      Edit Details
-                    </button>
                   </div>
                 </div>
               </div>
