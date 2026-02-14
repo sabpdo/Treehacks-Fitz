@@ -2,7 +2,7 @@ import { supabase } from '../../lib/supabase';
 import { Profile } from '../../types/database';
 
 /**
- * Get current user's profile
+ * Get current user's profile (streak is computed from post dates)
  */
 export async function getCurrentProfile(): Promise<Profile | null> {
   const { data: { user } } = await supabase.auth.getUser();
@@ -12,24 +12,63 @@ export async function getCurrentProfile(): Promise<Profile | null> {
     .from('profiles')
     .select('*')
     .eq('id', user.id)
-    .single();
+    .maybeSingle();
 
   if (error) throw error;
+  if (!data) return null;
+
+  const streak = await getStreakFromPosts(user.id);
+  return { ...data, streak };
+}
+
+/**
+ * Ensure current user has a profile row (creates one if missing).
+ * Call this when the DB trigger may not have run (e.g. trigger not applied).
+ */
+export async function ensureProfile(): Promise<Profile | null> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+
+  const existing = await getCurrentProfile();
+  if (existing) return existing;
+
+  const displayName = (user.user_metadata?.display_name ?? user.user_metadata?.displayName ?? user.email) as string;
+  const username = (user.user_metadata?.username ?? user.email) as string;
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .insert({
+      id: user.id,
+      display_name: displayName || null,
+      username: username || null,
+      avatar_url: (user.user_metadata?.avatar_url as string) || null,
+    })
+    .select()
+    .maybeSingle();
+
+  if (error) {
+    // Ignore unique violation (trigger may have created row between get and insert)
+    if (error.code === '23505') return getCurrentProfile();
+    throw error;
+  }
   return data;
 }
 
 /**
- * Get a profile by user ID
+ * Get a profile by user ID (streak is computed from post dates)
  */
 export async function getProfile(userId: string): Promise<Profile | null> {
   const { data, error } = await supabase
     .from('profiles')
     .select('*')
     .eq('id', userId)
-    .single();
+    .maybeSingle();
 
   if (error) throw error;
-  return data;
+  if (!data) return null;
+
+  const streak = await getStreakFromPosts(userId);
+  return { ...data, streak };
 }
 
 /**
@@ -39,14 +78,38 @@ export async function updateProfile(updates: Partial<Profile>): Promise<Profile>
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
 
-  const { data, error } = await supabase
-    .from('profiles')
-    .update(updates)
-    .eq('id', user.id)
-    .select()
-    .single();
+  let data: Profile | null = null;
+  let error: { message: string; code?: string } | null = null;
 
-  if (error) throw error;
+  const runUpdate = async () => {
+    const result = await supabase
+      .from('profiles')
+      .update(updates)
+      .eq('id', user.id)
+      .select()
+      .maybeSingle();
+    return result;
+  };
+
+  const result = await runUpdate();
+  data = result.data;
+  error = result.error;
+
+  if (error) {
+    const message = error.message || 'Unknown error';
+    const code = error.code ? ` (${error.code})` : '';
+    const err = new Error(`${message}${code}`);
+    (err as Error & { details?: unknown }).details = error;
+    throw err;
+  }
+  if (data === null) {
+    // Profile row may be missing if DB trigger didn't run; create it and retry once
+    await ensureProfile();
+    const retry = await runUpdate();
+    if (retry.error) throw retry.error;
+    if (retry.data) return retry.data;
+    throw new Error('Profile not found or update not allowed. Make sure the profiles table exists and RLS allows updates.');
+  }
   return data;
 }
 
@@ -110,7 +173,7 @@ export async function getFollowers(userId: string): Promise<Profile[]> {
     .eq('following_id', userId);
 
   if (error) throw error;
-  return (data || []).map(f => f.follower);
+  return ((data || []).map(f => f.follower) as unknown) as Profile[];
 }
 
 /**
@@ -123,35 +186,71 @@ export async function getFollowing(userId: string): Promise<Profile[]> {
     .eq('follower_id', userId);
 
   if (error) throw error;
-  return (data || []).map(f => f.following);
+  return ((data || []).map(f => f.following) as unknown) as Profile[];
+}
+
+/** Previous calendar day in YYYY-MM-DD (UTC) */
+function prevDay(dateStr: string): string {
+  const d = new Date(dateStr + 'T12:00:00.000Z');
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().split('T')[0];
 }
 
 /**
- * Update streak (called daily when user posts)
+ * Compute streak from post timestamps: consecutive days (including today) the user posted.
+ * Uses UTC date for consistency.
+ */
+export async function getStreakFromPosts(userId: string): Promise<number> {
+  const { data: posts, error } = await supabase
+    .from('posts')
+    .select('created_at')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(500);
+
+  if (error) throw error;
+  if (!posts || posts.length === 0) return 0;
+
+  const today = new Date().toISOString().split('T')[0];
+  const dates = [...new Set(posts.map((p) => p.created_at.slice(0, 10)))].sort().reverse();
+
+  let streak = 0;
+  let expected = today;
+  while (dates.includes(expected)) {
+    streak++;
+    expected = prevDay(expected);
+  }
+  return streak;
+}
+
+/**
+ * Update streak from post timestamps and save to profile (call after user creates a post).
  */
 export async function updateStreak(): Promise<number> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
 
-  const profile = await getProfile(user.id);
-  if (!profile) throw new Error('Profile not found');
+  const streak = await getStreakFromPosts(user.id);
+  await updateProfile({ streak });
+  return streak;
+}
 
-  // Check if user posted today
-  const today = new Date().toISOString().split('T')[0];
-  const { data: todayPosts } = await supabase
-    .from('posts')
-    .select('id')
-    .eq('user_id', user.id)
-    .gte('created_at', `${today}T00:00:00`)
-    .limit(1);
-
-  if (todayPosts && todayPosts.length > 0) {
-    const newStreak = profile.streak + 1;
-    await updateProfile({ streak: newStreak });
-    return newStreak;
+/**
+ * Get suggested users for Discover (other people on the platform, excluding current user)
+ */
+export async function getDiscoverProfiles(limit = 50): Promise<Profile[]> {
+  const { data: { user } } = await supabase.auth.getUser();
+  let query = supabase
+    .from('profiles')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (user) {
+    query = query.neq('id', user.id);
   }
-
-  return profile.streak;
+  const { data, error } = await query;
+  if (error) throw error;
+  return data || [];
 }
 
 /**

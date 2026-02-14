@@ -13,7 +13,7 @@ import { Input } from "./ui/input";
 import { Button } from "./ui/button";
 import { cn } from "./ui/utils";
 import { getPost } from "../../services/api";
-import { apiPostToOOTDPost } from "../../lib/adapters";
+import { apiPostToOOTDPost, ensurePublicStorageUrl } from "../../lib/adapters";
 import { getCategoryIcon, getCategoryLabel } from "../../lib/categories";
 import type { Post as ApiPost } from "../../types/database";
 
@@ -84,18 +84,42 @@ export function PostDetail() {
 
   const user = getUser(post.userId);
   const comments = getCommentsForPost(post.id);
-  const likedByFriendsCount = post.likedByUserIds.length; // mock: "Liked by X friends"
+  const likedByFriendsCount = post.likedByUserIds.length;
+  const isLikedState = post.likedByUserIds.includes(currentUserId);
+
+  const handleLike = () => {
+    toggleLike(post.id);
+    if (fetchedPost && post.id === fetchedPost.id) {
+      const newLiked = !isLikedState;
+      setFetchedPost((prev) =>
+        prev
+          ? {
+            ...prev,
+            likeCount: prev.likeCount + (newLiked ? 1 : -1),
+            likedByUserIds: newLiked
+              ? [...prev.likedByUserIds, currentUserId]
+              : prev.likedByUserIds.filter((id) => id !== currentUserId),
+          }
+          : null
+      );
+    }
+  };
 
   const handleSubmitComment = () => {
     const t = commentText.trim();
     if (!t) return;
     addComment(post.id, t);
     setCommentText("");
+    if (fetchedPost && post.id === fetchedPost.id) {
+      setFetchedPost((prev) =>
+        prev ? { ...prev, commentCount: prev.commentCount + 1 } : null
+      );
+    }
   };
 
   return (
     <div className="min-h-screen bg-[#FAFAF8]">
-      <header className="sticky top-0 z-30 flex items-center gap-4 border-b border-neutral-200/60 bg-white/90 px-4 py-3 backdrop-blur-xl">
+      <header className="sticky top-0 z-30 flex items-center gap-4 border-b border-neutral-200/60 bg-white/90 px-4 py-3 backdrop-blur-xl sm:px-6">
         <motion.button
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.96 }}
@@ -108,10 +132,10 @@ export function PostDetail() {
         <h1 className="flex-1 text-sm font-medium text-neutral-900">Post</h1>
       </header>
 
-      <div className="mx-auto max-w-lg bg-white">
+      <div className="mx-auto max-w-2xl bg-white sm:px-4">
         <div className="relative aspect-[4/5] overflow-hidden bg-neutral-50">
           <img
-            src={post.imageUrl}
+            src={ensurePublicStorageUrl(post.imageUrl)}
             alt={post.caption}
             className="h-full w-full object-cover"
           />
@@ -171,11 +195,11 @@ export function PostDetail() {
         </div>
 
         <ActionRow
-          isLiked={isLiked(post.id)}
+          isLiked={isLikedState}
           isSaved={isSaved(post.id)}
           likeCount={post.likeCount}
           commentCount={post.commentCount}
-          onLike={() => toggleLike(post.id)}
+          onLike={handleLike}
           onSave={() => toggleSave(post.id)}
           onComment={() => { }}
         />

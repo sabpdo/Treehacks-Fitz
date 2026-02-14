@@ -23,24 +23,43 @@ export async function uploadImage(file: File, bucket: string = 'closet-images'):
   const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
   const filePath = fileName;
 
-  // Upload to Supabase Storage
-  const { error: uploadError } = await supabase.storage
-    .from(bucket)
-    .upload(filePath, file, {
-      cacheControl: '3600',
-      upsert: false,
-    });
+  const doUpload = () =>
+    supabase.storage
+      .from(bucket)
+      .upload(filePath, file, {
+        cacheControl: '3600',
+        upsert: false,
+      });
 
-  if (uploadError) {
-    throw new Error(`Upload failed: ${uploadError.message}`);
+  let result = await doUpload();
+  const isAbortError =
+    result.error &&
+    (result.error.message?.toLowerCase().includes('abort') ||
+      result.error.message?.toLowerCase().includes('aborted'));
+
+  if (result.error && isAbortError) {
+    result = await doUpload();
   }
 
-  // Get public URL
-  const { data } = supabase.storage
-    .from(bucket)
-    .getPublicUrl(filePath);
+  if (result.error) {
+    const msg = result.error.message || '';
+    if (msg.toLowerCase().includes('bucket') && msg.toLowerCase().includes('not found')) {
+      throw new Error(
+        "Upload failed: Storage bucket 'closet-images' not found. Create it in Supabase: Storage → New bucket → name 'closet-images', set to Public. See BACKEND_SETUP.md Step 6."
+      );
+    }
+    if (msg.toLowerCase().includes('row-level security') || msg.toLowerCase().includes('violates')) {
+      throw new Error(
+        "Upload failed: Storage policy missing. In Supabase SQL Editor, run the statements in supabase/storage-policies.sql (see BACKEND_SETUP.md Step 6.2)."
+      );
+    }
+    throw new Error(`Upload failed: ${msg}`);
+  }
 
-  return data.publicUrl;
+  // Build public URL (must include /object/public/ for public buckets to load in browser)
+  const baseUrl = import.meta.env.VITE_SUPABASE_URL?.replace(/\/$/, '') || '';
+  const publicUrl = `${baseUrl}/storage/v1/object/public/${bucket}/${filePath}`;
+  return publicUrl;
 }
 
 /**

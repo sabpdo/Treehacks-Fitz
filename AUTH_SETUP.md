@@ -5,6 +5,7 @@ This guide will help you set up authentication for your ClosetRank app using Sup
 ## Overview
 
 The app now includes:
+
 - ✅ Email/Password authentication
 - ✅ Google OAuth authentication
 - ✅ Protected routes (requires login to access)
@@ -32,11 +33,13 @@ The app now includes:
 ## Step 3: Configure Environment Variables
 
 1. In your project root, create a `.env` file:
+
    ```bash
    cp .env.example .env
    ```
 
 2. Open `.env` and add your Supabase credentials:
+
    ```env
    VITE_SUPABASE_URL=your_supabase_project_url_here
    VITE_SUPABASE_ANON_KEY=your_supabase_anon_key_here
@@ -65,20 +68,22 @@ The app now includes:
    d. Click **Create Credentials** > **OAuth 2.0 Client ID**
 
    e. Configure the OAuth consent screen if prompted:
-      - User Type: External
-      - App name: ClosetRank
-      - User support email: your email
-      - Developer contact: your email
+
+   - User Type: External
+   - App name: ClosetRank
+   - User support email: your email
+   - Developer contact: your email
 
    f. Create OAuth Client ID:
-      - Application type: Web application
-      - Name: ClosetRank Web Client
-      - Authorized JavaScript origins:
-        - `http://localhost:5173` (for development)
-        - Your production URL (when deployed)
-      - Authorized redirect URIs:
-        - Copy the **Callback URL** from Supabase and paste it here
-        - It looks like: `https://your-project.supabase.co/auth/v1/callback`
+
+   - Application type: Web application
+   - Name: ClosetRank Web Client
+   - Authorized JavaScript origins:
+     - `http://localhost:5173` (for development)
+     - Your production URL (when deployed)
+   - Authorized redirect URIs:
+     - Copy the **Callback URL** from Supabase and paste it here
+     - It looks like: `https://your-project.supabase.co/auth/v1/callback`
 
    g. Copy the **Client ID** and **Client Secret**
 
@@ -91,16 +96,24 @@ The app now includes:
 By default, Supabase sends email confirmations for new signups. You can:
 
 1. **Use Supabase's default email** (rate-limited, development only):
+
    - Go to **Authentication** > **Email Templates**
    - Customize the email templates if desired
 
 2. **Use your own SMTP provider** (for production):
+
    - Go to **Settings** > **Auth** > **SMTP Settings**
    - Configure your email provider (SendGrid, AWS SES, etc.)
+
+3. **If confirmation emails stop sending:**
+   - In **Authentication** > **Providers** > **Email**, ensure **Confirm email** is enabled.
+   - Add your app URL to **Authentication** > **URL Configuration** > **Redirect URLs** (e.g. `http://localhost:5173/` for dev, plus your production URL).
+   - The built-in Supabase email is rate-limited; for reliable delivery use a custom SMTP provider (Step 5.2 above).
 
 ## Step 6: Test Authentication
 
 1. Start your dev server:
+
    ```bash
    npm run dev
    ```
@@ -180,21 +193,25 @@ create trigger on_auth_user_created
 ## Troubleshooting
 
 ### "Invalid login credentials" error
+
 - Check that your email/password are correct
 - Verify your Supabase URL and anon key in `.env`
 - Make sure you've confirmed your email (check spam folder)
 
 ### Google OAuth not working
+
 - Verify your Google OAuth credentials are correct in Supabase
 - Make sure the redirect URI in Google Cloud Console matches Supabase's callback URL
 - Clear your browser cache and cookies
 
 ### User gets logged out immediately
+
 - Check browser console for errors
 - Verify `.env` variables are loaded (restart dev server after changing `.env`)
 - Make sure `VITE_` prefix is used for all environment variables
 
 ### TypeScript errors
+
 - Run `npm install` to ensure all dependencies are installed
 - Check that `@supabase/supabase-js` is in `package.json`
 
@@ -212,6 +229,7 @@ create trigger on_auth_user_created
 When deploying to Vercel:
 
 1. Add environment variables in Vercel dashboard:
+
    - Go to Project Settings > Environment Variables
    - Add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`
 

@@ -6,8 +6,9 @@ import { useAppStore } from "../context/AppStore";
 import { CURRENT_USER_ID, presetGalleryImages } from "../data/mockData";
 import type { OOTDPost } from "../data/mockData";
 import { cn } from "./ui/utils";
+import { Button } from "./ui/button";
 import { createItemsFromOutfitPhoto } from "../../services/api/closet";
-import { createPost, uploadImage } from "../../services/api";
+import { createPost, uploadImage, updateStreak } from "../../services/api";
 import { apiPostToOOTDPost } from "../../lib/adapters";
 import { MultiItemRankingFlow } from "./MultiItemRankingFlow";
 import type { AIImageAnalysis } from "../../types/database";
@@ -23,11 +24,26 @@ function dataURLtoFile(dataUrl: string, filename: string): File {
   return new File([u8arr], filename, { type: mime });
 }
 
+/** Convert selected image (data URL or http URL) to a File for upload */
+async function imageToFile(selectedImage: string, filename: string): Promise<File> {
+  if (selectedImage.startsWith("data:")) {
+    return dataURLtoFile(selectedImage, filename);
+  }
+  if (selectedImage.startsWith("http://") || selectedImage.startsWith("https://")) {
+    const res = await fetch(selectedImage, { mode: "cors" });
+    if (!res.ok) throw new Error(`Failed to fetch image: ${res.status}`);
+    const blob = await res.blob();
+    const ext = blob.type?.split("/")[1] || "jpg";
+    return new File([blob], filename.replace(/\.[^.]+$/, `.${ext}`), { type: blob.type || "image/jpeg" });
+  }
+  throw new Error("Invalid image source");
+}
+
 const VIBE_OPTIONS = ["Date night", "Casual", "Work", "Grunge", "Cafe study"];
 
 export function OOTDPost() {
   const navigate = useNavigate();
-  const { addPost, isUsingApi, currentUserId } = useAppStore();
+  const { addPost, isUsingApi, currentUserId, refetchCurrentUser } = useAppStore();
   const [caption, setCaption] = useState("");
   const [vibeTag, setVibeTag] = useState("");
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -36,6 +52,7 @@ export function OOTDPost() {
   const [createdItemIds, setCreatedItemIds] = useState<string[]>([]);
   const [detectedItems, setDetectedItems] = useState<AIImageAnalysis[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [isPosting, setIsPosting] = useState(false);
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -48,6 +65,12 @@ export function OOTDPost() {
 
   const handlePost = async () => {
     if (!selectedImage || !caption.trim()) return;
+
+    // If OpenAI is not configured, post directly without AI analysis
+    if (!import.meta.env.VITE_OPENAI_API_KEY) {
+      await handlePostSimple();
+      return;
+    }
 
     try {
       setIsAnalyzing(true);
@@ -64,21 +87,79 @@ export function OOTDPost() {
       setShowRankingFlow(true);
     } catch (err) {
       console.error('Error creating items:', err);
-      setError('Failed to analyze photo. Please try again.');
+      setError('Failed to analyze photo. You can still post without AI tagging below.');
       setIsAnalyzing(false);
     }
+  };
+
+  const handlePostWithoutTagging = () => {
+    setError(null);
+    handlePostSimple();
+  };
+
+  const handlePostSimple = async () => {
+    if (!selectedImage || !caption.trim()) return;
+    if (isUsingApi) {
+      try {
+        setError(null);
+        setIsPosting(true);
+        const file = await imageToFile(selectedImage, "ootd.jpg");
+        const imageUrl = await uploadImage(file);
+        const apiPost = await createPost({
+          image_url: imageUrl,
+          caption: caption.trim(),
+        });
+        try {
+          await updateStreak();
+          await refetchCurrentUser();
+        } catch {
+          // ignore streak/refetch failure
+        }
+        addPost(apiPostToOOTDPost(apiPost, currentUserId));
+        navigate("/");
+      } catch (e) {
+        console.error("Create post failed:", e);
+        setError("Failed to create post. Please try again.");
+      } finally {
+        setIsPosting(false);
+      }
+      return;
+    }
+    const now = new Date().toISOString();
+    const newPost: OOTDPost = {
+      id: `p-${Date.now()}`,
+      userId: CURRENT_USER_ID,
+      imageUrl: selectedImage,
+      caption: caption.trim(),
+      vibeTag: vibeTag || "Casual",
+      createdAt: now,
+      likeCount: 0,
+      savedCount: 0,
+      commentCount: 0,
+      likedByUserIds: [],
+      compatibilityScore: 75 + Math.floor(Math.random() * 20),
+      aiInsight: "Fresh fit — your style is showing.",
+    };
+    addPost(newPost);
+    navigate("/");
   };
 
   const handleRankingComplete = async () => {
     if (isUsingApi && selectedImage) {
       try {
-        const file = dataURLtoFile(selectedImage, "ootd.jpg");
+        const file = await imageToFile(selectedImage, "ootd.jpg");
         const imageUrl = await uploadImage(file);
         const apiPost = await createPost({
           image_url: imageUrl,
           caption: caption.trim(),
           item_ids: createdItemIds.length > 0 ? createdItemIds : undefined,
         });
+        try {
+          await updateStreak();
+          await refetchCurrentUser();
+        } catch {
+          // ignore streak/refetch failure
+        }
         addPost(apiPostToOOTDPost(apiPost, currentUserId));
         navigate("/");
       } catch (e) {
@@ -111,7 +192,8 @@ export function OOTDPost() {
     handleRankingComplete();
   };
 
-  const canPost = selectedImage && caption.trim() && vibeTag && !isAnalyzing;
+  const canPost = selectedImage && caption.trim() && !isAnalyzing && !isPosting;
+  const canPostSimple = selectedImage && caption.trim() && !isPosting;
 
   // Show ranking flow if items were created
   if (showRankingFlow && createdItemIds.length > 0 && selectedImage) {
@@ -133,7 +215,7 @@ export function OOTDPost() {
           <button
             onClick={() => navigate("/")}
             className="flex items-center gap-2 text-neutral-600 transition-colors hover:text-neutral-900"
-            disabled={isAnalyzing}
+            disabled={isAnalyzing || isPosting}
           >
             <ArrowLeft className="h-5 w-5" />
             <span className="text-sm">Cancel</span>
@@ -144,7 +226,7 @@ export function OOTDPost() {
             disabled={!canPost}
             className="rounded-full bg-[#8B9B8E] px-5 py-2 text-sm text-white transition-all hover:bg-[#7A8A7D] disabled:bg-neutral-300 disabled:opacity-50"
           >
-            {isAnalyzing ? 'Analyzing...' : 'Post'}
+            {isPosting ? 'Posting...' : isAnalyzing ? 'Analyzing...' : 'Post'}
           </button>
         </div>
       </header>
@@ -152,8 +234,18 @@ export function OOTDPost() {
       {/* Error message */}
       {error && (
         <div className="mx-auto max-w-2xl px-6 py-4">
-          <div className="rounded-xl bg-red-50 p-4 text-sm text-red-600">
-            {error}
+          <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+            <p className="mb-3">{error}</p>
+            <p className="mb-3 text-xs text-red-600">
+              You can still post your photo without AI tagging.
+            </p>
+            <Button
+              onClick={handlePostWithoutTagging}
+              disabled={!canPostSimple}
+              className="rounded-lg bg-red-600 text-white hover:bg-red-700"
+            >
+              {isPosting ? 'Posting...' : 'Post without tagging'}
+            </Button>
           </div>
         </div>
       )}
@@ -329,6 +421,39 @@ export function OOTDPost() {
               Browse
             </button>
           </div>
+        </motion.div>
+
+        {/* Bottom Post actions */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          transition={{ delay: 0.5 }}
+          className="mt-8 flex flex-col gap-3"
+        >
+          <p className="text-center text-xs text-neutral-500">
+            Add a photo and caption above, then choose how to post.
+          </p>
+          <div className="flex gap-3">
+            <Button
+              onClick={handlePostSimple}
+              disabled={!canPostSimple}
+              className="flex-1 rounded-xl bg-neutral-900 py-4 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+            >
+              Post now (no tagging)
+            </Button>
+            <Button
+              onClick={handlePost}
+              disabled={!canPost}
+              variant="outline"
+              className="flex-1 rounded-xl border-[#8B9B8E] py-4 text-sm font-medium text-[#8B9B8E] hover:bg-[#8B9B8E]/10 disabled:opacity-50"
+            >
+              {isAnalyzing ? "Analyzing…" : "Analyze & tag items"}
+            </Button>
+          </div>
+          {!vibeTag && (
+            <p className="text-center text-[10px] text-neutral-400">
+              Optional: pick a vibe tag above for &quot;Analyze & tag items&quot;.
+            </p>
+          )}
         </motion.div>
       </div>
     </div>

@@ -70,11 +70,15 @@ export async function getFeedPosts(
   } else if (filter === 'trending') {
     query = query.order(orderBy, { ascending }).range(offset, offset + limit - 1);
   } else {
-    // following: posts from followed users + own posts
+    // following: posts from followed users + own posts (fetch following IDs first; PostgREST doesn't support subqueries in .or())
+    const { data: followRows } = await supabase
+      .from('follows')
+      .select('following_id')
+      .eq('follower_id', user.id);
+    const followingIds = (followRows || []).map((r) => r.following_id);
+    const feedUserIds = [user.id, ...followingIds];
     query = query
-      .or(`user_id.eq.${user.id},user_id.in.(
-        select following_id from follows where follower_id = '${user.id}'
-      )`)
+      .in('user_id', feedUserIds)
       .order(orderBy, { ascending })
       .range(offset, offset + limit - 1);
   }
