@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { useNavigate } from "react-router";
 import { ArrowLeft, Upload, Flame, Tag, Sparkles } from "lucide-react";
 import { motion } from "motion/react";
@@ -66,7 +66,7 @@ export function OOTDPost() {
     if (!selectedImage || !caption.trim()) return;
 
     // If OpenAI is not configured, post directly without AI analysis
-    if (!import.meta.env.VITE_OPENAI_API_KEY) {
+    if (!(import.meta as any).env?.VITE_OPENAI_API_KEY) {
       await handlePostSimple();
       return;
     }
