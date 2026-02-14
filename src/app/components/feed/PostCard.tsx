@@ -105,11 +105,11 @@ export function PostCard({
           </div>
         )}
         {post.tags && post.tags.length > 0 && (
-          <div className="absolute bottom-0 left-0 right-0 flex flex-wrap gap-1.5 bg-gradient-to-t from-black/70 to-transparent p-2.5 pt-6">
+          <div className="absolute bottom-0 left-0 right-0 z-10 flex flex-wrap gap-1.5 bg-gradient-to-t from-black/85 via-black/50 to-transparent p-2.5 pt-8 pb-2">
             {post.tags.slice(0, 4).map((tag, i) => (
               <span
                 key={`${tag.label}-${i}`}
-                className="rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-medium text-neutral-800 backdrop-blur-sm"
+                className="rounded-full bg-white/95 px-2 py-0.5 text-[10px] font-medium text-neutral-800 shadow-sm"
               >
                 {tag.label}
               </span>
@@ -264,11 +264,11 @@ export function PostCard({
               </div>
             )}
             {post.tags && post.tags.length > 0 && (
-              <div className="absolute bottom-0 left-0 right-0 flex flex-wrap gap-1 bg-gradient-to-t from-black/60 to-transparent p-2 pt-5">
+              <div className="absolute bottom-0 left-0 right-0 z-10 flex flex-wrap gap-1 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-2 pt-6 pb-1.5">
                 {post.tags.slice(0, 3).map((tag, i) => (
                   <span
                     key={`${tag.label}-${i}`}
-                    className="rounded-full bg-white/90 px-1.5 py-0.5 text-[9px] font-medium text-neutral-800"
+                    className="rounded-full bg-white/95 px-1.5 py-0.5 text-[9px] font-medium text-neutral-800 shadow-sm"
                   >
                     {tag.label}
                   </span>

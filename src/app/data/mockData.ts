@@ -393,10 +393,12 @@ export interface User {
   followingCount: number;
 }
 
-/** Tag from "tag your items" flow — one per confirmed item on the OOTD */
+/** Tag on a post = clothing item from wardrobe (or label from capture flow) */
 export interface OOTDPostTag {
   label: string;
   type: string; // e.g. top, bottom, shoes, dress, jacket
+  /** When set, this tag is a linked closet item — link to /closet?item=id */
+  closetItemId?: string;
 }
 
 export interface OOTDPost {

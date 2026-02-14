@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useSearchParams } from "react-router";
 import { Plus, Grid3x3, List, X, ChevronRight, Flame, Upload } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { mockClosetItems, type ClosetItem, currentUserProfile } from "../data/mockData";
@@ -132,6 +133,7 @@ export function Closet() {
     subcategory: "",
   });
   const { isUsingApi, currentUserId, getUser } = useAppStore();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   // Map UI category back to database category
   const mapCategoryToDB = (uiCategory: string): Category => {
@@ -235,6 +237,17 @@ export function Closet() {
       setClosetItems(mockClosetItems);
     }
   }, [isUsingApi, currentUserId]);
+
+  // Open item from URL when navigating from post detail (e.g. /closet?item=uuid)
+  useEffect(() => {
+    const itemId = searchParams.get("item");
+    if (!itemId || closetItems.length === 0) return;
+    const item = closetItems.find((i) => i.id === itemId);
+    if (item) {
+      setSelectedItem(item);
+      setSearchParams({}, { replace: true });
+    }
+  }, [closetItems, searchParams, setSearchParams]);
 
   const filteredItems =
     filter === "all"
@@ -562,8 +575,8 @@ export function Closet() {
                               }));
                             }}
                             className={`rounded-full px-3 py-1 text-xs capitalize transition-colors ${formData.colors.includes(color)
-                                ? "bg-neutral-900 text-white"
-                                : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
+                              ? "bg-neutral-900 text-white"
+                              : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
                               }`}
                           >
                             {color}
@@ -649,8 +662,8 @@ export function Closet() {
                               }));
                             }}
                             className={`rounded-full px-3 py-1 text-xs transition-colors ${formData.vibeTags.includes(vibe)
-                                ? "bg-neutral-900 text-white"
-                                : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
+                              ? "bg-neutral-900 text-white"
+                              : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
                               }`}
                           >
                             {vibe}
@@ -1130,8 +1143,8 @@ export function Closet() {
                               }));
                             }}
                             className={`rounded-full px-3 py-1 text-xs capitalize transition-colors ${detailFormData.colors.includes(color)
-                                ? "bg-neutral-900 text-white"
-                                : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
+                              ? "bg-neutral-900 text-white"
+                              : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
                               }`}
                           >
                             {color}
@@ -1206,8 +1219,8 @@ export function Closet() {
                               }));
                             }}
                             className={`rounded-full px-3 py-1 text-xs transition-colors ${detailFormData.vibeTags.includes(vibe)
-                                ? "bg-neutral-900 text-white"
-                                : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
+                              ? "bg-neutral-900 text-white"
+                              : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
                               }`}
                           >
                             {vibe}
@@ -1494,8 +1507,8 @@ export function Closet() {
                       }));
                     }}
                     className={`rounded-full px-3 py-1 text-xs capitalize transition-colors ${formData.colors.includes(color)
-                        ? "bg-neutral-900 text-white"
-                        : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
+                      ? "bg-neutral-900 text-white"
+                      : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
                       }`}
                   >
                     {color}
@@ -1581,8 +1594,8 @@ export function Closet() {
                       }));
                     }}
                     className={`rounded-full px-3 py-1 text-xs transition-colors ${formData.vibeTags.includes(vibe)
-                        ? "bg-neutral-900 text-white"
-                        : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
+                      ? "bg-neutral-900 text-white"
+                      : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
                       }`}
                   >
                     {vibe}

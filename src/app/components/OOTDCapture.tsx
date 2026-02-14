@@ -1,18 +1,20 @@
 import React, { useState, useEffect, useRef } from "react";
 import { X, Camera, Flame, Check, ChevronDown, Sparkles, Search, Plus, Upload, ChevronRight, GripVertical, ChevronLeft, Trash2 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-import { mockClosetItems, type OOTDPost } from "../data/mockData";
+import { mockClosetItems, type OOTDPost, type ClosetItem } from "../data/mockData";
 import { analyzeOutfitImage } from "../../services/openai";
-import type { AIImageAnalysis } from "../../types/database";
+import type { AIImageAnalysis, PostOutfitItem, Category } from "../../types/database";
 import {
   segmentOutfitImage,
   uploadImage,
   dataURLToFile,
   createPost,
   updateStreak,
+  getClosetItems,
+  createClosetItem,
   type SegmentResult,
 } from "../../services/api";
-import { apiPostToOOTDPost } from "../../lib/adapters";
+import { apiPostToOOTDPost, apiClosetItemToUI, ensurePublicStorageUrl } from "../../lib/adapters";
 import { useAppStore } from "../context/AppStore";
 
 type CaptureStep = "camera" | "scanning" | "tagging" | "confirm";
@@ -49,6 +51,32 @@ function categoryToType(category: string): string {
     bags: "bag",
   };
   return map[lower] ?? (lower.replace(/_/g, " ") || "item");
+}
+
+/** Map DetectedItem.type (UI) to DB Category — same schema as closet items. */
+function detectedTypeToDbCategory(type: string): Category {
+  const t = (type || "").toLowerCase().trim();
+  if (t === "pants" || t === "bottom" || t === "bottoms") return "pants";
+  if (t === "skirts_dresses" || t === "dress" || t === "skirt") return "skirts_dresses";
+  if (t === "jacket" || t === "outerwear" || t === "jackets_outerwear") return "jackets_outerwear";
+  if (t === "shoes" || t === "shoe") return "shoes";
+  if (t === "bags" || t === "bag" || t === "accessory" || t === "accessories" || t === "handbag") return "bags";
+  return "shirts";
+}
+
+/** Convert detected items to post outfit items (same schema as closet). */
+function detectedItemsToPostOutfitItems(detected: DetectedItem[]): PostOutfitItem[] {
+  return detected.map((di) => ({
+    image_url: di.imageUrl || di.closetMatch?.imageUrl || "",
+    category: detectedTypeToDbCategory(di.type),
+    brand: di.closetMatch?.brand ?? null,
+    subcategory: di.label || null,
+    colors: di.color && di.color !== "—" ? [di.color] : [],
+    fabric: di.fabric ?? null,
+    silhouette: (di.silhouette as PostOutfitItem["silhouette"]) ?? null,
+    vibe_tags: [],
+    ...(di.closetMatch?.id ? { closet_item_id: di.closetMatch.id } : {}),
+  }));
 }
 
 function aiAnalysisToDetectedItems(items: AIImageAnalysis[]): DetectedItem[] {
@@ -146,15 +174,61 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
-  // Add new item form state
+  // Add new item form state (brand = actual brand from dropdown; subcategory = item name/description)
   const [newItemData, setNewItemData] = useState({
     image: "",
     category: "",
+    subcategory: "",
     brand: "",
-    color: "",
+    colors: [] as string[],
     fabric: "",
     silhouette: "",
   });
+
+  const ADD_ITEM_BRANDS = [
+    "H&M", "Zara", "Nike", "Adidas", "Uniqlo", "Forever 21", "Gap", "Old Navy",
+    "Target", "ASOS", "Shein", "Urban Outfitters", "Aritzia", "Lululemon",
+    "Levi's", "Madewell", "Everlane", "Reformation", "Other",
+  ];
+  const ADD_ITEM_COLORS = ["black", "white", "gray", "navy", "beige", "sage", "cream", "camel", "tan", "gold", "red", "blue", "green", "pink", "brown"];
+
+  /** Normalize API color so it preselects the matching chip (lowercase + phrase mapping). */
+  const preselectColorsFromDetected = (color: string): string[] => {
+    if (!color || color === "—") return [];
+    const lower = color.trim().toLowerCase();
+    const match = ADD_ITEM_COLORS.find((c) => lower === c || lower.startsWith(c) || lower.includes(c));
+    if (match) return [match];
+    if (ADD_ITEM_COLORS.includes(lower)) return [lower];
+    return [lower];
+  };
+
+  /** Map API fabric/silhouette strings to form values; silhouette normalized to DB enum when possible. */
+  const normalizeDetectedFabric = (fabric: string | undefined): string =>
+    (fabric && fabric.trim()) ? fabric.trim() : "";
+  const normalizeDetectedSilhouette = (silhouette: string | undefined): string => {
+    if (!silhouette || !silhouette.trim()) return "";
+    const lower = silhouette.trim().toLowerCase().replace(/\s+/g, "_");
+    const map: Record<string, string> = {
+      fitted: "fitted",
+      oversized: "oversized",
+      loose: "loose",
+      tailored: "tailored",
+      relaxed: "relaxed",
+      "wide_leg": "loose",
+      "wide_legs": "loose",
+      "straight": "tailored",
+      "slim": "fitted",
+      "low-top": "fitted",
+      "low_top": "fitted",
+      "high_waist": "fitted",
+    };
+    return map[lower] ?? silhouette.trim();
+  };
+
+  // Closet items for swap modal (when using API)
+  const [closetItemsForSwap, setClosetItemsForSwap] = useState<ClosetItem[]>([]);
+  const [addingToCloset, setAddingToCloset] = useState(false);
+  const [addToClosetError, setAddToClosetError] = useState<string | null>(null);
 
   // Start camera when on camera step (try back camera first, then front/user for desktop)
   useEffect(() => {
@@ -317,10 +391,26 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
     setCategoryFilter("all");
   };
 
+  // Fetch real closet items when swap modal opens (API mode)
+  useEffect(() => {
+    if (!showSwapModal || !isUsingApi || !currentUserId) return;
+    let cancelled = false;
+    getClosetItems(currentUserId)
+      .then((items) => {
+        if (!cancelled) setClosetItemsForSwap(items.map(apiClosetItemToUI));
+      })
+      .catch(() => {
+        if (!cancelled) setClosetItemsForSwap([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [showSwapModal, isUsingApi, currentUserId]);
+
   const selectSwapItem = (closetItemId: string) => {
     if (!swappingItemId) return;
 
-    const closetItem = mockClosetItems.find((item) => item.id === closetItemId);
+    const closetItem = getFilteredClosetItems().find((item) => item.id === closetItemId);
     if (!closetItem) return;
 
     setDetectedItems((items) =>
@@ -346,30 +436,100 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
     setSwappingItemId(null);
   };
 
-  const handleAddNewItem = () => {
-    // In a real app, this would save to the closet
-    setShowSwapModal(false);
-    setSwapModalView("select");
-    setNewItemData({
-      image: "",
-      category: "",
-      brand: "",
-      color: "",
-      fabric: "",
-      silhouette: "",
-    });
+  const handleAddNewItem = async () => {
+    if (!isUsingApi || !currentUserId) {
+      setShowSwapModal(false);
+      setSwapModalView("select");
+      setNewItemData({ image: "", category: "", subcategory: "", brand: "", colors: [], fabric: "", silhouette: "" });
+      return;
+    }
+
+    setAddToClosetError(null);
+    setAddingToCloset(true);
+
+    try {
+      // Resolve image URL: use crop from segmentation when available, not the full OOTD
+      let imageUrl: string;
+      const imageInput = (newItemData.image || "").trim();
+      if (imageInput.startsWith("data:")) {
+        const file = dataURLToFile(imageInput, "closet-item.jpg");
+        imageUrl = await uploadImage(file);
+      } else if (imageInput.startsWith("http://") || imageInput.startsWith("https://")) {
+        imageUrl = imageInput;
+      } else {
+        // Prefer detected item's crop (segment) over full OOTD image
+        const detected = swappingItemId ? detectedItems.find((i) => i.id === swappingItemId) : null;
+        if (detected?.imageUrl?.startsWith("http")) {
+          imageUrl = detected.imageUrl;
+        } else if (detected?.imageUrl?.startsWith("data:")) {
+          const file = dataURLToFile(detected.imageUrl, "closet-item.jpg");
+          imageUrl = await uploadImage(file);
+        } else if (capturedImage) {
+          const file = dataURLToFile(capturedImage, "closet-item.jpg");
+          imageUrl = await uploadImage(file);
+        } else {
+          setAddToClosetError("Please add an image (paste crop URL or use a segmented photo).");
+          setAddingToCloset(false);
+          return;
+        }
+      }
+
+      const dbCategory = detectedTypeToDbCategory(newItemData.category || "top");
+      const created = await createClosetItem({
+        image_url: imageUrl,
+        category: dbCategory,
+        brand: newItemData.brand || undefined,
+        subcategory: newItemData.subcategory || undefined,
+        colors: newItemData.colors.length > 0 ? newItemData.colors : undefined,
+        fabric: newItemData.fabric || undefined,
+        silhouette: (newItemData.silhouette as import("../../types/database").Silhouette) || undefined,
+      });
+
+      const uiItem = apiClosetItemToUI(created);
+      setClosetItemsForSwap((prev) => [uiItem, ...prev]);
+      setDetectedItems((prev) =>
+        prev.map((item) =>
+          item.id === swappingItemId
+            ? {
+              ...item,
+              closetMatch: {
+                id: created.id,
+                brand: created.brand || "Unknown",
+                imageUrl: ensurePublicStorageUrl(created.image_url),
+              },
+              label: newItemData.subcategory || item.label,
+              color: newItemData.colors[0] || item.color,
+              fabric: newItemData.fabric ?? item.fabric,
+              silhouette: newItemData.silhouette ?? item.silhouette,
+            }
+            : item
+        )
+      );
+
+      setShowSwapModal(false);
+      setSwapModalView("select");
+      setSwappingItemId(null);
+      setNewItemData({ image: "", category: "", subcategory: "", brand: "", colors: [], fabric: "", silhouette: "" });
+    } catch (e) {
+      console.error("Add to closet failed:", e);
+      setAddToClosetError(e instanceof Error ? e.message : "Failed to add to closet");
+    } finally {
+      setAddingToCloset(false);
+    }
   };
 
   /** Open the Add New Item form pre-filled from a detected item (for "Not in Closet" → Add as New Item). */
   const openAddAsNewItem = (item: DetectedItem) => {
     setSwappingItemId(item.id);
+    setAddToClosetError(null);
     setNewItemData({
       image: item.imageUrl ?? item.closetMatch?.imageUrl ?? "",
       category: item.type ?? "",
-      brand: item.label ?? "",
-      color: item.color ?? "",
-      fabric: item.fabric ?? "",
-      silhouette: item.silhouette ?? "",
+      subcategory: item.label ?? "",
+      brand: item.closetMatch?.brand ?? "",
+      colors: preselectColorsFromDetected(item.color),
+      fabric: normalizeDetectedFabric(item.fabric),
+      silhouette: normalizeDetectedSilhouette(item.silhouette),
     });
     setSwapModalView("add-new");
     setShowSwapModal(true);
@@ -414,9 +574,11 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
         setPosting(true);
         const file = dataURLToFile(capturedImage, "ootd.jpg");
         const imageUrl = await uploadImage(file);
+        const items = detectedItemsToPostOutfitItems(detectedItems);
         const apiPost = await createPost({
           image_url: imageUrl,
           caption: caption.trim() || "Outfit of the day",
+          items: items.length > 0 ? items : undefined,
         });
         try {
           await updateStreak();
@@ -425,8 +587,7 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
           /* ignore */
         }
         const uiPost = apiPostToOOTDPost(apiPost, currentUserId);
-        const tags = detectedItems.map((i) => ({ label: i.label, type: i.type }));
-        addPost({ ...uiPost, tags });
+        addPost({ ...uiPost, tags: uiPost.tags });
         onClose();
       } catch (e) {
         console.error("Create post failed:", e);
@@ -456,9 +617,9 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
     onClose();
   };
 
-  // Filter closet items based on search and category
-  const getFilteredClosetItems = () => {
-    let filtered = mockClosetItems;
+  // Filter closet items based on search and category (API items when using API)
+  const getFilteredClosetItems = (): ClosetItem[] => {
+    let filtered = isUsingApi ? closetItemsForSwap : mockClosetItems;
 
     if (categoryFilter !== "all") {
       filtered = filtered.filter((item) => item.category === categoryFilter);
@@ -1255,6 +1416,21 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
 
                       <div>
                         <label className="mb-2 block text-xs uppercase tracking-wide text-neutral-500">
+                          Item name / Description
+                        </label>
+                        <input
+                          type="text"
+                          value={newItemData.subcategory}
+                          onChange={(e) =>
+                            setNewItemData({ ...newItemData, subcategory: e.target.value })
+                          }
+                          placeholder="e.g. White linen shirt, High-waist jeans..."
+                          className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm outline-none transition-all focus:border-neutral-900"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="mb-2 block text-xs uppercase tracking-wide text-neutral-500">
                           Category
                         </label>
                         <select
@@ -1265,11 +1441,12 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
                           className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm outline-none transition-all focus:border-neutral-900"
                         >
                           <option value="">Select category...</option>
-                          <option value="top">Top</option>
-                          <option value="bottom">Bottom</option>
-                          <option value="outerwear">Outerwear</option>
+                          <option value="shirts">Shirts/Tops</option>
+                          <option value="pants">Pants</option>
+                          <option value="skirts_dresses">Skirts/Dresses</option>
+                          <option value="jackets_outerwear">Jackets/Outerwear</option>
                           <option value="shoes">Shoes</option>
-                          <option value="accessory">Accessory</option>
+                          <option value="bags">Bags</option>
                         </select>
                       </div>
 
@@ -1277,29 +1454,75 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
                         <label className="mb-2 block text-xs uppercase tracking-wide text-neutral-500">
                           Brand
                         </label>
-                        <input
-                          type="text"
+                        <select
                           value={newItemData.brand}
                           onChange={(e) =>
                             setNewItemData({ ...newItemData, brand: e.target.value })
                           }
-                          placeholder="e.g. Everlane, Aritzia..."
                           className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm outline-none transition-all focus:border-neutral-900"
-                        />
+                        >
+                          <option value="">Select brand (optional)</option>
+                          {ADD_ITEM_BRANDS.map((b) => (
+                            <option key={b} value={b}>{b}</option>
+                          ))}
+                        </select>
+                        {(newItemData.brand === "Other" || (newItemData.brand && !ADD_ITEM_BRANDS.includes(newItemData.brand))) && (
+                          <input
+                            type="text"
+                            value={newItemData.brand === "Other" ? "" : newItemData.brand}
+                            onChange={(e) =>
+                              setNewItemData({ ...newItemData, brand: e.target.value })
+                            }
+                            placeholder="Enter brand name"
+                            className="mt-2 w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm outline-none transition-all focus:border-neutral-900"
+                          />
+                        )}
                       </div>
 
                       <div>
                         <label className="mb-2 block text-xs uppercase tracking-wide text-neutral-500">
-                          Color
+                          Colors
                         </label>
+                        <div className="flex flex-wrap gap-2">
+                          {ADD_ITEM_COLORS.map((color) => (
+                            <button
+                              key={color}
+                              type="button"
+                              onClick={() =>
+                                setNewItemData((prev) => ({
+                                  ...prev,
+                                  colors: prev.colors.includes(color)
+                                    ? prev.colors.filter((c) => c !== color)
+                                    : [...prev.colors, color],
+                                }))
+                              }
+                              className={`rounded-full px-3 py-1 text-xs capitalize transition-colors ${newItemData.colors.includes(color)
+                                ? "bg-neutral-900 text-white"
+                                : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
+                                }`}
+                            >
+                              {color}
+                            </button>
+                          ))}
+                        </div>
                         <input
                           type="text"
-                          value={newItemData.color}
-                          onChange={(e) =>
-                            setNewItemData({ ...newItemData, color: e.target.value })
-                          }
-                          placeholder="e.g. White, Black, Beige..."
-                          className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm outline-none transition-all focus:border-neutral-900"
+                          placeholder="Or type custom color and press Enter"
+                          className="mt-2 w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm outline-none transition-all focus:border-neutral-900"
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              const input = e.currentTarget;
+                              const value = input.value.trim().toLowerCase();
+                              if (value && !newItemData.colors.includes(value)) {
+                                setNewItemData((prev) => ({
+                                  ...prev,
+                                  colors: [...prev.colors, value],
+                                }));
+                                input.value = "";
+                              }
+                            }
+                          }}
                         />
                       </div>
 
@@ -1339,11 +1562,16 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
                   </div>
 
                   <div className="border-t border-neutral-200/60 bg-white p-4">
+                    {addToClosetError && (
+                      <p className="mb-2 text-xs text-red-600">{addToClosetError}</p>
+                    )}
                     <button
-                      onClick={handleAddNewItem}
-                      className="w-full rounded-xl bg-neutral-900 py-3 text-sm text-white transition-all hover:bg-neutral-800"
+                      type="button"
+                      onClick={() => void handleAddNewItem()}
+                      disabled={addingToCloset}
+                      className="w-full rounded-xl bg-neutral-900 py-3 text-sm text-white transition-all hover:bg-neutral-800 disabled:opacity-50"
                     >
-                      Save to Closet
+                      {addingToCloset ? "Saving…" : "Save to Closet"}
                     </button>
                   </div>
                 </div>

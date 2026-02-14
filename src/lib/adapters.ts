@@ -48,9 +48,12 @@ export interface UIUser {
   closetUtilization?: number;
 }
 
+/** Tag on a post = a clothing item from the wardrobe (or fallback label from capture flow) */
 export interface UIOOTDPostTag {
   label: string;
   type: string;
+  /** When present, this tag is a linked closet item — link to /closet?item=id */
+  closetItemId?: string;
 }
 
 export interface UIOOTDPost {
@@ -93,6 +96,26 @@ export function apiProfileToUser(profile: Profile | null | undefined): UIUser | 
   };
 }
 
+function buildTagsFromPost(post: Post): UIOOTDPostTag[] | undefined {
+  // Post items = same schema as closet; optional closet_item_id when also in wardrobe
+  const items = post.items;
+  if (Array.isArray(items) && items.length > 0) {
+    return items.map((item) => ({
+      label: item.subcategory || item.brand || item.category || 'Item',
+      type: item.category,
+      closetItemId: item.closet_item_id,
+    }));
+  }
+  const stored = post.tags;
+  if (Array.isArray(stored) && stored.length > 0) {
+    return stored.map((t) => ({
+      label: typeof t.label === 'string' ? t.label : String(t.label ?? ''),
+      type: typeof t.type === 'string' ? t.type : String(t.type ?? ''),
+    }));
+  }
+  return undefined;
+}
+
 export function apiPostToOOTDPost(
   post: Post,
   currentUserId?: string
@@ -115,6 +138,7 @@ export function apiPostToOOTDPost(
     likedByUserIds: post.is_liked && currentUserId ? [currentUserId] : [],
     compatibilityScore: post.compatibility_score ?? 0,
     aiInsight: '',
+    tags: buildTagsFromPost(post),
   };
 }
 

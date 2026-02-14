@@ -16,11 +16,13 @@ UPDATE closet_items SET elo_rating = 1500 WHERE elo_rating IS NULL;
 UPDATE closet_items SET rating = 0 WHERE rating IS NULL;
 
 -- =====================================================
--- POSTS: segmentation columns (for extract-ootd-items)
+-- POSTS: segmentation columns (for extract-ootd-items) + tags (OOTDCapture)
 -- =====================================================
 ALTER TABLE posts
   ADD COLUMN IF NOT EXISTS segmentation_urls TEXT[],
-  ADD COLUMN IF NOT EXISTS segmentation_data JSONB;
+  ADD COLUMN IF NOT EXISTS segmentation_data JSONB,
+  ADD COLUMN IF NOT EXISTS tags JSONB,
+  ADD COLUMN IF NOT EXISTS outfit_items JSONB DEFAULT '[]';
 
 -- =====================================================
 -- SAVES table (if you don't have it yet)

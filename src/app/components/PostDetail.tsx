@@ -161,20 +161,40 @@ export function PostDetail() {
           {"tags" in post && post.tags && post.tags.length > 0 && (
             <div className="mt-3">
               <p className="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-500">
-                Tagged items
+                From wardrobe
               </p>
               <div className="flex flex-wrap gap-2">
-                {post.tags.map((tag, i) => (
-                  <span
-                    key={`${tag.label}-${i}`}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200/80 bg-neutral-50 px-3 py-1.5 text-sm text-neutral-800"
-                  >
-                    <span>{tag.label}</span>
-                    <span className="text-[10px] uppercase tracking-wide text-neutral-400">
-                      {tag.type.replace(/_/g, " ")}
+                {post.tags.map((tag, i) => {
+                  const itemId = "closetItemId" in tag ? tag.closetItemId : undefined;
+                  const key = itemId ?? `${tag.label}-${i}`;
+                  const content = (
+                    <>
+                      <span>{tag.label}</span>
+                      <span className="text-[10px] uppercase tracking-wide text-neutral-400">
+                        {tag.type.replace(/_/g, " ")}
+                      </span>
+                    </>
+                  );
+                  if (itemId) {
+                    return (
+                      <Link
+                        key={key}
+                        to={`/closet?item=${itemId}`}
+                        className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200/80 bg-neutral-50 px-3 py-1.5 text-sm text-neutral-800 transition-colors hover:border-[#8B9B8E]/50 hover:bg-[#8B9B8E]/5"
+                      >
+                        {content}
+                      </Link>
+                    );
+                  }
+                  return (
+                    <span
+                      key={key}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200/80 bg-neutral-50 px-3 py-1.5 text-sm text-neutral-800"
+                    >
+                      {content}
                     </span>
-                  </span>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
