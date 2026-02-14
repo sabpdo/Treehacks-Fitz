@@ -1,7 +1,9 @@
-import { useState } from "react";
-import { Plus, Grid3x3, List, X, ChevronRight, TrendingUp } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { Plus, Grid3x3, List, X, ChevronRight, Flame } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-import { mockClosetItems, type ClosetItem } from "../data/mockData";
+import { mockClosetItems, type ClosetItem, currentUserProfile } from "../data/mockData";
+import { useAppStore } from "../context/AppStore";
+import { getCurrentProfile } from "../../services/api";
 
 type CategoryFilter = "all" | "tops" | "bottoms" | "outerwear" | "shoes" | "accessories";
 type ViewMode = "grid" | "list";
@@ -10,6 +12,8 @@ export function Closet() {
   const [filter, setFilter] = useState<CategoryFilter>("all");
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [selectedItem, setSelectedItem] = useState<ClosetItem | null>(null);
+  const [streak, setStreak] = useState<number>(currentUserProfile.streak);
+  const { isUsingApi, currentUserId, getUser } = useAppStore();
 
   const filteredItems =
     filter === "all"
@@ -26,7 +30,24 @@ export function Closet() {
   };
 
   const totalItems = mockClosetItems.length;
-  const utilizationScore = 73;
+
+  // Load streak from API if using API
+  useEffect(() => {
+    if (isUsingApi && currentUserId) {
+      const profileUser = getUser(currentUserId);
+      if (profileUser) {
+        // Streak is not in UIUser type, so we need to fetch from API
+        getCurrentProfile()
+          .then((profile) => {
+            if (profile) setStreak(profile.streak);
+          })
+          .catch(() => {
+            // Fallback to mock data on error
+            setStreak(currentUserProfile.streak);
+          });
+      }
+    }
+  }, [isUsingApi, currentUserId, getUser]);
 
   return (
     <div className="min-h-screen bg-[#FAFAF8]">
@@ -65,21 +86,21 @@ export function Closet() {
         {/* Dashboard Overview */}
         <div className="mb-6 overflow-hidden rounded-2xl border border-neutral-200/60 bg-white">
           <div className="grid gap-px bg-neutral-200/60 md:grid-cols-3">
-            {/* Utilization Score */}
+            {/* Streak */}
             <div className="bg-white p-6">
               <div className="mb-3 flex items-center gap-2">
-                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#8B9B8E]/10">
-                  <TrendingUp className="h-4 w-4 text-[#8B9B8E]" />
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-orange-400 to-rose-500">
+                  <Flame className="h-4 w-4 text-white" />
                 </div>
                 <span className="text-xs uppercase tracking-wide text-neutral-500">
-                  Utilization
+                  Streak
                 </span>
               </div>
               <p className="mb-1 font-serif text-4xl text-neutral-900">
-                {utilizationScore}%
+                {streak}
               </p>
               <p className="text-xs text-neutral-400">
-                Above average
+                days posting
               </p>
             </div>
 

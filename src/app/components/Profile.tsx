@@ -1,6 +1,6 @@
 import React, { useEffect } from "react";
 import { useParams, useNavigate, Link } from "react-router";
-import { Settings, Flame, TrendingUp, ArrowLeft, LogOut } from "lucide-react";
+import { Settings, Flame, ArrowLeft, LogOut } from "lucide-react";
 import { useAppStore } from "../context/AppStore";
 import { currentUserProfile, rankedItems } from "../data/mockData";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "./ui/tabs";
@@ -27,7 +27,6 @@ export function Profile() {
   const followerCount = isOwnProfile ? (profileUser?.followerCount ?? currentUserProfile.followers) : (profileUser?.followerCount ?? 0);
   const followingCount = isOwnProfile ? (profileUser?.followingCount ?? currentUserProfile.following) : (profileUser?.followingCount ?? 0);
   const streak = isOwnProfile ? currentUserProfile.streak : 5;
-  const closetUtilization = isOwnProfile ? currentUserProfile.closetUtilization : 68;
 
   const userPosts = posts.filter((p) => p.userId === (profileUser?.id ?? ""));
   const savedPosts = posts.filter((p) => savedPostIds.has(p.id));
@@ -141,9 +140,9 @@ export function Profile() {
             </div>
           </div>
 
-          {/* Streak + Utilization */}
-          <div className="grid grid-cols-2 gap-px border-t border-neutral-200/60 bg-neutral-200/60">
-            <div className="bg-white p-5">
+          {/* Streak */}
+          <div className="border-t border-neutral-200/60 bg-white">
+            <div className="p-5">
               <div className="mb-2 flex items-center gap-2">
                 <div className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-orange-400 to-rose-500">
                   <Flame className="h-3.5 w-3.5 text-white" />
@@ -152,16 +151,6 @@ export function Profile() {
               </div>
               <p className="font-serif text-3xl text-neutral-900">{streak}</p>
               <p className="text-xs text-neutral-400">days posting</p>
-            </div>
-            <div className="bg-white p-5">
-              <div className="mb-2 flex items-center gap-2">
-                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[#8B9B8E]">
-                  <TrendingUp className="h-3.5 w-3.5 text-white" />
-                </div>
-                <span className="text-xs uppercase tracking-wide text-neutral-500">Utilization</span>
-              </div>
-              <p className="font-serif text-3xl text-neutral-900">{closetUtilization}%</p>
-              <p className="text-xs text-neutral-400">of closet worn</p>
             </div>
           </div>
         </div>
