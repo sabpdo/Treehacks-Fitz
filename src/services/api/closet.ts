@@ -105,7 +105,7 @@ export async function createClosetItem(
     };
   }
 
-  // Merge AI analysis with user input
+  // Merge AI analysis with user input (user input takes precedence)
   const itemData = {
     user_id: user.id,
     image_url: request.image_url,
@@ -113,12 +113,13 @@ export async function createClosetItem(
     category: request.category,
     vibe_tags: request.vibe_tags || aiAnalysis.vibe_tags,
     price_tier: request.price_tier || null,
-    colors: aiAnalysis.colors,
-    silhouette: aiAnalysis.silhouette,
-    fabric: aiAnalysis.fabric,
-    subcategory: aiAnalysis.subcategory,
+    colors: request.colors && request.colors.length > 0 ? request.colors : aiAnalysis.colors,
+    silhouette: request.silhouette || aiAnalysis.silhouette,
+    fabric: request.fabric || aiAnalysis.fabric,
+    subcategory: request.subcategory || aiAnalysis.subcategory,
     times_worn: 0,
     rating: 0,
+    elo_rating: getInitialElo(),
   };
 
   const { data, error } = await supabase

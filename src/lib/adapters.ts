@@ -178,3 +178,36 @@ export function apiCommentToUIComment(c: ApiComment): UIComment {
     createdAt: c.created_at,
   };
 }
+
+// Map database category to UI category
+function mapCategoryToUI(dbCategory: string): "tops" | "bottoms" | "outerwear" | "shoes" | "accessories" {
+  const categoryMap: Record<string, "tops" | "bottoms" | "outerwear" | "shoes" | "accessories"> = {
+    shirts: "tops",
+    pants: "bottoms",
+    skirts_dresses: "bottoms",
+    jackets_outerwear: "outerwear",
+    shoes: "shoes",
+    bags: "accessories",
+  };
+  return categoryMap[dbCategory] || "tops";
+}
+
+// Convert database ClosetItem to UI ClosetItem
+export function apiClosetItemToUI(dbItem: import('../types/database').ClosetItem): import('../app/data/mockData').ClosetItem & { priceTier?: string; allColors?: string[]; subcategory?: string } {
+  return {
+    id: dbItem.id,
+    imageUrl: ensurePublicStorageUrl(dbItem.image_url),
+    category: mapCategoryToUI(dbItem.category),
+    color: dbItem.colors?.[0] || "unknown",
+    style: dbItem.subcategory || dbItem.brand || "—",
+    brand: dbItem.brand || undefined,
+    fabric: dbItem.fabric || undefined,
+    silhouette: dbItem.silhouette || undefined,
+    aiTags: dbItem.vibe_tags || undefined,
+    compatibleWith: 0, // Not stored in DB, would need to calculate
+    timesWorn: dbItem.times_worn || 0,
+    priceTier: dbItem.price_tier || undefined,
+    allColors: dbItem.colors || [],
+    subcategory: dbItem.subcategory || undefined,
+  };
+}
