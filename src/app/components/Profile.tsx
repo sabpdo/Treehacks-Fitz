@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useParams, useNavigate, Link } from "react-router";
+import { useParams, useNavigate, useSearchParams, Link } from "react-router";
 import { Settings, Flame, TrendingUp, ArrowLeft, LogOut } from "lucide-react";
 import { useAppStore } from "../context/AppStore";
 import { currentUserProfile, rankedItems } from "../data/mockData";
@@ -16,10 +16,12 @@ import {
   DialogDescription,
   DialogFooter,
 } from "./ui/dialog";
-import { updateProfile, uploadImage } from "../../services/api";
+import { updateProfile, uploadImage, getFollowing, getFollowers, getDiscoverProfiles } from "../../services/api";
 import { getAllCategoryRankings } from "../../services/api/ranking";
-import { DEFAULT_AVATAR } from "../../lib/adapters";
+import { apiProfileToUser, DEFAULT_AVATAR, ensurePublicStorageUrl, type UIUser } from "../../lib/adapters";
 import type { RankedItem } from "../data/mockData";
+import { mockUsers } from "../data/mockData";
+import { Skeleton } from "./ui/skeleton";
 
 export function Profile() {
   const { userId } = useParams<{ userId?: string }>();
@@ -35,6 +37,7 @@ export function Profile() {
     currentUserId,
     isUsingApi,
     refetchCurrentUser,
+    removePost,
   } = useAppStore();
 
   const [editOpen, setEditOpen] = useState(false);
@@ -47,9 +50,25 @@ export function Profile() {
   const [rankingsLoading, setRankingsLoading] = useState(false);
   const [avatarUploading, setAvatarUploading] = useState(false);
   const avatarInputRef = React.useRef<HTMLInputElement>(null);
+  const [listDialogOpen, setListDialogOpen] = useState(false);
+  const [listMode, setListMode] = useState<"followers" | "following">("followers");
+  const [followersList, setFollowersList] = useState<UIUser[]>([]);
+  const [followingList, setFollowingList] = useState<UIUser[]>([]);
+  const [discoverList, setDiscoverList] = useState<UIUser[]>([]);
+  const [listLoading, setListLoading] = useState(false);
+
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabFromUrl = searchParams.get("tab");
+  const validTab = tabFromUrl === "rankings" || tabFromUrl === "saved" ? tabFromUrl : "ootds";
+  const [profileTab, setProfileTab] = useState<string>(validTab);
+
+  useEffect(() => {
+    setProfileTab(validTab);
+  }, [validTab]);
 
   const isOwnProfile = !userId || userId === currentUserId;
   const profileUser = getUser(userId ?? currentUserId);
+  const profileUserId = profileUser?.id ?? currentUserId;
 
   useEffect(() => {
     if (userId && !profileUser) loadUser(userId);
@@ -101,6 +120,46 @@ export function Profile() {
       setEditError(null);
     }
   }, [editOpen, profileUser]);
+
+  useEffect(() => {
+    if (!listDialogOpen || !profileUser) return;
+    let cancelled = false;
+    setListLoading(true);
+    if (isUsingApi) {
+      Promise.all([
+        getFollowers(profileUserId),
+        getFollowing(profileUserId),
+        isOwnProfile ? getDiscoverProfiles(30) : Promise.resolve([]),
+      ])
+        .then(([followers, following, discover]) => {
+          if (cancelled) return;
+          setFollowersList(followers.map(apiProfileToUser).filter((u): u is UIUser => u !== null));
+          setFollowingList(following.map(apiProfileToUser).filter((u): u is UIUser => u !== null));
+          setDiscoverList(discover.map(apiProfileToUser).filter((u): u is UIUser => u !== null));
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setFollowersList([]);
+            setFollowingList([]);
+            setDiscoverList([]);
+          }
+        })
+        .finally(() => {
+          if (!cancelled) setListLoading(false);
+        });
+    } else {
+      const following = mockUsers.filter((u) => u.id !== "me" && isFollowing(u.id));
+      const followers = mockUsers.filter((u) => u.id !== "me").slice(0, 20);
+      const discover = mockUsers.filter((u) => u.id !== "me");
+      setFollowingList(following.map((u) => ({ id: u.id, name: u.name, handle: u.handle, avatarUrl: u.avatarUrl, bio: u.bio, vibes: u.vibes, followerCount: u.followerCount, followingCount: u.followingCount })));
+      setFollowersList(followers.map((u) => ({ id: u.id, name: u.name, handle: u.handle, avatarUrl: u.avatarUrl, bio: u.bio, vibes: u.vibes, followerCount: u.followerCount, followingCount: u.followingCount })));
+      setDiscoverList(discover.map((u) => ({ id: u.id, name: u.name, handle: u.handle, avatarUrl: u.avatarUrl, bio: u.bio, vibes: u.vibes, followerCount: u.followerCount, followingCount: u.followingCount })));
+      setListLoading(false);
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [listDialogOpen, profileUserId, isUsingApi, isOwnProfile]);
 
   const displayName = isOwnProfile ? "You" : profileUser?.name ?? "User";
   const displayHandle = isOwnProfile ? (profileUser?.handle || currentUserProfile.username) : (profileUser?.handle ?? "");
@@ -284,16 +343,33 @@ export function Profile() {
               )}
               <div className="flex-1">
                 <h2 className="mb-1 text-xl font-medium text-neutral-900">{displayName}</h2>
-                <p className="mb-3 text-sm text-neutral-500">@{displayHandle}</p>
+                <p className="mb-1 text-sm text-neutral-500">@{displayHandle}</p>
+                {(profileUser?.bio ?? "").trim() ? (
+                  <p className="mb-3 text-sm text-neutral-600">{profileUser?.bio?.trim()}</p>
+                ) : null}
                 <div className="flex gap-6 text-sm">
-                  <div>
-                    <span className="block text-lg text-neutral-900">{followerCount}</span>
+                  <button
+                    type="button"
+                    className="text-left transition-opacity hover:opacity-80"
+                    onClick={() => {
+                      setListMode("followers");
+                      setListDialogOpen(true);
+                    }}
+                  >
+                    <span className="block text-lg font-medium text-neutral-900">{followerCount}</span>
                     <span className="text-xs text-neutral-500">followers</span>
-                  </div>
-                  <div>
-                    <span className="block text-lg text-neutral-900">{followingCount}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="text-left transition-opacity hover:opacity-80"
+                    onClick={() => {
+                      setListMode("following");
+                      setListDialogOpen(true);
+                    }}
+                  >
+                    <span className="block text-lg font-medium text-neutral-900">{followingCount}</span>
                     <span className="text-xs text-neutral-500">following</span>
-                  </div>
+                  </button>
                   {isOwnProfile && (
                     <div>
                       <span className="block text-lg text-neutral-900">{userPosts.length}</span>
@@ -349,14 +425,21 @@ export function Profile() {
           </div>
         </div>
 
-        <Tabs defaultValue="ootds" className="w-full">
+        <Tabs
+          value={profileTab}
+          onValueChange={(v) => {
+            setProfileTab(v);
+            setSearchParams(v === "ootds" ? {} : { tab: v });
+          }}
+          className="w-full"
+        >
           <TabsList className="mb-4 w-full justify-start gap-0 rounded-xl bg-neutral-100 p-1">
             <TabsTrigger value="ootds" className="flex-1 rounded-lg">OOTDs</TabsTrigger>
             <TabsTrigger value="rankings" className="flex-1 rounded-lg">Rankings</TabsTrigger>
             <TabsTrigger value="saved" className="flex-1 rounded-lg">Saved</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="ootds" className="mt-0">
+          <TabsContent value="ootds" className="mt-0 w-full data-[state=inactive]:hidden" forceMount>
             {userPosts.length === 0 ? (
               <div className="flex min-h-[200px] flex-col items-center justify-center rounded-2xl border border-neutral-200/60 bg-white/50 py-12 text-center">
                 <p className="text-sm text-neutral-500">
@@ -369,13 +452,19 @@ export function Profile() {
                 )}
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
-                <PostGrid posts={userPosts} compact={false} columns={3} />
+              <div className="w-full">
+                <PostGrid
+                  posts={userPosts}
+                  compact={false}
+                  columns={3}
+                  showDelete={isOwnProfile}
+                  onDelete={removePost}
+                />
               </div>
             )}
           </TabsContent>
 
-          <TabsContent value="rankings" className="mt-0">
+          <TabsContent value="rankings" className="mt-0 w-full data-[state=inactive]:hidden" forceMount>
             {isOwnProfile ? (
               <>
                 {isUsingApi && (
@@ -405,7 +494,7 @@ export function Profile() {
             )}
           </TabsContent>
 
-          <TabsContent value="saved" className="mt-0">
+          <TabsContent value="saved" className="mt-0 w-full data-[state=inactive]:hidden" forceMount>
             {isOwnProfile ? (
               savedPosts.length === 0 ? (
                 <div className="flex min-h-[200px] flex-col items-center justify-center rounded-2xl border border-neutral-200/60 bg-white/50 py-12 text-center">
@@ -497,6 +586,122 @@ export function Profile() {
               {editSaving ? "Saving..." : "Save"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={listDialogOpen} onOpenChange={setListDialogOpen}>
+        <DialogContent className="border-neutral-200/60 bg-white shadow-xl sm:max-w-md" aria-describedby={undefined}>
+          <DialogHeader>
+            <DialogTitle className="text-left text-lg font-semibold text-neutral-900">
+              {listMode === "followers" ? "Followers" : "Following"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="max-h-[60vh] overflow-y-auto -mx-6 px-6">
+            {listLoading ? (
+              <div className="space-y-3 py-2">
+                {[1, 2, 3, 4].map((i) => (
+                  <Skeleton key={i} className="h-14 rounded-xl" />
+                ))}
+              </div>
+            ) : (
+              <>
+                {(listMode === "followers" ? followersList : followingList).length === 0 ? (
+                  <p className="py-6 text-center text-sm text-neutral-500">
+                    {listMode === "followers" ? "No followers yet." : "Not following anyone yet."}
+                  </p>
+                ) : (
+                  <div className="rounded-xl border border-neutral-200/60 bg-neutral-50/50 overflow-hidden">
+                    {(listMode === "followers" ? followersList : followingList).map((user) => (
+                      <div
+                        key={user.id}
+                        className="flex items-center gap-3 border-b border-neutral-100 py-3 last:border-0 bg-white px-3 first:rounded-t-xl last:rounded-b-xl"
+                      >
+                        <Link
+                          to={`/profile/${user.id}`}
+                          className="flex-shrink-0"
+                          onClick={() => setListDialogOpen(false)}
+                        >
+                          <img
+                            src={user.avatarUrl ? ensurePublicStorageUrl(user.avatarUrl) : DEFAULT_AVATAR}
+                            alt={user.name}
+                            className="h-10 w-10 rounded-full object-cover"
+                          />
+                        </Link>
+                        <Link
+                          to={`/profile/${user.id}`}
+                          className="min-w-0 flex-1 truncate"
+                          onClick={() => setListDialogOpen(false)}
+                        >
+                          <p className="truncate font-medium text-neutral-900">{user.name}</p>
+                          <p className="truncate text-xs text-neutral-500">@{user.handle}</p>
+                        </Link>
+                        {user.id !== currentUserId && (
+                          <Button
+                            variant={isFollowing(user.id) ? "outline" : "default"}
+                            size="sm"
+                            className="flex-shrink-0 rounded-full border-neutral-200 bg-neutral-900 px-4 text-white hover:bg-neutral-800"
+                            onClick={() => toggleFollow(user.id)}
+                          >
+                            {isFollowing(user.id) ? "Unfollow" : "Follow"}
+                          </Button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {isOwnProfile && discoverList.length > 0 && (() => {
+                  const alreadyInList = listMode === "followers"
+                    ? followersList.map((f) => f.id)
+                    : followingList.map((f) => f.id);
+                  const toShow = discoverList.filter((u) => !alreadyInList.includes(u.id)).slice(0, 10);
+                  if (toShow.length === 0) return null;
+                  return (
+                    <>
+                      <p className="mt-6 mb-2 text-xs font-medium uppercase tracking-wide text-neutral-500">
+                        Discover people
+                      </p>
+                      <div className="rounded-xl border border-neutral-200/60 bg-neutral-50/50 overflow-hidden">
+                        {toShow.map((user) => (
+                          <div
+                            key={user.id}
+                            className="flex items-center gap-3 border-b border-neutral-100 py-3 last:border-0 bg-white px-3 first:rounded-t-xl last:rounded-b-xl"
+                          >
+                            <Link
+                              to={`/profile/${user.id}`}
+                              className="flex-shrink-0"
+                              onClick={() => setListDialogOpen(false)}
+                            >
+                              <img
+                                src={user.avatarUrl ? ensurePublicStorageUrl(user.avatarUrl) : DEFAULT_AVATAR}
+                                alt={user.name}
+                                className="h-10 w-10 rounded-full object-cover"
+                              />
+                            </Link>
+                            <Link
+                              to={`/profile/${user.id}`}
+                              className="min-w-0 flex-1 truncate"
+                              onClick={() => setListDialogOpen(false)}
+                            >
+                              <p className="truncate font-medium text-neutral-900">{user.name}</p>
+                              <p className="truncate text-xs text-neutral-500">@{user.handle}</p>
+                            </Link>
+                            <Button
+                              variant={isFollowing(user.id) ? "outline" : "default"}
+                              size="sm"
+                              className="flex-shrink-0 rounded-full border-neutral-200 bg-neutral-900 px-4 text-white hover:bg-neutral-800"
+                              onClick={() => toggleFollow(user.id)}
+                            >
+                              {isFollowing(user.id) ? "Unfollow" : "Follow"}
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  );
+                })()}
+              </>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
     </div>

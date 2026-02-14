@@ -25,7 +25,12 @@ export function AllOOTDs() {
     if (!isUsingApi) {
       if (filter === "saved") return posts.filter((p) => savedPostIds.has(p.id));
       if (filter === "following") return posts.filter((p) => followingUserIds.has(p.userId));
-      if (filter === "trending") return [...posts].sort((a, b) => b.likeCount - a.likeCount);
+      if (filter === "trending") {
+        const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+        return [...posts]
+          .filter((p) => new Date(p.createdAt).getTime() >= weekAgo)
+          .sort((a, b) => b.likeCount - a.likeCount);
+      }
     }
     return posts;
   })();

@@ -26,6 +26,7 @@ import {
   savePost,
   unsavePost,
   getPost,
+  deletePost as apiDeletePost,
   getFollowing,
   getCurrentProfile,
   ensureProfile,
@@ -71,6 +72,7 @@ type AppStoreActions = {
   loadUser: (id: string) => Promise<void>;
   refetchFeed: (filter?: FeedFilter, sort?: FeedSort) => Promise<void>;
   refetchCurrentUser: () => Promise<void>;
+  removePost: (postId: string) => Promise<void>;
 };
 
 const defaultState: AppStoreState = {
@@ -417,6 +419,23 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     }
   }, [useApi, authUser?.id]);
 
+  const removePost = useCallback(
+    async (postId: string) => {
+      if (useApi) {
+        try {
+          await apiDeletePost(postId);
+          setPosts((prev) => prev.filter((p) => p.id !== postId));
+        } catch (e) {
+          console.error("Delete post failed:", e);
+          throw e;
+        }
+        return;
+      }
+      setPosts((prev) => prev.filter((p) => p.id !== postId));
+    },
+    [useApi]
+  );
+
   const value = useMemo(
     () => ({
       posts,
@@ -441,6 +460,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       loadUser,
       refetchFeed,
       refetchCurrentUser,
+      removePost,
     }),
     [
       posts,
@@ -465,6 +485,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       loadUser,
       refetchFeed,
       refetchCurrentUser,
+      removePost,
     ]
   );
 
