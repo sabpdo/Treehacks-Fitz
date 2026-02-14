@@ -93,7 +93,7 @@ export function HomeFeed() {
               <p className="mb-6 text-xs text-neutral-500">{todayDate}</p>
               <motion.div whileTap={{ scale: 0.98 }} transition={{ duration: 0.2 }}>
                 <Link
-                  to="/post"
+                  to="/capture"
                   className="block w-full rounded-xl bg-neutral-900 py-3.5 text-center text-sm text-white transition-colors duration-200 hover:bg-neutral-800"
                 >
                   Open Camera
@@ -320,6 +320,7 @@ export function HomeFeed() {
         .scrollbar-hide::-webkit-scrollbar { display: none; }
         .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
       `}</style>
+
     </div>
   );
 }
