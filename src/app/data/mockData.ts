@@ -393,6 +393,14 @@ export interface User {
   followingCount: number;
 }
 
+/** Tag on a post = clothing item from wardrobe (or label from capture flow) */
+export interface OOTDPostTag {
+  label: string;
+  type: string; // e.g. top, bottom, shoes, dress, jacket
+  /** When set, this tag is a linked closet item — link to /closet?item=id */
+  closetItemId?: string;
+}
+
 /** One tagged item on an outfit post (position for dot, details for popup/list) */
 export interface OutfitItem {
   id: string;
@@ -419,6 +427,8 @@ export interface OOTDPost {
   likedByUserIds: string[];
   compatibilityScore: number;
   aiInsight: string;
+  /** Tagged items from capture flow (label + category) */
+  tags?: OOTDPostTag[];
   /** Tagged items in the outfit (for dots + Codibook-style list) */
   outfitItems?: OutfitItem[];
 }

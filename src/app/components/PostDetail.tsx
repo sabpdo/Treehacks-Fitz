@@ -3,8 +3,7 @@ import { useParams, useNavigate } from "react-router";
 import { ArrowLeft, X, ChevronDown, ChevronUp, ExternalLink, Check, Plus } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useAppStore } from "../context/AppStore";
-import { formatPostTime } from "../data/mockData";
-import type { OutfitItem } from "../data/mockData";
+import { formatPostTime, type OutfitItem } from "../data/mockData";
 import { ActionRow, Badge, CommentList } from "./feed";
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
@@ -30,7 +29,6 @@ export function PostDetail() {
   const [commentText, setCommentText] = useState("");
   const [fetchedPost, setFetchedPost] = useState<ReturnType<typeof apiPostToOOTDPost> | null>(null);
   const [loading, setLoading] = useState(!!postId);
-  const [selectedOutfitItem, setSelectedOutfitItem] = useState<OutfitItem | null>(null);
   const [isOutfitBreakdownExpanded, setIsOutfitBreakdownExpanded] = useState(false);
 
   const postFromStore = posts.find((p) => p.id === postId);
@@ -171,7 +169,7 @@ export function PostDetail() {
       </header>
 
       <div className="mx-auto max-w-3xl px-6 py-6">
-        {/* Outfit image with interactive dots + floating card near dot */}
+        {/* Outfit image */}
         <div className="mb-6 overflow-hidden rounded-2xl border border-neutral-200/60 bg-white shadow-sm">
           <div className="relative aspect-[4/5] overflow-hidden bg-neutral-50">
             <img
@@ -179,123 +177,6 @@ export function PostDetail() {
               alt={post.caption}
               className="h-full w-full object-cover"
             />
-
-            {outfitItems.length > 0 &&
-              outfitItems.map((oi) => (
-                <div
-                  key={oi.id}
-                  className="absolute z-20"
-                  style={{
-                    left: `${oi.position.x}%`,
-                    top: `${oi.position.y}%`,
-                    transform: "translate(-50%, -50%)",
-                  }}
-                >
-                  <button
-                    type="button"
-                    onClick={() => setSelectedOutfitItem(selectedOutfitItem?.id === oi.id ? null : oi)}
-                    className="relative"
-                  >
-                    <motion.div
-                      animate={{ scale: selectedOutfitItem?.id === oi.id ? 1.3 : 1 }}
-                      className="h-2.5 w-2.5 rounded-full border border-white bg-neutral-900 shadow-lg hover:scale-125"
-                    />
-                    <motion.div
-                      initial={{ scale: 1, opacity: 0.6 }}
-                      animate={{ scale: 2, opacity: 0 }}
-                      transition={{ duration: 1.5, repeat: Infinity }}
-                      className="absolute inset-0 rounded-full bg-neutral-900"
-                    />
-                  </button>
-                </div>
-              ))}
-
-            {/* Floating card positioned near dot (more ootd ui style) */}
-            <AnimatePresence>
-              {selectedOutfitItem && (
-                <>
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    onClick={() => setSelectedOutfitItem(null)}
-                    className="absolute inset-0 z-10 bg-black/10"
-                  />
-                  {outfitItems
-                    .filter((item) => item.id === selectedOutfitItem.id)
-                    .map((item) => {
-                      const isRight = item.position.x > 60;
-                      const isLeft = item.position.x < 40;
-                      let translateX = "-50%";
-                      let leftPos = `${item.position.x}%`;
-                      let topPos = `${item.position.y + 8}%`;
-                      if (isRight) {
-                        translateX = "-100%";
-                        leftPos = `${item.position.x - 5}%`;
-                      } else if (isLeft) {
-                        translateX = "0%";
-                        leftPos = `${item.position.x + 5}%`;
-                      }
-                      if (item.position.y > 65) topPos = `${item.position.y - 35}%`;
-
-                      return (
-                        <motion.div
-                          key={item.id}
-                          initial={{ opacity: 0, scale: 0.9 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          exit={{ opacity: 0, scale: 0.9 }}
-                          className="absolute z-20 max-w-[200px]"
-                          style={{
-                            left: leftPos,
-                            top: topPos,
-                            transform: `translate(${translateX}, 0)`,
-                          }}
-                        >
-                          <div className="relative overflow-hidden rounded-2xl border border-neutral-200/60 bg-white shadow-xl">
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedOutfitItem(null);
-                              }}
-                              className="absolute right-2 top-2 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-white/90 text-neutral-400 shadow-sm transition-colors hover:bg-white hover:text-neutral-900"
-                            >
-                              <X className="h-3 w-3" />
-                            </button>
-                            <div className="flex items-center gap-3 p-3">
-                              {item.imageUrl ? (
-                                <div className="h-14 w-14 flex-shrink-0 overflow-hidden rounded-lg bg-neutral-50">
-                                  <img
-                                    src={ensurePublicStorageUrl(item.imageUrl)}
-                                    alt={item.label}
-                                    className="h-full w-full object-cover"
-                                  />
-                                </div>
-                              ) : (
-                                <div className="h-14 w-14 flex-shrink-0 rounded-lg bg-neutral-200" />
-                              )}
-                              <div className="flex-1 overflow-hidden pr-4">
-                                <p className="mb-0.5 text-[9px] uppercase tracking-wide text-neutral-400">{item.type}</p>
-                                <p className="mb-1 truncate text-xs font-medium text-neutral-900">{item.label}</p>
-                                {item.brand && <p className="mb-2 text-[10px] text-neutral-500">{item.brand}</p>}
-                                {item.color && (
-                                  <div className="flex items-center gap-1.5">
-                                    <div
-                                      className="h-2.5 w-2.5 rounded-full border border-neutral-300"
-                                      style={{ backgroundColor: getColorStyle(item.color) }}
-                                    />
-                                    <span className="text-[9px] text-neutral-500">{item.color}</span>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        </motion.div>
-                      );
-                    })}
-                </>
-              )}
-            </AnimatePresence>
           </div>
         </div>
 
@@ -358,10 +239,8 @@ export function PostDetail() {
               {!isOutfitBreakdownExpanded && (
                 <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
                   {sortedItems.map((oi) => (
-                    <motion.button
+                    <motion.div
                       key={oi.id}
-                      type="button"
-                      onClick={() => setSelectedOutfitItem(oi)}
                       whileHover={{ scale: 1.02 }}
                       whileTap={{ scale: 0.98 }}
                       className="flex-shrink-0"
@@ -379,7 +258,7 @@ export function PostDetail() {
                           <p className="truncate text-xs text-neutral-900">{oi.brand || oi.label}</p>
                         </div>
                       </div>
-                    </motion.button>
+                    </motion.div>
                   ))}
                 </div>
               )}
@@ -396,11 +275,9 @@ export function PostDetail() {
                     <div className="overflow-hidden rounded-xl border border-neutral-200/60 bg-white">
                       <div className="divide-y divide-neutral-100">
                         {sortedItems.map((oi) => (
-                          <button
+                          <div
                             key={oi.id}
-                            type="button"
-                            onClick={() => setSelectedOutfitItem(oi)}
-                            className="flex w-full items-center gap-3 p-3 text-left hover:bg-neutral-50"
+                            className="flex w-full items-center gap-3 p-3 text-left"
                           >
                             {oi.imageUrl ? (
                               <img
@@ -425,7 +302,7 @@ export function PostDetail() {
                               </div>
                             </div>
                             <ExternalLink className="h-3.5 w-3.5 text-neutral-400" />
-                          </button>
+                          </div>
                         ))}
                       </div>
                     </div>
@@ -446,7 +323,7 @@ export function PostDetail() {
             commentCount={post.commentCount}
             onLike={handleLike}
             onSave={() => toggleSave(post.id)}
-            onComment={() => {}}
+            onComment={() => { }}
           />
         </div>
 

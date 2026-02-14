@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import type { Category, AIImageAnalysis } from '../../types/database';
 import type { ItemWithRanking } from '../../lib/ranking';
@@ -157,13 +157,12 @@ export function MultiItemRankingFlow({
                 {rankingSessions.map((_, index) => (
                   <div
                     key={index}
-                    className={`h-2 w-8 rounded-full ${
-                      index < currentSessionIndex
+                    className={`h-2 w-8 rounded-full ${index < currentSessionIndex
                         ? 'bg-[#8B9B8E]'
                         : index === currentSessionIndex
-                        ? 'bg-[#8B9B8E]/50'
-                        : 'bg-neutral-200'
-                    }`}
+                          ? 'bg-[#8B9B8E]/50'
+                          : 'bg-neutral-200'
+                      }`}
                   />
                 ))}
               </div>

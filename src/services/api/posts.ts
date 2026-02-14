@@ -1,5 +1,5 @@
 import { supabase } from '../../lib/supabase';
-import { Post, CreatePostRequest, Comment } from '../../types/database';
+import { Post, CreatePostRequest, Comment, PostOutfitItem, type Category } from '../../types/database';
 
 export type FeedFilter = 'following' | 'trending' | 'saved';
 export type FeedSort = 'recent' | 'most_liked';
@@ -24,8 +24,34 @@ async function enrichPostsWithLikeAndSave(
     ...post,
     is_liked: likedSet.has(post.id),
     is_saved: savedSet.has(post.id),
-    items: post.items?.map((pi: any) => pi.closet_item) || [],
+    items: normalizePostItems(post),
   }));
+}
+
+/** Post items from outfit_items JSONB or from post_items → closet_items (same schema). */
+function normalizePostItems(post: any): PostOutfitItem[] {
+  if (post.outfit_items && Array.isArray(post.outfit_items) && post.outfit_items.length > 0) {
+    return post.outfit_items;
+  }
+  const fromJoin = post.items?.map((pi: any) => closetItemToPostOutfitItem(pi?.closet_item)).filter(Boolean) || [];
+  return fromJoin;
+}
+
+function closetItemToPostOutfitItem(c: any): PostOutfitItem | null {
+  if (!c || !c.id) return null;
+  return {
+    id: c.id,
+    image_url: c.image_url || '',
+    category: c.category,
+    brand: c.brand ?? null,
+    subcategory: c.subcategory ?? null,
+    colors: Array.isArray(c.colors) ? c.colors : [],
+    fabric: c.fabric ?? null,
+    silhouette: c.silhouette ?? null,
+    vibe_tags: Array.isArray(c.vibe_tags) ? c.vibe_tags : [],
+    price_tier: c.price_tier ?? null,
+    closet_item_id: c.id,
+  };
 }
 
 /**
@@ -168,9 +194,9 @@ export async function getUserPosts(userId: string): Promise<Post[]> {
 
   if (error) throw error;
 
-  return (data || []).map(post => ({
+  return (data || []).map((post) => ({
     ...post,
-    items: post.items?.map((pi: any) => pi.closet_item) || [],
+    items: normalizePostItems(post),
   }));
 }
 
@@ -207,11 +233,13 @@ export async function getPost(postId: string): Promise<Post | null> {
     is_saved = !!saveRes.data;
   }
 
+  const items = normalizePostItems(data);
+
   return {
     ...data,
     is_liked,
     is_saved,
-    items: data.items?.map((pi: any) => pi.closet_item) || [],
+    items,
   };
 }
 
@@ -222,40 +250,78 @@ export async function createPost(request: CreatePostRequest): Promise<Post> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
 
-  // Create post
+  // Normalize items (same schema as closet): ensure arrays and optional closet_item_id
+  const outfitItems: PostOutfitItem[] = (request.items && request.items.length > 0)
+    ? request.items.map((it) => ({
+      id: it.id,
+      image_url: it.image_url || '',
+      category: it.category,
+      brand: it.brand ?? null,
+      subcategory: it.subcategory ?? null,
+      colors: Array.isArray(it.colors) ? it.colors : [],
+      fabric: it.fabric ?? null,
+      silhouette: it.silhouette ?? null,
+      vibe_tags: Array.isArray(it.vibe_tags) ? it.vibe_tags : [],
+      closet_item_id: it.closet_item_id,
+    }))
+    : (request.tags && request.tags.length > 0)
+      ? request.tags.map((t) => ({
+        image_url: '',
+        category: tagTypeToCategory(t.type),
+        brand: null,
+        subcategory: t.label || null,
+        colors: [],
+        fabric: null,
+        silhouette: null,
+        vibe_tags: [],
+      }))
+      : [];
+
+  function tagTypeToCategory(type: string): Category {
+    const t = (type || '').toLowerCase().replace(/\s+/g, '_');
+    if (t === 'pants' || t === 'bottom' || t === 'bottoms') return 'pants';
+    if (t === 'skirts_dresses' || t === 'dress' || t === 'skirt') return 'skirts_dresses';
+    if (t === 'jackets_outerwear' || t === 'jacket' || t === 'outerwear') return 'jackets_outerwear';
+    if (t === 'shoes' || t === 'shoe') return 'shoes';
+    if (t === 'bags' || t === 'bag' || t === 'accessory' || t === 'accessories' || t === 'handbag') return 'bags';
+    return 'shirts';
+  }
+
   const { data: post, error: postError } = await supabase
     .from('posts')
     .insert({
       user_id: user.id,
       image_url: request.image_url,
       caption: request.caption || null,
+      ...(outfitItems.length > 0 ? { outfit_items: outfitItems } : {}),
+      ...(request.tags && request.tags.length > 0 && outfitItems.length === 0 ? { tags: request.tags } : {}),
     })
     .select()
     .single();
 
   if (postError) throw postError;
 
-  // Associate closet items with post
-  if (request.item_ids && request.item_ids.length > 0) {
-    const postItems = request.item_ids.map(item_id => ({
+  const closetIdsToLink = [
+    ...(request.item_ids || []),
+    ...outfitItems.map((it) => it.closet_item_id).filter(Boolean),
+  ] as string[];
+  const uniqueClosetIds = [...new Set(closetIdsToLink)];
+
+  if (uniqueClosetIds.length > 0) {
+    const postItems = uniqueClosetIds.map((closet_item_id) => ({
       post_id: post.id,
-      closet_item_id: item_id,
+      closet_item_id,
     }));
 
-    const { error: itemsError } = await supabase
-      .from('post_items')
-      .insert(postItems);
-
+    const { error: itemsError } = await supabase.from('post_items').insert(postItems);
     if (itemsError) throw itemsError;
 
-    // Mark items as worn
-    for (const itemId of request.item_ids) {
+    for (const itemId of uniqueClosetIds) {
       const { data: item } = await supabase
         .from('closet_items')
         .select('times_worn')
         .eq('id', itemId)
         .single();
-
       if (item) {
         await supabase
           .from('closet_items')

@@ -1,14 +1,13 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { motion } from "motion/react";
 import { Bookmark, ImageOff, Trash2 } from "lucide-react";
 import { formatPostTime } from "../../data/mockData";
-import type { OOTDPost, OutfitItem } from "../../data/mockData";
+import type { OOTDPost } from "../../data/mockData";
 import { useAppStore } from "../../context/AppStore";
 import { ensurePublicStorageUrl, DEFAULT_AVATAR } from "../../../lib/adapters";
 import { Badge } from "./Badge";
 import { Button } from "../ui/button";
-import { OutfitItemPopover } from "./OutfitItemPopover";
 import {
   Dialog,
   DialogContent,
@@ -55,7 +54,6 @@ export function PostCard({
   const commentPreview = firstComment?.text;
   const saved = showFeedMeta && isSaved(post.id);
   const [imageError, setImageError] = useState(false);
-  const [selectedOutfitItem, setSelectedOutfitItem] = useState<OutfitItem | null>(null);
   const outfitItems = post.outfitItems ?? [];
 
   const baseClass = cn(
@@ -85,26 +83,6 @@ export function PostCard({
             }}
           />
         )}
-        {outfitItems.length > 0 &&
-          outfitItems.map((oi) => (
-            <button
-              key={oi.id}
-              type="button"
-              data-outfit-dot
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                setSelectedOutfitItem(oi);
-              }}
-              className="absolute h-3 w-3 rounded-full border-2 border-white bg-[#8B9B8E] shadow-md transition hover:scale-125 focus:outline-none focus:ring-2 focus:ring-[#8B9B8E] focus:ring-offset-2"
-              style={{
-                left: `${oi.position.x}%`,
-                top: `${oi.position.y}%`,
-                transform: "translate(-50%, -50%)",
-              }}
-              aria-label={oi.label}
-            />
-          ))}
         {score != null && (
           <div className="absolute left-3 top-3">
             <Badge variant="accent">{score}%</Badge>
@@ -125,6 +103,18 @@ export function PostCard({
             >
               <Trash2 className="h-4 w-4" />
             </button>
+          </div>
+        )}
+        {post.tags && post.tags.length > 0 && (
+          <div className="absolute bottom-0 left-0 right-0 z-10 flex flex-wrap gap-1.5 bg-gradient-to-t from-black/85 via-black/50 to-transparent p-2.5 pt-8 pb-2">
+            {post.tags.slice(0, 4).map((tag, i) => (
+              <span
+                key={`${tag.label}-${i}`}
+                className="rounded-full bg-white/95 px-2 py-0.5 text-[10px] font-medium text-neutral-800 shadow-sm"
+              >
+                {tag.label}
+              </span>
+            ))}
           </div>
         )}
       </div>
@@ -154,7 +144,7 @@ export function PostCard({
             </p>
             <ul className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-neutral-600">
               {outfitItems.map((oi) => (
-                <li key={oi.id}>
+                <li key={oi.id ?? oi.label}>
                   {oi.brand ? `${oi.label} · ${oi.brand}` : oi.label}
                 </li>
               ))}
@@ -188,15 +178,11 @@ export function PostCard({
           </div>
         )}
       </div>
-      <OutfitItemPopover
-        item={selectedOutfitItem}
-        onClose={() => setSelectedOutfitItem(null)}
-      />
     </>
   );
 
   const handleCardClick = (e: React.MouseEvent) => {
-    if ((e.target as HTMLElement).closest("a, button, [data-outfit-dot]")) return;
+    if ((e.target as HTMLElement).closest("a, button")) return;
     navigate(`/post/${post.id}`);
   };
 
@@ -283,6 +269,18 @@ export function PostCard({
             {score != null && (
               <div className="absolute right-2 top-2">
                 <Badge variant="accent">{score}%</Badge>
+              </div>
+            )}
+            {post.tags && post.tags.length > 0 && (
+              <div className="absolute bottom-0 left-0 right-0 z-10 flex flex-wrap gap-1 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-2 pt-6 pb-1.5">
+                {post.tags.slice(0, 3).map((tag, i) => (
+                  <span
+                    key={`${tag.label}-${i}`}
+                    className="rounded-full bg-white/95 px-1.5 py-0.5 text-[9px] font-medium text-neutral-800 shadow-sm"
+                  >
+                    {tag.label}
+                  </span>
+                ))}
               </div>
             )}
           </div>

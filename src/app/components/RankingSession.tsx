@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Check } from 'lucide-react';
 import type { ClosetItem, Category } from '../../types/database';
@@ -232,11 +232,10 @@ function ComparisonCard({
       whileTap={{ scale: disabled ? 1 : 0.98 }}
       onClick={onClick}
       disabled={disabled}
-      className={`group relative overflow-hidden rounded-2xl border-2 transition-all ${
-        isSelected
+      className={`group relative overflow-hidden rounded-2xl border-2 transition-all ${isSelected
           ? 'border-[#8B9B8E] shadow-lg'
           : 'border-neutral-200 hover:border-neutral-300 hover:shadow-md'
-      } ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
+        } ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
     >
       {/* Image */}
       <div className="relative aspect-[4/5] overflow-hidden bg-neutral-100">

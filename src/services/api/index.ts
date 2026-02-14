@@ -66,4 +66,8 @@ export {
   deleteImage,
   compressImage,
   uploadImageWithCompression,
+  dataURLToFile,
 } from './storage';
+
+// Segmentation (Edge Function: Replicate mask-clothing for "tag your items")
+export { segmentOutfitImage, type SegmentResult } from './segmentation';

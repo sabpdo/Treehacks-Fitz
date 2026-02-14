@@ -3,7 +3,7 @@
  * Use these when wiring the real API to existing components.
  */
 
-import type { Post, Profile, Comment as ApiComment, ClosetItem } from '../types/database';
+import type { Post, Profile, Comment as ApiComment, ClosetItem, PostOutfitItem } from '../types/database';
 
 const BUCKET = 'closet-images';
 
@@ -48,6 +48,14 @@ export interface UIUser {
   closetUtilization?: number;
 }
 
+/** Tag on a post = a clothing item from the wardrobe (or fallback label from capture flow) */
+export interface UIOOTDPostTag {
+  label: string;
+  type: string;
+  /** When present, this tag is a linked closet item — link to /closet?item=id */
+  closetItemId?: string;
+}
+
 export interface UIOutfitItem {
   id: string;
   type: string;
@@ -73,6 +81,7 @@ export interface UIOOTDPost {
   likedByUserIds: string[];
   compatibilityScore: number;
   aiInsight: string;
+  tags?: UIOOTDPostTag[];
   outfitItems?: UIOutfitItem[];
 }
 
@@ -97,22 +106,44 @@ function categoryToOutfitType(category: string): string {
   return map[category] ?? 'top';
 }
 
+const DEFAULT_OUTFIT_POSITIONS = [
+  { x: 48, y: 32 },
+  { x: 52, y: 62 },
+  { x: 50, y: 88 },
+  { x: 48, y: 22 },
+  { x: 50, y: 50 },
+];
+
 /** Build outfit items from post's linked closet items (for outfit breakdown). Uses default positions when DB has no position data. */
 function closetItemsToOutfitItems(items: ClosetItem[]): UIOutfitItem[] {
   if (!items?.length) return [];
-  const positions = [
-    { x: 48, y: 32 },
-    { x: 52, y: 62 },
-    { x: 50, y: 88 },
-    { x: 48, y: 22 },
-    { x: 50, y: 50 },
-  ];
   return items.map((item, i) => {
-    const pos = positions[i % positions.length];
+    const pos = DEFAULT_OUTFIT_POSITIONS[i % DEFAULT_OUTFIT_POSITIONS.length];
     const label = item.subcategory || item.category?.replace(/_/g, ' ') || 'Item';
     const capitalizedLabel = label.charAt(0).toUpperCase() + label.slice(1);
     return {
       id: item.id,
+      type: categoryToOutfitType(item.category),
+      label: item.brand ? `${item.brand} ${capitalizedLabel}` : capitalizedLabel,
+      position: pos,
+      imageUrl: item.image_url || undefined,
+      brand: item.brand ?? undefined,
+      color: item.colors?.[0] ?? undefined,
+      fabric: item.fabric ?? undefined,
+      silhouette: item.silhouette ?? undefined,
+    };
+  });
+}
+
+/** Build UI outfit items from post outfit items (same shape as closet item but from post). */
+function postOutfitItemsToUIOutfitItems(items: PostOutfitItem[]): UIOutfitItem[] {
+  if (!items?.length) return [];
+  return items.map((item, i) => {
+    const pos = DEFAULT_OUTFIT_POSITIONS[i % DEFAULT_OUTFIT_POSITIONS.length];
+    const label = item.subcategory || item.category?.replace(/_/g, ' ') || 'Item';
+    const capitalizedLabel = label.charAt(0).toUpperCase() + label.slice(1);
+    return {
+      id: item.id ?? `post-item-${i}`,
       type: categoryToOutfitType(item.category),
       label: item.brand ? `${item.brand} ${capitalizedLabel}` : capitalizedLabel,
       position: pos,
@@ -141,6 +172,26 @@ export function apiProfileToUser(profile: Profile | null | undefined): UIUser | 
   };
 }
 
+function buildTagsFromPost(post: Post): UIOOTDPostTag[] | undefined {
+  // Post items = same schema as closet; optional closet_item_id when also in wardrobe
+  const items = post.items;
+  if (Array.isArray(items) && items.length > 0) {
+    return items.map((item) => ({
+      label: item.subcategory || item.brand || item.category || 'Item',
+      type: item.category,
+      closetItemId: item.closet_item_id,
+    }));
+  }
+  const stored = post.tags;
+  if (Array.isArray(stored) && stored.length > 0) {
+    return stored.map((t) => ({
+      label: typeof t.label === 'string' ? t.label : String(t.label ?? ''),
+      type: typeof t.type === 'string' ? t.type : String(t.type ?? ''),
+    }));
+  }
+  return undefined;
+}
+
 export function apiPostToOOTDPost(
   post: Post,
   currentUserId?: string
@@ -163,9 +214,10 @@ export function apiPostToOOTDPost(
     likedByUserIds: post.is_liked && currentUserId ? [currentUserId] : [],
     compatibilityScore: post.compatibility_score ?? 0,
     aiInsight: '',
+    tags: buildTagsFromPost(post),
     outfitItems:
       (post as any).outfit_items ??
-      (post.items?.length ? closetItemsToOutfitItems(post.items) : undefined),
+      (post.items?.length ? postOutfitItemsToUIOutfitItems(post.items) : undefined),
   };
 }
 

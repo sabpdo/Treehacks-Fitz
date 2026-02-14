@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Link } from "react-router";
+import React, { useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router";
 import { Camera, Flame, Sparkles, ChevronRight, TrendingUp, ImageOff } from "lucide-react";
 import { motion } from "motion/react";
 import { useAppStore } from "../context/AppStore";
@@ -12,6 +12,7 @@ function formatCategory(cat: string): string {
 }
 
 export function HomeFeed() {
+  const navigate = useNavigate();
   const { posts, followingUserIds, refetchFeed, getUser, currentUserId, isUsingApi, refetchCurrentUser } = useAppStore();
   const [brokenImageIds, setBrokenImageIds] = useState<Set<string>>(new Set());
   const [networkTopRanked, setNetworkTopRanked] = useState<{ name: string; score: number; category: string }[]>([]);
@@ -62,7 +63,9 @@ export function HomeFeed() {
     day: "numeric",
   });
 
-  const friendsToday = posts.filter((p) => followingUserIds.has(p.userId));
+  const friendsToday = posts.filter(
+    (p) => followingUserIds.has(p.userId) || p.userId === currentUserId
+  );
   const friendsPosts = friendsToday.slice(0, 6);
 
   return (
@@ -176,10 +179,14 @@ export function HomeFeed() {
                     </div>
                     <div className="p-4">
                       <div className="mb-3 flex items-center justify-between">
-                        <Link
-                          to={`/profile/${post.userId}`}
-                          className="flex items-center gap-2 transition-opacity hover:opacity-70"
-                          onClick={(e) => e.stopPropagation()}
+                        <button
+                          type="button"
+                          className="flex items-center gap-2 transition-opacity hover:opacity-70 text-left"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            navigate(`/profile/${post.userId}`);
+                          }}
                         >
                           <img
                             src={poster?.avatarUrl ? ensurePublicStorageUrl(poster.avatarUrl) : DEFAULT_AVATAR}
@@ -190,7 +197,7 @@ export function HomeFeed() {
                           <p className="text-xs text-neutral-900">
                             {poster?.handle ?? post.userId}
                           </p>
-                        </Link>
+                        </button>
                         <div className="rounded-full bg-[#8B9B8E]/10 px-2.5 py-0.5">
                           <p className="text-xs text-[#8B9B8E]">{compatibility}%</p>
                         </div>

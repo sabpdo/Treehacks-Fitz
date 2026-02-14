@@ -6,9 +6,9 @@ const OPENAI_ENABLED = !!import.meta.env.VITE_OPENAI_API_KEY;
 
 const openai = OPENAI_ENABLED
   ? new OpenAI({
-      apiKey: import.meta.env.VITE_OPENAI_API_KEY,
-      dangerouslyAllowBrowser: true, // Note: In production, call this from a backend API
-    })
+    apiKey: import.meta.env.VITE_OPENAI_API_KEY,
+    dangerouslyAllowBrowser: true, // Note: In production, call this from a backend API
+  })
   : null;
 
 export async function analyzeClothingImage(imageUrl: string): Promise<AIImageAnalysis> {
@@ -18,7 +18,7 @@ export async function analyzeClothingImage(imageUrl: string): Promise<AIImageAna
 
   try {
     const response = await openai.chat.completions.create({
-      model: 'gpt-4-vision-preview',
+      model: 'gpt-4o',
       messages: [
         {
           role: 'user',
@@ -93,7 +93,7 @@ export async function analyzeOutfitImage(imageUrl: string): Promise<{
 
   try {
     const response = await openai.chat.completions.create({
-      model: 'gpt-4-vision-preview',
+      model: 'gpt-4o',
       messages: [
         {
           role: 'user',
