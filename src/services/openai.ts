@@ -170,6 +170,41 @@ export async function getShoppingSearchQueryFromImage(imageUrl: string): Promise
   return raw || 'clothing';
 }
 
+/**
+ * Convert a user search (e.g. "dinner date", "Paris trip") into a short clothing-related
+ * Google Shopping search query. Used on the Shop page for non–white-shirt searches.
+ * If personalContext is provided (wardrobe summary and/or body analysis), the query is
+ * personalized to their style and fit (e.g. silhouettes and colors that flatter them).
+ */
+export async function getShoppingSearchQueryFromText(
+  userQuery: string,
+  personalContext?: string | null
+): Promise<string> {
+  const trimmed = (userQuery || '').trim();
+  if (!trimmed) return 'clothing';
+  if (!OPENAI_ENABLED || !openai) {
+    // Fallback: use query as-is if it looks like a product phrase, else append "clothing"
+    const wordCount = trimmed.split(/\s+/).length;
+    return wordCount >= 2 ? trimmed : `${trimmed} clothing`;
+  }
+  const contextBlock =
+    personalContext && personalContext.trim()
+      ? `\n\nPERSONAL CONTEXT (use this to personalize the search — e.g. include flattering silhouettes, colors, or styles that match their wardrobe):\n${personalContext.trim()}\n\nStill reply with ONLY the short Google Shopping search phrase (3–8 words), but tailor it to this person when relevant (e.g. "elegant A-line dress" if that flatters them, or "navy blazer" if they wear a lot of navy).`
+      : '';
+  const response = await openai.chat.completions.create({
+    model: 'gpt-4o',
+    messages: [
+      {
+        role: 'user',
+        content: `The user is searching for style/outfit ideas. Convert their search into a single short phrase (3–8 words) that would work well as a Google Shopping search to find clothing items. Examples: "dinner date" → "elegant evening dress women", "Paris trip" → "Paris vacation outfit women", "grunge aesthetic" → "grunge style jacket", "office casual" → "office casual blouse women". Reply with ONLY the search phrase, no quotes or punctuation. Search: "${trimmed}"${contextBlock}`,
+      },
+    ],
+    max_tokens: 60,
+  });
+  const raw = (response.choices[0]?.message?.content ?? '').trim();
+  return raw || `${trimmed} clothing`;
+}
+
 export async function analyzeOutfitImage(imageUrl: string): Promise<{
   items: AIImageAnalysis[];
   overall_vibe: VibeTag[];

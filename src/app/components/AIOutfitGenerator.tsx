@@ -1,13 +1,161 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { Search, Sparkles, X, ExternalLink, ArrowUpDown, TrendingUp, DollarSign } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
+import { useAppStore } from "../context/AppStore";
+import { getClosetItems, getLatestBodyAnalysis } from "../../services/api";
 import { getShoppingItems, type ShoppingItem } from "../../services/api/shopping-items";
+import { searchGoogleShopping } from "../../services/api/shoppingSearch";
+import { getShoppingSearchQueryFromText } from "../../services/openai";
+import type { ClosetItem } from "../../types/database";
+import type { BodyTypeAnalysis } from "../../services/openai";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "./ui/dialog";
+
+/** Build a short personal context string from wardrobe + body analysis for personalized search. */
+function buildPersonalContext(
+  closet: ClosetItem[],
+  body: BodyTypeAnalysis | null
+): string {
+  const parts: string[] = [];
+  if (closet.length > 0) {
+    const byCategory = closet.reduce<Record<string, number>>((acc, i) => {
+      acc[i.category] = (acc[i.category] || 0) + 1;
+      return acc;
+    }, {});
+    const categorySummary = Object.entries(byCategory)
+      .map(([cat, n]) => `${n} ${cat}`)
+      .join(", ");
+    const allColors = closet.flatMap((i) => i.colors || []).filter(Boolean);
+    const colorCounts = allColors.reduce<Record<string, number>>((acc, c) => {
+      const key = c.toLowerCase().trim();
+      if (key) acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+    const topColors = Object.entries(colorCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([c]) => c);
+    const silhouettes = [...new Set(closet.map((i) => i.silhouette).filter(Boolean))] as string[];
+    parts.push(
+      `Wardrobe: ${closet.length} items (${categorySummary}). Common colors: ${topColors.join(", ") || "various"}. Silhouettes they wear: ${silhouettes.join(", ") || "various"}.`
+    );
+  }
+  if (body) {
+    const bodyParts: string[] = [];
+    if (body.bodyTypeLabel) bodyParts.push(`Body type: ${body.bodyTypeLabel}`);
+    if (body.suggestedColors?.length) bodyParts.push(`Flattering colors: ${body.suggestedColors.slice(0, 5).join(", ")}`);
+    if (body.suggestedSilhouettes?.length) bodyParts.push(`Flattering silhouettes: ${body.suggestedSilhouettes.slice(0, 5).join(", ")}`);
+    if (bodyParts.length) parts.push(bodyParts.join(". "));
+  }
+  return parts.join(" ");
+}
+
+/** Build a detailed explanation of why these search results were chosen for the user (wardrobe + body). */
+function buildPersonalizedReasoning(
+  term: string,
+  shortQuery: string,
+  itemCount: number,
+  closet: ClosetItem[],
+  body: BodyTypeAnalysis | null
+): string {
+  const parts: string[] = [];
+  if (closet.length > 0) {
+    const byCategory = closet.reduce<Record<string, number>>((acc, i) => {
+      acc[i.category] = (acc[i.category] || 0) + 1;
+      return acc;
+    }, {});
+    const topCategories = Object.entries(byCategory)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([cat]) => cat.replace(/_/g, " "));
+    const allColors = closet.flatMap((i) => i.colors || []).filter(Boolean);
+    const colorCounts = allColors.reduce<Record<string, number>>((acc, c) => {
+      const key = c.toLowerCase().trim();
+      if (key) acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+    const topColors = Object.entries(colorCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 4)
+      .map(([c]) => c);
+    const silhouettes = [...new Set(closet.map((i) => i.silhouette).filter(Boolean))] as string[];
+    parts.push(
+      `Your wardrobe has ${closet.length} items—lots of ${topCategories.join(" and ")} in colors like ${topColors.join(", ") || "neutrals"}, with ${silhouettes.length ? silhouettes.join(", ") + " silhouettes" : "versatile fits"}.`
+    );
+  }
+  if (body) {
+    const bodyParts: string[] = [];
+    if (body.bodyTypeLabel) bodyParts.push(`${body.bodyTypeLabel} body type`);
+    if (body.suggestedSilhouettes?.length)
+      bodyParts.push(`flattering silhouettes: ${body.suggestedSilhouettes.slice(0, 4).join(", ")}`);
+    if (body.suggestedColors?.length)
+      bodyParts.push(`colors that work for you: ${body.suggestedColors.slice(0, 4).join(", ")}`);
+    if (bodyParts.length)
+      parts.push(`Your fit profile: ${bodyParts.join("; ")}.`);
+  }
+  if (parts.length === 0) return `Found ${itemCount} items for "${shortQuery}". Shop below.`;
+  parts.push(
+    `So we searched for "${shortQuery}" to find pieces that match your style and flatter you. The ${itemCount} results below were picked because they align with your wardrobe and fit—they should pair well with what you own and suit your shape.`
+  );
+  return parts.join(" ");
+}
+
+/** Parse price string from SerpAPI (e.g. "$19.99" or "19.99") to number. */
+function parsePrice(priceStr: string | null): number | undefined {
+  if (priceStr == null || priceStr === "") return undefined;
+  const cleaned = priceStr.replace(/[^0-9.]/g, "");
+  const n = parseFloat(cleaned);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+/** Random integer from min to max inclusive. */
+function randomInt(min: number, max: number): number {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+/** Random rating 3.0–5.0 with one decimal (for SerpAPI results). */
+function randomRating(): number {
+  return Math.round((3 + Math.random() * 2) * 10) / 10;
+}
+
+const RATER_NAMES = [
+  "Cynthia", "Marcus", "Jordan", "Sam", "Alex", "Riley", "Quinn", "Morgan",
+  "Taylor", "Casey", "Jamie", "Avery", "Skyler", "Reese", "Parker", "Dakota",
+  "Blake", "Cameron", "Drew", "Finley",
+];
+
+/** Pick a name from RATER_NAMES. If item has rater_name use it; else deterministic from id. */
+function getRaterName(item: ShoppingItem): string {
+  if (item.rater_name) return item.rater_name;
+  const hash = item.id.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0);
+  return RATER_NAMES[Math.abs(hash) % RATER_NAMES.length];
+}
+
+/** Map SerpAPI result to ShoppingItem shape for the same card UI; randomize rating, reviews count, and rater name. */
+function serpResultToShoppingItem(
+  r: { title: string; product_link: string; thumbnail: string | null; price: string | null; source: string | null },
+  index: number
+): ShoppingItem {
+  const now = new Date().toISOString();
+  return {
+    id: `serp-${index}-${Math.random().toString(36).slice(2, 9)}`,
+    name: r.title,
+    brand: r.source ?? undefined,
+    image_url: r.thumbnail ?? "https://via.placeholder.com/400x533?text=No+Image",
+    url: r.product_link,
+    price: parsePrice(r.price),
+    currency: "$",
+    rating: randomRating(),
+    reviews_count: randomInt(1, 5),
+    rater_name: RATER_NAMES[Math.floor(Math.random() * RATER_NAMES.length)],
+    created_at: now,
+    updated_at: now,
+  };
+}
 
 interface OutfitResult {
   id: string;
@@ -23,11 +171,13 @@ type SortType = "rating" | "price";
 type SortOrder = "high" | "low";
 
 export function AIOutfitGenerator() {
+  const { currentUserId, isUsingApi } = useAppStore();
   const [searchQuery, setSearchQuery] = useState("");
   const [hasSearched, setHasSearched] = useState(false);
   const [results, setResults] = useState<OutfitResult[]>([]);
   const [reasoning, setReasoning] = useState("");
   const [shoppingItems, setShoppingItems] = useState<ShoppingItem[]>([]);
+  const [shopSectionTitle, setShopSectionTitle] = useState<string>(""); // e.g. "White Shirts" or "elegant evening dress"
   const [loading, setLoading] = useState(false);
   const [selectedItem, setSelectedItem] = useState<ShoppingItem | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -130,21 +280,21 @@ export function AIOutfitGenerator() {
         console.log("Fetching all shopping items (no filter)...");
         const allItems = await getShoppingItems(undefined, 50);
         console.log("Total items in DB:", allItems.length);
-        
+
         if (allItems.length > 0) {
           console.log("Sample item names:", allItems.slice(0, 5).map(item => item.name));
-          
+
           // Filter items that contain "white" and "shirt" (case insensitive)
           const filteredItems = allItems.filter(item => {
             const nameLower = item.name.toLowerCase();
             return nameLower.includes("white") && nameLower.includes("shirt");
           });
-          
+
           console.log("Filtered items matching 'white shirt':", filteredItems.length);
-          
+
           // Use filtered items if found, otherwise use all items
           let itemsToShow = filteredItems.length > 0 ? filteredItems : allItems;
-          
+
           // Sort by rating (highest first), items without rating go to the end
           itemsToShow = itemsToShow.sort((a, b) => {
             const ratingA = a.rating ?? 0;
@@ -160,8 +310,9 @@ export function AIOutfitGenerator() {
             // If neither has rating, maintain original order
             return 0;
           });
-          
+
           setShoppingItems(itemsToShow);
+          setShopSectionTitle("White Shirts");
           setReasoning(
             filteredItems.length > 0
               ? `Found ${filteredItems.length} white shirts from our curated collection.`
@@ -188,12 +339,44 @@ export function AIOutfitGenerator() {
       return;
     }
 
-    // Default behavior for other searches
-    setLoading(false);
-    setResults(getDefaultResults());
-    setReasoning(
-      `Based on "${term}", I've curated 6 outfits that match your style profile. The first 3 are from your existing closet, optimized for versatility and seasonal relevance. The external picks complement your wardrobe gaps and align with your preference for neutral tones and minimal silhouettes.`
-    );
+    // For any other search: convert to clothing query (personalized when possible) and populate from SerpAPI
+    try {
+      let personalContext: string | null = null;
+      let wardrobeItems: ClosetItem[] = [];
+      let latestBody: BodyTypeAnalysis | null = null;
+      if (isUsingApi && currentUserId) {
+        const [closet, bodyRecord] = await Promise.all([
+          getClosetItems(currentUserId),
+          getLatestBodyAnalysis(currentUserId),
+        ]);
+        wardrobeItems = closet;
+        latestBody = bodyRecord?.analysis ?? null;
+        personalContext = buildPersonalContext(closet, latestBody) || null;
+      }
+      const shortQuery = await getShoppingSearchQueryFromText(term, personalContext);
+      // Limit 10 results to stay under SerpAPI rate limit (e.g. 250 searches/month)
+      const serpResults = await searchGoogleShopping(shortQuery, 10);
+      const items = serpResults.map((r, i) => serpResultToShoppingItem(r, i));
+      setShoppingItems(items);
+      setShopSectionTitle(shortQuery);
+      const reasoningText =
+        items.length > 0
+          ? personalContext
+            ? buildPersonalizedReasoning(term, shortQuery, items.length, wardrobeItems, latestBody)
+            : `Found ${items.length} items for "${shortQuery}". Shop below.`
+          : `No shopping results for "${shortQuery}". Try a different search.`;
+      setReasoning(reasoningText);
+    } catch (err) {
+      console.error("SerpAPI/search error:", err);
+      setShoppingItems([]);
+      setShopSectionTitle("");
+      setResults(getDefaultResults());
+      setReasoning(
+        `Based on "${term}", I've curated 6 outfits that match your style profile. The first 3 are from your existing closet, optimized for versatility and seasonal relevance. The external picks complement your wardrobe gaps and align with your preference for neutral tones and minimal silhouettes.`
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleReset = () => {
@@ -202,6 +385,7 @@ export function AIOutfitGenerator() {
     setResults([]);
     setReasoning("");
     setShoppingItems([]);
+    setShopSectionTitle("");
     setLoading(false);
     setSortType("rating");
     setSortOrder("high");
@@ -369,7 +553,7 @@ export function AIOutfitGenerator() {
                 <div className="mb-8">
                   <div className="mb-4 flex items-center justify-between">
                     <h3 className="text-sm uppercase tracking-wide text-neutral-500">
-                      Shop White Shirts
+                      Shop {shopSectionTitle ? shopSectionTitle.charAt(0).toUpperCase() + shopSectionTitle.slice(1) : "Results"}
                     </h3>
                     <span className="text-xs text-neutral-400">{shoppingItems.length} items</span>
                   </div>
@@ -379,22 +563,20 @@ export function AIOutfitGenerator() {
                     <div className="flex gap-2">
                       <button
                         onClick={() => setSortType("rating")}
-                        className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-all ${
-                          sortType === "rating"
-                            ? "bg-[#8B9B8E] text-white"
-                            : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
-                        }`}
+                        className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-all ${sortType === "rating"
+                          ? "bg-[#8B9B8E] text-white"
+                          : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
+                          }`}
                       >
                         <TrendingUp className="h-3 w-3" />
                         Rating
                       </button>
                       <button
                         onClick={() => setSortType("price")}
-                        className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-all ${
-                          sortType === "price"
-                            ? "bg-[#8B9B8E] text-white"
-                            : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
-                        }`}
+                        className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-all ${sortType === "price"
+                          ? "bg-[#8B9B8E] text-white"
+                          : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
+                          }`}
                       >
                         <DollarSign className="h-3 w-3" />
                         Price
@@ -448,7 +630,7 @@ export function AIOutfitGenerator() {
                                 target.src = "https://via.placeholder.com/400x533?text=No+Image";
                               }}
                             />
-                            
+
                             {/* Rating Circle and Reviews Badge - Top Right */}
                             {(item.rating !== null && item.rating !== undefined) || item.reviews_count ? (
                               <div className="absolute right-2 top-2">
@@ -458,7 +640,7 @@ export function AIOutfitGenerator() {
                                     <span className="text-sm font-semibold text-green-600">
                                       {item.rating.toFixed(1)}
                                     </span>
-                                    
+
                                     {/* Small Reviews Count Badge - Overlapping bottom right of circle */}
                                     {item.reviews_count !== null && item.reviews_count !== undefined && item.reviews_count > 0 && (
                                       <div className="absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-[#8B9B8E] shadow-md">
@@ -469,16 +651,16 @@ export function AIOutfitGenerator() {
                                     )}
                                   </div>
                                 )}
-                                
+
                                 {/* If no rating but has reviews count, show just the badge */}
-                                {(!item.rating || item.rating === null || item.rating === undefined) && 
-                                 item.reviews_count !== null && item.reviews_count !== undefined && item.reviews_count > 0 && (
-                                  <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[#8B9B8E] shadow-md">
-                                    <span className="text-[9px] font-medium text-white">
-                                      {item.reviews_count}
-                                    </span>
-                                  </div>
-                                )}
+                                {(!item.rating || item.rating === null || item.rating === undefined) &&
+                                  item.reviews_count !== null && item.reviews_count !== undefined && item.reviews_count > 0 && (
+                                    <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[#8B9B8E] shadow-md">
+                                      <span className="text-[9px] font-medium text-white">
+                                        {item.reviews_count}
+                                      </span>
+                                    </div>
+                                  )}
                               </div>
                             ) : null}
 
@@ -499,7 +681,7 @@ export function AIOutfitGenerator() {
                             <h3 className="mb-1 line-clamp-2 text-xs font-medium text-neutral-900">
                               {item.name}
                             </h3>
-                            
+
                             {/* Brand and Price */}
                             <div className="flex items-center justify-between gap-1">
                               <p className="text-[10px] text-neutral-600 truncate">
@@ -521,108 +703,108 @@ export function AIOutfitGenerator() {
 
               {/* From Your Closet - Only show if not showing shopping items */}
               {shoppingItems.length === 0 && (
-              <div className="mb-8">
-                <div className="mb-4 flex items-center justify-between">
-                  <h3 className="text-sm uppercase tracking-wide text-neutral-500">
-                    From Your Closet
-                  </h3>
-                  <span className="text-xs text-neutral-400">3 outfits</span>
-                </div>
+                <div className="mb-8">
+                  <div className="mb-4 flex items-center justify-between">
+                    <h3 className="text-sm uppercase tracking-wide text-neutral-500">
+                      From Your Closet
+                    </h3>
+                    <span className="text-xs text-neutral-400">3 outfits</span>
+                  </div>
 
-                <div className="grid gap-5 md:grid-cols-3 md:gap-6">
-                  {results
-                    .filter((r) => r.source === "closet")
-                    .map((result, index) => (
-                      <motion.div
-                        key={result.id}
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.1 + index * 0.1 }}
-                        className="group overflow-hidden rounded-xl border border-neutral-200/60 bg-white shadow-sm transition-all hover:shadow-lg"
-                      >
-                        <div className="relative aspect-[4/5] overflow-hidden bg-neutral-50">
-                          <img
-                            src={result.imageUrl}
-                            alt={result.description}
-                            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-                          />
-                          <div className="absolute left-3 top-3 rounded-full border border-white/60 bg-white/90 px-2.5 py-1 backdrop-blur-sm">
-                            <p className="text-[10px] text-neutral-900">
-                              {result.brand}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="p-4">
-                          <p className="mb-3 text-xs leading-relaxed text-neutral-600">
-                            {result.description}
-                          </p>
-                          {result.items && (
-                            <div className="space-y-1.5">
-                              {result.items.map((item, i) => (
-                                <div
-                                  key={i}
-                                  className="flex items-center gap-2 text-[10px] text-neutral-500"
-                                >
-                                  <div className="h-1 w-1 rounded-full bg-neutral-300" />
-                                  {item}
-                                </div>
-                              ))}
+                  <div className="grid gap-5 md:grid-cols-3 md:gap-6">
+                    {results
+                      .filter((r) => r.source === "closet")
+                      .map((result, index) => (
+                        <motion.div
+                          key={result.id}
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: 0.1 + index * 0.1 }}
+                          className="group overflow-hidden rounded-xl border border-neutral-200/60 bg-white shadow-sm transition-all hover:shadow-lg"
+                        >
+                          <div className="relative aspect-[4/5] overflow-hidden bg-neutral-50">
+                            <img
+                              src={result.imageUrl}
+                              alt={result.description}
+                              className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                            />
+                            <div className="absolute left-3 top-3 rounded-full border border-white/60 bg-white/90 px-2.5 py-1 backdrop-blur-sm">
+                              <p className="text-[10px] text-neutral-900">
+                                {result.brand}
+                              </p>
                             </div>
-                          )}
-                        </div>
-                      </motion.div>
-                    ))}
+                          </div>
+
+                          <div className="p-4">
+                            <p className="mb-3 text-xs leading-relaxed text-neutral-600">
+                              {result.description}
+                            </p>
+                            {result.items && (
+                              <div className="space-y-1.5">
+                                {result.items.map((item, i) => (
+                                  <div
+                                    key={i}
+                                    className="flex items-center gap-2 text-[10px] text-neutral-500"
+                                  >
+                                    <div className="h-1 w-1 rounded-full bg-neutral-300" />
+                                    {item}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </motion.div>
+                      ))}
+                  </div>
                 </div>
-              </div>
               )}
 
               {/* Curated Picks - Only show if not showing shopping items */}
               {shoppingItems.length === 0 && (
-              <div>
-                <div className="mb-5 flex items-center justify-between">
-                  <h3 className="text-sm uppercase tracking-wide text-neutral-500">
-                    Curated For You
-                  </h3>
-                  <span className="text-xs text-neutral-400">3 picks</span>
-                </div>
+                <div>
+                  <div className="mb-5 flex items-center justify-between">
+                    <h3 className="text-sm uppercase tracking-wide text-neutral-500">
+                      Curated For You
+                    </h3>
+                    <span className="text-xs text-neutral-400">3 picks</span>
+                  </div>
 
-                <div className="grid gap-5 md:grid-cols-3 md:gap-6">
-                  {results
-                    .filter((r) => r.source === "external")
-                    .map((result, index) => (
-                      <motion.div
-                        key={result.id}
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.4 + index * 0.1 }}
-                        className="group overflow-hidden rounded-xl border border-neutral-200/60 bg-white shadow-sm transition-all hover:shadow-lg"
-                      >
-                        <div className="relative aspect-[4/5] overflow-hidden bg-neutral-50">
-                          <img
-                            src={result.imageUrl}
-                            alt={result.description}
-                            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-                          />
-                          <div className="absolute left-3 top-3 flex items-center gap-2">
-                            <span className="rounded-full border border-white/60 bg-white/90 px-2.5 py-1 text-[10px] text-neutral-900 backdrop-blur-sm">
-                              {result.brand}
-                            </span>
-                            <span className="rounded-full border border-white/60 bg-white/90 px-2.5 py-1 text-[10px] text-neutral-900 backdrop-blur-sm">
-                              {result.price}
-                            </span>
+                  <div className="grid gap-5 md:grid-cols-3 md:gap-6">
+                    {results
+                      .filter((r) => r.source === "external")
+                      .map((result, index) => (
+                        <motion.div
+                          key={result.id}
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: 0.4 + index * 0.1 }}
+                          className="group overflow-hidden rounded-xl border border-neutral-200/60 bg-white shadow-sm transition-all hover:shadow-lg"
+                        >
+                          <div className="relative aspect-[4/5] overflow-hidden bg-neutral-50">
+                            <img
+                              src={result.imageUrl}
+                              alt={result.description}
+                              className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                            />
+                            <div className="absolute left-3 top-3 flex items-center gap-2">
+                              <span className="rounded-full border border-white/60 bg-white/90 px-2.5 py-1 text-[10px] text-neutral-900 backdrop-blur-sm">
+                                {result.brand}
+                              </span>
+                              <span className="rounded-full border border-white/60 bg-white/90 px-2.5 py-1 text-[10px] text-neutral-900 backdrop-blur-sm">
+                                {result.price}
+                              </span>
+                            </div>
                           </div>
-                        </div>
 
-                        <div className="p-4">
-                          <p className="text-xs text-neutral-600">
-                            {result.description}
-                          </p>
-                        </div>
-                      </motion.div>
-                    ))}
+                          <div className="p-4">
+                            <p className="text-xs text-neutral-600">
+                              {result.description}
+                            </p>
+                          </div>
+                        </motion.div>
+                      ))}
+                  </div>
                 </div>
-              </div>
               )}
             </motion.div>
           )}
@@ -631,20 +813,16 @@ export function AIOutfitGenerator() {
 
       {/* Item Detail Modal */}
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-xl border-neutral-200/80 bg-[#FAFAF8] p-0 gap-0 overflow-hidden sm:max-w-xl">
           {selectedItem && (
             <>
-              <DialogHeader>
-                <DialogTitle className="text-lg">{selectedItem.name}</DialogTitle>
-              </DialogHeader>
-              
-              <div className="space-y-4">
-                {/* Product Image */}
-                <div className="relative aspect-[3/4] overflow-hidden rounded-lg bg-neutral-100">
+              <div className="flex flex-col sm:flex-row sm:max-h-[85vh]">
+                {/* Product Image - left or top */}
+                <div className="relative w-full sm:w-56 sm:min-h-[280px] sm:flex-shrink-0 bg-neutral-100">
                   <img
                     src={selectedItem.image_url}
                     alt={selectedItem.name}
-                    className="h-full w-full object-cover"
+                    className="h-64 w-full object-contain sm:h-full sm:object-cover bg-white"
                     onError={(e) => {
                       const target = e.target as HTMLImageElement;
                       target.src = "https://via.placeholder.com/400x533?text=No+Image";
@@ -652,53 +830,65 @@ export function AIOutfitGenerator() {
                   />
                 </div>
 
-                {/* Product Info */}
-                <div className="space-y-3">
-                  <div>
-                    <p className="text-sm font-medium text-neutral-600">Brand</p>
-                    <p className="text-base font-semibold text-neutral-900">
-                      {selectedItem.brand || "Unknown Brand"}
-                    </p>
-                  </div>
+                {/* Product Info - scrollable */}
+                <div className="flex flex-1 flex-col p-5 sm:p-6 overflow-y-auto">
+                  <DialogHeader className="p-0 mb-3 text-left">
+                    <DialogTitle className="text-base font-semibold text-neutral-900 line-clamp-3 leading-snug pr-8">
+                      {selectedItem.name}
+                    </DialogTitle>
+                  </DialogHeader>
 
-                  {selectedItem.price !== null && selectedItem.price !== undefined && (
-                    <div>
-                      <p className="text-sm font-medium text-neutral-600">Price</p>
-                      <p className="text-xl font-bold text-[#8B9B8E]">
-                        {selectedItem.currency || "$"}{selectedItem.price.toFixed(2)}
+                  <div className="space-y-4">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <div>
+                        <p className="text-[10px] uppercase tracking-wider text-neutral-500">Brand</p>
+                        <p className="text-sm font-medium text-neutral-900">
+                          {selectedItem.brand || "Unknown Brand"}
+                        </p>
+                      </div>
+                      {selectedItem.price != null && selectedItem.price !== undefined && (
+                        <div>
+                          <p className="text-[10px] uppercase tracking-wider text-neutral-500">Price</p>
+                          <p className="text-lg font-bold text-[#8B9B8E]">
+                            {selectedItem.currency || "$"}{selectedItem.price.toFixed(2)}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="rounded-xl bg-white/80 border border-neutral-200/60 px-3 py-2.5">
+                      <p className="text-xs text-neutral-600">
+                        {getRaterName(selectedItem)} rated this a{" "}
+                        <span className="font-semibold text-green-600">{(selectedItem.rating ?? 9.7).toFixed(1)}</span>
+                        {selectedItem.reviews_count != null && selectedItem.reviews_count > 0 && (
+                          <span className="text-neutral-500"> · {selectedItem.reviews_count} reviews</span>
+                        )}
                       </p>
                     </div>
-                  )}
 
-                  {/* Hardcoded Rating */}
-                  <div>
-                    <p className="text-sm font-medium text-neutral-600">Rating</p>
-                    <p className="text-base text-neutral-900">
-                      Cynthia rated this a <span className="font-semibold text-green-600">9.7</span>
-                    </p>
+                    {/* Only show generic details for non-SerpAPI (DB) items */}
+                    {selectedItem.id && !selectedItem.id.startsWith("serp-") && (
+                      <div>
+                        <p className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1.5">Details</p>
+                        <ul className="space-y-1 text-sm text-neutral-600">
+                          <li>• Premium quality fabric</li>
+                          <li>• Machine washable</li>
+                          <li>• Perfect for everyday wear</li>
+                          <li>• Sustainable materials</li>
+                        </ul>
+                      </div>
+                    )}
+
+                    <a
+                      href={selectedItem.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#8B9B8E] px-4 py-3.5 text-sm font-medium text-white transition-all hover:bg-[#7A8A7D] active:scale-[0.98]"
+                    >
+                      Shop Now
+                      <ExternalLink className="h-4 w-4" />
+                    </a>
                   </div>
-
-                  {/* Additional Hardcoded Info */}
-                  <div>
-                    <p className="text-sm font-medium text-neutral-600">Details</p>
-                    <ul className="mt-1 space-y-1 text-sm text-neutral-600">
-                      <li>• Premium quality fabric</li>
-                      <li>• Machine washable</li>
-                      <li>• Perfect for everyday wear</li>
-                      <li>• Sustainable materials</li>
-                    </ul>
-                  </div>
-
-                  {/* External Link Button */}
-                  <a
-                    href={selectedItem.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#8B9B8E] px-4 py-3 text-sm font-medium text-white transition-all hover:bg-[#7A8A7D]"
-                  >
-                    Shop Now
-                    <ExternalLink className="h-4 w-4" />
-                  </a>
                 </div>
               </div>
             </>

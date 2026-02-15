@@ -17,10 +17,11 @@ const getApiBase = (): string => {
 };
 
 /**
- * Search Google Shopping and return a few results with title, link, thumbnail, price.
+ * Search Google Shopping and return results with title, link, thumbnail, price.
  * Requires SerpAPI key: in dev, set VITE_SERPAPI_KEY and use the Vite proxy (see vite.config).
+ * @param limit Max number of results (default 5). Use a higher value (e.g. 24) for the Shop page.
  */
-export async function searchGoogleShopping(query: string): Promise<ShoppingSearchResult[]> {
+export async function searchGoogleShopping(query: string, limit: number = 5): Promise<ShoppingSearchResult[]> {
   const base = getApiBase();
   const url = `${base}?q=${encodeURIComponent(query)}`;
   const res = await fetch(url);
@@ -30,7 +31,7 @@ export async function searchGoogleShopping(query: string): Promise<ShoppingSearc
   }
   const data = await res.json();
   const raw = data.shopping_results ?? [];
-  return raw.slice(0, 5).map((r: Record<string, unknown>) => ({
+  return raw.slice(0, limit).map((r: Record<string, unknown>) => ({
     title: String(r.title ?? ''),
     product_link: String(r.product_link ?? ''),
     thumbnail: r.thumbnail ? String(r.thumbnail) : null,

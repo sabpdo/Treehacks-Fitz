@@ -11,6 +11,8 @@ export interface ShoppingItem {
   url: string;
   rating?: number;
   reviews_count?: number;
+  /** Display name for "X rated this" in modal (SerpAPI items get random; DB items use deterministic pick) */
+  rater_name?: string;
   category?: string;
   root_category?: string;
   wardrobe_ids?: number[];
@@ -42,7 +44,7 @@ export async function getShoppingItems(query?: string, limit: number = 50): Prom
   // If query provided, search in name field
   const searchTerm = query.trim();
   console.log('Searching for:', searchTerm);
-  
+
   // Try multiple search strategies
   // 1. Exact phrase match
   let queryBuilder = supabase
