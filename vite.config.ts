@@ -1,4 +1,5 @@
 import { defineConfig, loadEnv } from 'vite'
+import type { ProxyOptions } from 'vite'
 import path from 'path'
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
@@ -25,24 +26,40 @@ export default defineConfig(({ mode }) => {
     assetsInclude: ['**/*.svg', '**/*.csv'],
 
     server: {
-      proxy: supabaseUrl
-        ? {
-          '/api/supabase-functions': {
+      proxy: (() => {
+        const proxies: Record<string, string | ProxyOptions> = {};
+        if (supabaseUrl) {
+          proxies['/api/supabase-functions'] = {
             target: supabaseUrl,
             changeOrigin: true,
-            rewrite: (path) => path.replace(/^\/api\/supabase-functions/, '/functions/v1'),
+            rewrite: (path: string) => path.replace(/^\/api\/supabase-functions/, '/functions/v1'),
             secure: true,
-            configure: (proxy) => {
-              proxy.on('proxyReq', (proxyReq, req) => {
-                const auth = req.headers.authorization;
+            configure: (proxyServer, req) => {
+              proxyServer.on('proxyReq', (proxyReq: { setHeader: (n: string, v: string) => void }) => {
+                const r = req as { headers?: { authorization?: string; apikey?: string } };
+                const auth = r.headers?.authorization;
                 if (auth) proxyReq.setHeader('Authorization', auth);
-                const apikey = req.headers.apikey;
+                const apikey = r.headers?.apikey;
                 if (apikey) proxyReq.setHeader('apikey', apikey);
               });
             },
-          },
+          };
         }
-        : undefined,
+        const serpKey = env.VITE_SERPAPI_KEY;
+        if (serpKey) {
+          proxies['/api/shopping-search'] = {
+            target: 'https://serpapi.com',
+            changeOrigin: true,
+            rewrite: (path) => path.replace(/^\/api\/shopping-search/, '/search.json'),
+            configure: (proxyServer) => {
+              proxyServer.on('proxyReq', (proxyReq: { path: string }) => {
+                proxyReq.path += (proxyReq.path.includes('?') ? '&' : '?') + 'engine=google_shopping&api_key=' + encodeURIComponent(serpKey);
+              });
+            },
+          };
+        }
+        return Object.keys(proxies).length ? proxies : undefined;
+      })(),
     },
   }
 })

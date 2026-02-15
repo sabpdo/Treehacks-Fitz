@@ -283,6 +283,25 @@ export async function getAllCategoryRankings(
 }
 
 /**
+ * Get global rankings for a category (top items across ALL users by Elo).
+ * Used for the "Global Rankings" modal with category filter.
+ */
+export async function getGlobalRankingsByCategory(
+  category: Category,
+  limit: number = 25
+): Promise<ItemWithRanking[]> {
+  const { data, error } = await supabase
+    .from('closet_items')
+    .select('*')
+    .eq('category', category)
+    .order('elo_rating', { ascending: false })
+    .limit(limit);
+
+  if (error) throw error;
+  return calculateRankings((data || []) as ItemWithRanking[]);
+}
+
+/**
  * Get top ranked items across users you follow (for "Top Ranked in Your Network").
  * Fetches rankings from each followed user, flattens, sorts by rating desc, returns top N.
  */

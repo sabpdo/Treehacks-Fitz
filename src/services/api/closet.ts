@@ -3,6 +3,7 @@ import { ClosetItem, CreateClosetItemRequest, UpdateClosetItemRequest, AIImageAn
 import { analyzeClothingImage, analyzeOutfitImage } from '../openai';
 import { getInitialElo, eloToScore } from '../../lib/ranking';
 import { ensurePublicStorageUrl } from '../../lib/adapters';
+import { linkShoppingItemToWardrobe } from './shoppingItems';
 
 /**
  * Get all closet items for a user
@@ -80,6 +81,25 @@ export async function getItemsByVibe(userId: string, vibe: string): Promise<Clos
 }
 
 /**
+ * Get similar closet items from all users' wardrobes (by category).
+ * Used for "Do you recognize it from any of these items?" in OOTD tagging.
+ */
+export async function getSimilarClosetItemsFromAllUsers(
+  category: string,
+  limit: number = 20
+): Promise<ClosetItem[]> {
+  const { data, error } = await supabase
+    .from('closet_items')
+    .select('*')
+    .eq('category', category)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  if (error) throw error;
+  return data || [];
+}
+
+/**
  * Create a closet item with AI analysis
  */
 export async function createClosetItem(
@@ -140,6 +160,12 @@ export async function createClosetItem(
     .single();
 
   if (error) throw error;
+
+  if (request.shopping_link && data?.id) {
+    linkShoppingItemToWardrobe(request.shopping_link.trim(), data.id).catch((err) =>
+      console.warn('Failed to link shopping item to wardrobe:', err)
+    );
+  }
   return data;
 }
 
@@ -276,7 +302,7 @@ export async function createItemsFromOutfitPhoto(
       subcategory: detectedItem.subcategory,
       times_worn: 0,
       rating: 0,
-      elo_rating: getInitialElo(),
+      elo_rating: getInitialElo('like'),
     };
 
     const { data, error } = await supabase

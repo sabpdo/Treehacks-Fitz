@@ -103,6 +103,9 @@ export interface Post {
   is_liked?: boolean;
   is_saved?: boolean;
   compatibility_score?: number;
+  /** From compatibility calc: for "Fits That Align" insight text */
+  compatibility_matching_vibes?: string[];
+  compatibility_matching_colors?: string[];
 
   // Legacy: simple tags (label + type); prefer items when available
   tags?: { label: string; type: string }[];
@@ -153,6 +156,8 @@ export interface CreateClosetItemRequest {
   fabric?: string;
   silhouette?: Silhouette;
   subcategory?: string;
+  /** Optional product/shopping URL; links this item to shopping_items table */
+  shopping_link?: string;
 }
 
 export interface UpdateClosetItemRequest {

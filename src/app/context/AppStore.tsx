@@ -18,6 +18,7 @@ import {
 import { useAuth } from "../../contexts/AuthContext";
 import {
   getFeedPosts,
+  calculateFeedCompatibility,
   getSavedPostIds,
   getPostComments,
   addComment as apiAddComment,
@@ -116,7 +117,8 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       setFeedError(null);
       try {
         const apiPosts = await getFeedPosts(20, 0, filter, sort);
-        const next = apiPosts.map((p) => apiPostToOOTDPost(p, currentUserId));
+        const withCompatibility = await calculateFeedCompatibility(apiPosts);
+        const next = withCompatibility.map((p) => apiPostToOOTDPost(p, currentUserId));
         setPosts(next);
         apiPosts.forEach((p) => {
           if (p.user) {

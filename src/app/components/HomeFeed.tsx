@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { Camera, Flame, Sparkles, ChevronRight, TrendingUp, ImageOff, MapPin, Cloud, CheckCircle2 } from "lucide-react";
-import { motion } from "motion/react";
+import { Camera, Flame, Sparkles, ChevronRight, TrendingUp, ImageOff, MapPin, Cloud, CheckCircle2, X } from "lucide-react";
+import { motion, AnimatePresence } from "motion/react";
 import { useAppStore } from "../context/AppStore";
 import { ensurePublicStorageUrl, DEFAULT_AVATAR, apiClosetItemToUI } from "../../lib/adapters";
-import { getNetworkTopRankings } from "../../services/api/ranking";
+import { getNetworkTopRankings, getGlobalRankingsByCategory } from "../../services/api/ranking";
+import type { ItemWithRanking } from "../../lib/ranking";
+import type { Category } from "../../types/database";
 import { getClosetItems, getDailyLook, setDailyLook, getLatestBodyAnalysis, createPost, uploadImage, updateStreak, dataURLToFile, type CachedDailyLookItem } from "../../services/api";
 import { getWeatherForLocation, getCurrentPosition, type WeatherToday } from "../../services/weather";
 import { apiPostToOOTDPost } from "../../lib/adapters";
@@ -137,10 +139,16 @@ function isPostFromToday(createdAt: string): boolean {
 
 export function HomeFeed() {
   const navigate = useNavigate();
-  const { posts, followingUserIds, refetchFeed, getUser, currentUserId, isUsingApi, refetchCurrentUser, addPost } = useAppStore();
+  const { posts, followingUserIds, refetchFeed, getUser, loadUser, currentUserId, isUsingApi, refetchCurrentUser, addPost } = useAppStore();
   const [brokenImageIds, setBrokenImageIds] = useState<Set<string>>(new Set());
   const [networkTopRanked, setNetworkTopRanked] = useState<{ name: string; score: number; category: string }[]>([]);
   const [networkRankingsLoading, setNetworkRankingsLoading] = useState(false);
+
+  // Global rankings modal
+  const [rankingsModalOpen, setRankingsModalOpen] = useState(false);
+  const [globalRankingsCategory, setGlobalRankingsCategory] = useState<Category>("shirts");
+  const [globalRankings, setGlobalRankings] = useState<ItemWithRanking[]>([]);
+  const [globalRankingsLoading, setGlobalRankingsLoading] = useState(false);
 
   // Today's look: cache (per user per day) or location -> weather -> closet -> suggestion
   const [locationStatus, setLocationStatus] = useState<LocationStatus>("idle");
@@ -189,6 +197,30 @@ export function HomeFeed() {
       cancelled = true;
     };
   }, [isUsingApi, followingUserIds]);
+
+  // Fetch global rankings when modal is open (and when category changes)
+  useEffect(() => {
+    if (!rankingsModalOpen || !isUsingApi) return;
+    let cancelled = false;
+    setGlobalRankingsLoading(true);
+    getGlobalRankingsByCategory(globalRankingsCategory, 25)
+      .then((items) => {
+        if (!cancelled) {
+          setGlobalRankings(items);
+          const userIds = [...new Set(items.map((i) => i.user_id))];
+          userIds.forEach((id) => loadUser(id).catch(() => { }));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setGlobalRankings([]);
+      })
+      .finally(() => {
+        if (!cancelled) setGlobalRankingsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [rankingsModalOpen, globalRankingsCategory, isUsingApi, loadUser]);
 
   // Reset cache state when user changes so we re-check for new user / new day
   useEffect(() => {
@@ -366,6 +398,35 @@ export function HomeFeed() {
   );
   const friendsPosts = friendsToday.slice(0, 6);
 
+  // Fits That Align With You: top 4 by calculated compatibility (when using API)
+  const fitsThatAlign = (
+    isUsingApi
+      ? [...posts].sort((a, b) => (b.compatibilityScore ?? 0) - (a.compatibilityScore ?? 0)).slice(0, 4)
+      : posts.slice(0, 4)
+  );
+
+  function getCompatibilityInsight(post: OOTDPost, index: number): string {
+    const vibes = post.compatibilityMatchingVibes ?? [];
+    const colors = post.compatibilityMatchingColors ?? [];
+    if (vibes.length > 0) {
+      const v = vibes[0];
+      const label = v.charAt(0).toUpperCase() + v.slice(1);
+      return `Matches your ${label} vibe`;
+    }
+    if (colors.length > 0) {
+      const c = colors[0];
+      const label = c.charAt(0).toUpperCase() + c.slice(1);
+      return `Shares your ${label} palette`;
+    }
+    const fallbacks = [
+      "Aligns with your wardrobe style",
+      "Similar silhouette to pieces you own",
+      "Complements your saved looks",
+      "Fits your aesthetic",
+    ];
+    return fallbacks[index % fallbacks.length];
+  }
+
   const myPostsToday = currentUserId
     ? posts.filter((p) => p.userId === currentUserId && isPostFromToday(p.createdAt))
     : [];
@@ -490,17 +551,14 @@ export function HomeFeed() {
           </div>
 
           <div className="flex gap-5 overflow-x-auto pb-3 scrollbar-hide">
-            {posts.slice(0, 4).map((post, index) => {
-              const compatibility = post.compatibilityScore || 91 - index * 4;
+            {fitsThatAlign.map((post, index) => {
+              const compatibility = isUsingApi
+                ? (post.compatibilityScore ?? 0)
+                : (post.compatibilityScore ?? 91 - index * 4);
               const poster = getUser(post.userId);
               const imageBroken = brokenImageIds.has(post.id);
               const imageSrc = ensurePublicStorageUrl(post.imageUrl);
-              const insights = [
-                "Matches your neutral palette preference",
-                "Similar silhouette to your saved looks",
-                "Complements your minimal aesthetic",
-                "Aligns with your casual-chic style",
-              ];
+              const insight = getCompatibilityInsight(post, index);
               return (
                 <div key={post.id} className="flex-shrink-0">
                   <Link
@@ -545,11 +603,11 @@ export function HomeFeed() {
                           </p>
                         </button>
                         <div className="rounded-full bg-[#8B9B8E]/10 px-2.5 py-0.5">
-                          <p className="text-xs text-[#8B9B8E]">{compatibility}%</p>
+                          <p className="text-xs text-[#8B9B8E]">{Math.round(compatibility)}%</p>
                         </div>
                       </div>
                       <p className="text-xs leading-relaxed text-neutral-500">
-                        {insights[index]}
+                        {insight}
                       </p>
                     </div>
                   </Link>
@@ -606,16 +664,129 @@ export function HomeFeed() {
               </div>
 
               <div className="border-t border-neutral-200/60 bg-neutral-50 p-4">
-                <Link
-                  to="/profile?tab=rankings"
+                <button
+                  type="button"
+                  onClick={() => setRankingsModalOpen(true)}
                   className="flex w-full items-center justify-center gap-2 text-xs text-neutral-600 transition-colors duration-200 hover:text-neutral-900"
                 >
                   <TrendingUp className="h-3.5 w-3.5" />
                   View Full Rankings
-                </Link>
+                </button>
               </div>
             </div>
           </section>
+
+          {/* Global Rankings Modal */}
+          <AnimatePresence>
+            {rankingsModalOpen && (
+              <>
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  onClick={() => setRankingsModalOpen(false)}
+                  className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm"
+                />
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.96 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.96 }}
+                  transition={{ type: "spring", damping: 28, stiffness: 300 }}
+                  onClick={(e) => e.stopPropagation()}
+                  className="fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-2xl border border-neutral-200/60 bg-white shadow-2xl"
+                >
+                  <div className="border-b border-neutral-200/60 bg-white px-5 py-4">
+                    <div className="mb-4 flex items-center justify-between">
+                      <h3 className="text-lg font-medium text-neutral-900">Global Rankings</h3>
+                      <button
+                        type="button"
+                        onClick={() => setRankingsModalOpen(false)}
+                        className="flex h-8 w-8 items-center justify-center rounded-full text-neutral-500 transition-colors hover:bg-neutral-100"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {(
+                        [
+                          ["shirts", "Shirts"],
+                          ["pants", "Pants"],
+                          ["skirts_dresses", "Dresses & Skirts"],
+                          ["jackets_outerwear", "Jackets"],
+                          ["shoes", "Shoes"],
+                          ["bags", "Bags"],
+                        ] as const
+                      ).map(([cat, label]) => (
+                        <button
+                          key={cat}
+                          type="button"
+                          onClick={() => setGlobalRankingsCategory(cat)}
+                          className={`rounded-full px-3 py-1.5 text-xs font-medium transition-all ${globalRankingsCategory === cat
+                            ? "bg-neutral-900 text-white"
+                            : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
+                            }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="max-h-[60vh] overflow-y-auto">
+                    {globalRankingsLoading ? (
+                      <div className="flex flex-col items-center justify-center gap-3 py-12">
+                        <div className="h-8 w-8 animate-spin rounded-full border-2 border-neutral-200 border-t-[#8B9B8E]" />
+                        <p className="text-xs text-neutral-500">Loading rankings…</p>
+                      </div>
+                    ) : globalRankings.length === 0 ? (
+                      <div className="py-12 text-center text-sm text-neutral-500">
+                        No ranked items in this category yet.
+                      </div>
+                    ) : (
+                      <ul className="divide-y divide-neutral-100">
+                        {globalRankings.map((item, index) => {
+                          const rank = index + 1;
+                          const owner = getUser(item.user_id);
+                          const name = item.display_description || item.subcategory || item.brand || "Item";
+                          const imageUrl = ensurePublicStorageUrl(item.image_url);
+                          return (
+                            <li key={item.id} className="flex items-center gap-4 px-5 py-3">
+                              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-neutral-100 text-sm font-semibold text-neutral-700">
+                                {rank}
+                              </span>
+                              <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-neutral-100">
+                                {imageUrl ? (
+                                  <img src={imageUrl} alt={name} className="h-full w-full object-cover" />
+                                ) : (
+                                  <div className="flex h-full w-full items-center justify-center text-neutral-400">
+                                    <ImageOff className="h-5 w-5" />
+                                  </div>
+                                )}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-sm font-medium text-neutral-900">{name}</p>
+                                <p className="text-xs text-neutral-500">
+                                  Recommended by {owner?.handle ? `@${owner.handle}` : "a community member"}
+                                </p>
+                                {item.brand && item.brand.trim().toLowerCase() !== "unknown" && (
+                                  <p className="mt-0.5 text-xs text-neutral-600">{item.brand}</p>
+                                )}
+                              </div>
+                              <div className="shrink-0 text-right">
+                                <p className="font-serif text-lg text-neutral-900">
+                                  {(item.rating ?? 0).toFixed(1)}
+                                </p>
+                                <p className="text-[10px] uppercase text-neutral-400">Score</p>
+                              </div>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </div>
+                </motion.div>
+              </>
+            )}
+          </AnimatePresence>
 
           <section>
             <div className="mb-6 md:mb-7">

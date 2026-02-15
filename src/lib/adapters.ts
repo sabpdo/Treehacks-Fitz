@@ -82,6 +82,8 @@ export interface UIOOTDPost {
   commentCount: number;
   likedByUserIds: string[];
   compatibilityScore: number;
+  compatibilityMatchingVibes?: string[];
+  compatibilityMatchingColors?: string[];
   aiInsight: string;
   tags?: UIOOTDPostTag[];
   outfitItems?: UIOutfitItem[];
@@ -224,6 +226,8 @@ export function apiPostToOOTDPost(
     commentCount: post.comments_count ?? 0,
     likedByUserIds: post.is_liked && currentUserId ? [currentUserId] : [],
     compatibilityScore: post.compatibility_score ?? 0,
+    compatibilityMatchingVibes: post.compatibility_matching_vibes,
+    compatibilityMatchingColors: post.compatibility_matching_colors,
     aiInsight: '',
     tags: buildTagsFromPost(post),
     outfitItems: (() => {
