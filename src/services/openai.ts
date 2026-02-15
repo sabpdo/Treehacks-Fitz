@@ -33,7 +33,8 @@ export async function analyzeClothingImage(imageUrl: string): Promise<AIImageAna
                 "silhouette": one of ["fitted", "oversized", "loose", "tailored", "relaxed"],
                 "fabric": material/fabric type (e.g., "cotton", "denim", "leather"),
                 "vibe_tags": array of 1-2 occasion tags from ["date night", "casual", "workout", "office"],
-                "description": brief description of the item (1-2 sentences)
+                "description": brief description of the item (1-2 sentences),
+                "short_label": a 3-8 word product-style name for display (e.g. "Beige leather crossbody bag", "High-waisted dark wash jeans"). Do NOT use generic words like "bottoms" or "accessories"—use the specific type and details.
               }
 
               CATEGORY RULES:
@@ -275,11 +276,15 @@ export interface PairingCandidate {
   color?: string;
   fabric?: string;
   silhouette?: string;
+  /** If set, use as the shortDescription (stored AI label from upload) */
+  display_description?: string | null;
 }
 export interface PairingResultItem {
   id: string;
   shortDescription: string;
   pairingScore: number;
+  /** Short reason why this item pairs well with the main item (e.g. "Complements the neutral palette") */
+  pairingReason?: string;
 }
 
 /**
@@ -293,8 +298,9 @@ export async function getPairingDescriptionsAndRanking(
   if (!OPENAI_ENABLED || !openai) {
     return candidates.map((c) => ({
       id: c.id,
-      shortDescription: [c.brand, c.category, c.color].filter(Boolean).join(' ') || c.category || 'Item',
+      shortDescription: c.display_description?.trim() || [c.brand, c.category, c.color].filter(Boolean).join(' ') || c.category || 'Item',
       pairingScore: 3,
+      pairingReason: undefined,
     }));
   }
   if (candidates.length === 0) return [];
@@ -302,7 +308,7 @@ export async function getPairingDescriptionsAndRanking(
   const candidateList = candidates
     .map(
       (c, i) =>
-        `Candidate ${i + 1} (id: ${c.id}): category ${c.category || 'unknown'}, brand ${c.brand || '—'}, color ${c.color || '—'}, fabric ${c.fabric || '—'}, silhouette ${c.silhouette || '—'}`
+        `Candidate ${i + 1} (id: ${c.id}): ${c.display_description ? `display_label: "${c.display_description}"` : ''} category ${c.category || 'unknown'}, brand ${c.brand || '—'}, color ${c.color || '—'}, fabric ${c.fabric || '—'}, silhouette ${c.silhouette || '—'}`
     )
     .join('\n');
 
@@ -317,11 +323,12 @@ export async function getPairingDescriptionsAndRanking(
               type: 'text',
               text: `You are a stylist. The user has one main clothing item (see image) and a list of other items from their wardrobe that could pair with it.
 
-For each candidate below, do two things:
-1. Write a short, specific product-style description (3–8 words), e.g. "High-waisted dark wash jeans", "White leather sneakers", "Oversized beige blazer". Do NOT use generic words like "bottoms" or "accessories"—use the actual type and details.
+For each candidate below, do three things:
+1. shortDescription: If the candidate has a "display_label", use it exactly as the shortDescription. Otherwise write a short, specific product-style description (3–8 words), e.g. "High-waisted dark wash jeans", "White leather sneakers". Do NOT use generic words like "bottoms" or "accessories".
 2. Rate how well it pairs with the main item from 1 (poor fit) to 5 (perfect).
+3. Write a one-line pairingReason that either (a) explains WHY it pairs well (e.g. "Same neutral tone so the outfit feels cohesive", "Adds structure and balances the loose top") or (b) suggests HOW to wear it (e.g. "Tuck the top in and wear with these for a polished look", "Wear together for a smart-casual weekend outfit"). Be specific—mention color, silhouette, occasion, or a concrete styling tip. Do NOT use generic phrases like "Pairs well with this look".
 
-Return a JSON object: { "items": [ { "id": "<candidate id>", "shortDescription": "...", "pairingScore": number } ] }
+Return a JSON object: { "items": [ { "id": "<candidate id>", "shortDescription": "...", "pairingScore": number, "pairingReason": "..." } ] }
 Sort the array by pairingScore descending (best pairs first). Include every candidate.
 
 Candidates:
@@ -334,7 +341,7 @@ ${candidateList}`,
           ],
         },
       ],
-      max_tokens: 600,
+      max_tokens: 800,
     });
     const raw = response.choices[0]?.message?.content?.trim() ?? '';
     const jsonMatch = raw.match(/```json\n?([\s\S]*?)\n?```/) || raw.match(/(\{[\s\S]*\})/);
@@ -346,8 +353,9 @@ ${candidateList}`,
     console.error('getPairingDescriptionsAndRanking failed', e);
     return candidates.map((c) => ({
       id: c.id,
-      shortDescription: [c.brand, c.category, c.color].filter(Boolean).join(' ') || c.category || 'Item',
+      shortDescription: c.display_description?.trim() || [c.brand, c.category, c.color].filter(Boolean).join(' ') || c.category || 'Item',
       pairingScore: 3,
+      pairingReason: undefined,
     }));
   }
 }

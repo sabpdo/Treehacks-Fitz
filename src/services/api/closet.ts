@@ -106,8 +106,13 @@ export async function createClosetItem(
       fabric: '',
       vibe_tags: request.vibe_tags || [],
       description: '',
+      short_label: undefined,
     };
   }
+
+  const displayDescription =
+    aiAnalysis.short_label?.trim() ||
+    (aiAnalysis.description ? aiAnalysis.description.split(/[.!?]/)[0]?.trim().slice(0, 60) : null);
 
   // Merge AI analysis with user input (user input takes precedence)
   const itemData = {
@@ -121,6 +126,7 @@ export async function createClosetItem(
     silhouette: request.silhouette || aiAnalysis.silhouette,
     fabric: request.fabric || aiAnalysis.fabric,
     subcategory: request.subcategory || aiAnalysis.subcategory,
+    display_description: displayDescription || null,
     times_worn: 0,
     rating: 0,
     elo_rating: getInitialElo(),

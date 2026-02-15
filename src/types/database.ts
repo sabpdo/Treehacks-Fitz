@@ -50,6 +50,8 @@ export interface ClosetItem {
   silhouette: Silhouette | null;
   fabric: string | null;
   subcategory: string | null;
+  /** Short product-style label (e.g. "Beige leather crossbody bag") from AI on upload; used as title when pairing */
+  display_description?: string | null;
 
   // Usage & Rankings
   times_worn: number;
@@ -160,6 +162,7 @@ export interface UpdateClosetItemRequest {
   silhouette?: Silhouette;
   subcategory?: string;
   image_url?: string;
+  display_description?: string | null;
 }
 
 export interface CreatePostRequest {
@@ -181,6 +184,8 @@ export interface AIImageAnalysis {
   fabric: string;
   vibe_tags: VibeTag[];
   description: string;
+  /** Short product-style label (3–8 words) for display, e.g. "Beige leather crossbody bag" */
+  short_label?: string;
 }
 
 export interface CompatibilityScore {
