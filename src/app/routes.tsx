@@ -44,7 +44,7 @@ export const router = createBrowserRouter([
           { path: "community", Component: Community },
           { path: "profile", Component: Profile },
           { path: "profile/:userId", Component: Profile },
-          { path: "ai-generator", Component: AIOutfitGenerator },
+          { path: "search", Component: AIOutfitGenerator },
           { path: "closet", Component: Closet },
           { path: "analyze", Component: BodyAnalyze },
           { path: "rerank", Component: ReRank },

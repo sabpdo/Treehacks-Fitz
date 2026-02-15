@@ -57,21 +57,21 @@ export function Root() {
           </Link>
 
           <Link
-            to="/ai-generator"
+            to="/search"
             className="relative flex flex-col items-center gap-1.5 transition-colors duration-200"
           >
             <Search
-              className={`h-6 w-6 transition-all ${isActive("/ai-generator") ? "text-[#8B9B8E]" : "text-neutral-400"
+              className={`h-6 w-6 transition-all ${isActive("/search") ? "text-[#8B9B8E]" : "text-neutral-400"
                 }`}
-              strokeWidth={isActive("/ai-generator") ? 2.5 : 2}
+              strokeWidth={isActive("/search") ? 2.5 : 2}
             />
             <span
-              className={`text-xs transition-all ${isActive("/ai-generator") ? "text-[#8B9B8E]" : "text-neutral-400"
+              className={`text-xs transition-all ${isActive("/search") ? "text-[#8B9B8E]" : "text-neutral-400"
                 }`}
             >
               Shop
             </span>
-            {isActive("/ai-generator") && (
+            {isActive("/search") && (
               <motion.div
                 layoutId="nav-indicator"
                 className="absolute -top-3 h-1 w-8 rounded-full bg-[#8B9B8E]"

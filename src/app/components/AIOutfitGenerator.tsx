@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from "react";
-import { Search, Sparkles, X, ExternalLink } from "lucide-react";
+import React, { useState, useEffect, useMemo } from "react";
+import { Search, Sparkles, X, ExternalLink, ArrowUpDown, TrendingUp, DollarSign } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { getShoppingItems, type ShoppingItem } from "../../services/api/shopping-items";
 import {
@@ -19,6 +19,9 @@ interface OutfitResult {
   price?: string;
 }
 
+type SortType = "rating" | "price";
+type SortOrder = "high" | "low";
+
 export function AIOutfitGenerator() {
   const [searchQuery, setSearchQuery] = useState("");
   const [hasSearched, setHasSearched] = useState(false);
@@ -28,6 +31,8 @@ export function AIOutfitGenerator() {
   const [loading, setLoading] = useState(false);
   const [selectedItem, setSelectedItem] = useState<ShoppingItem | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [sortType, setSortType] = useState<SortType>("rating");
+  const [sortOrder, setSortOrder] = useState<SortOrder>("high");
 
   // Pre-filled search from Shop the Look (post detail → AI Search)
   useEffect(() => {
@@ -198,7 +203,55 @@ export function AIOutfitGenerator() {
     setReasoning("");
     setShoppingItems([]);
     setLoading(false);
+    setSortType("rating");
+    setSortOrder("high");
   };
+
+  const toggleSortOrder = () => {
+    setSortOrder(prev => prev === "high" ? "low" : "high");
+  };
+
+  // Sorted shopping items based on selected sort type and order
+  const sortedShoppingItems = useMemo(() => {
+    if (shoppingItems.length === 0) return [];
+
+    const items = [...shoppingItems];
+
+    if (sortType === "rating") {
+      return items.sort((a, b) => {
+        const ratingA = a.rating ?? 0;
+        const ratingB = b.rating ?? 0;
+
+        if (sortOrder === "high") {
+          if (ratingA > 0 && ratingB > 0) return ratingB - ratingA;
+          if (ratingA > 0 && ratingB === 0) return -1;
+          if (ratingB > 0 && ratingA === 0) return 1;
+        } else {
+          if (ratingA > 0 && ratingB > 0) return ratingA - ratingB;
+          if (ratingA > 0 && ratingB === 0) return 1;
+          if (ratingB > 0 && ratingA === 0) return -1;
+        }
+        return 0;
+      });
+    } else {
+      // price
+      return items.sort((a, b) => {
+        const priceA = a.price ?? 0;
+        const priceB = b.price ?? 0;
+
+        if (sortOrder === "high") {
+          if (priceA > 0 && priceB > 0) return priceB - priceA;
+          if (priceA > 0 && priceB === 0) return -1;
+          if (priceB > 0 && priceA === 0) return 1;
+        } else {
+          if (priceA > 0 && priceB > 0) return priceA - priceB;
+          if (priceA > 0 && priceB === 0) return 1;
+          if (priceB > 0 && priceA === 0) return -1;
+        }
+        return 0;
+      });
+    }
+  }, [shoppingItems, sortType, sortOrder]);
 
   return (
     <div className="min-h-screen bg-[#FAFAF8]">
@@ -321,6 +374,44 @@ export function AIOutfitGenerator() {
                     <span className="text-xs text-neutral-400">{shoppingItems.length} items</span>
                   </div>
 
+                  {/* Sort Controls */}
+                  <div className="mb-4 flex items-center gap-2">
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setSortType("rating")}
+                        className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-all ${
+                          sortType === "rating"
+                            ? "bg-[#8B9B8E] text-white"
+                            : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
+                        }`}
+                      >
+                        <TrendingUp className="h-3 w-3" />
+                        Rating
+                      </button>
+                      <button
+                        onClick={() => setSortType("price")}
+                        className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-all ${
+                          sortType === "price"
+                            ? "bg-[#8B9B8E] text-white"
+                            : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
+                        }`}
+                      >
+                        <DollarSign className="h-3 w-3" />
+                        Price
+                      </button>
+                    </div>
+
+                    <div className="h-4 w-px bg-neutral-300" />
+
+                    <button
+                      onClick={toggleSortOrder}
+                      className="flex items-center gap-1.5 rounded-full bg-neutral-100 px-3 py-1.5 text-xs font-medium text-neutral-700 transition-all hover:bg-neutral-200"
+                    >
+                      <ArrowUpDown className="h-3 w-3" />
+                      {sortOrder === "high" ? "High to Low" : "Low to High"}
+                    </button>
+                  </div>
+
                   {loading ? (
                     <div className="grid grid-cols-2 gap-3">
                       {[...Array(6)].map((_, i) => (
@@ -335,7 +426,7 @@ export function AIOutfitGenerator() {
                     </div>
                   ) : (
                     <div className="grid grid-cols-2 gap-3">
-                      {shoppingItems.map((item, index) => (
+                      {sortedShoppingItems.map((item, index) => (
                         <motion.div
                           key={item.id}
                           initial={{ opacity: 0, y: 20 }}
