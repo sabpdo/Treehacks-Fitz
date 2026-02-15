@@ -16,6 +16,8 @@ export type VibeTag =
 
 export type Silhouette = 'fitted' | 'oversized' | 'loose' | 'tailored' | 'relaxed';
 
+export type PreferenceTier = 'dont_like' | 'like' | 'love';
+
 export interface Profile {
   id: string;
   username: string | null;
@@ -57,6 +59,7 @@ export interface ClosetItem {
   times_worn: number;
   rating: number; // 0-10 score (converted from Elo)
   elo_rating: number; // Elo rating (800-2200, starts at 1500)
+  preference_tier: PreferenceTier; // User's initial preference: dont_like (0-3), like (3-6), love (7-10)
   last_worn_at: string | null;
 
   // Metadata
@@ -143,6 +146,7 @@ export interface CreateClosetItemRequest {
   image_url: string;
   brand?: string;
   category: Category;
+  preference_tier: PreferenceTier;
   vibe_tags?: VibeTag[];
   price_tier?: PriceTier;
   colors?: string[];
