@@ -3,30 +3,39 @@ import { Link } from "react-router";
 import { motion, useScroll, useTransform } from "motion/react";
 import { Sparkles, Camera, Heart, ArrowRight } from "lucide-react";
 
-// Curated outfit/fashion images for collage (Unsplash)
-const COLLAGE_IMAGES = [
-  { src: "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=320&q=80", pos: "top-[8%] left-[4%]", w: "w-36 md:w-44", rot: "-rotate-[8deg]" },
-  { src: "https://images.unsplash.com/photo-1496747611176-843222e1e57c?w=320&q=80", pos: "top-[12%] right-[10%]", w: "w-32 md:w-40", rot: "rotate-[5deg]" },
-  { src: "https://images.unsplash.com/photo-1509631179647-0177331693ae?w=320&q=80", pos: "top-[35%] left-[2%]", w: "w-40 md:w-52", rot: "-rotate-[4deg]" },
-  { src: "https://images.unsplash.com/photo-1483985988355-763728e1935b?w=320&q=80", pos: "top-[28%] right-[2%]", w: "w-36 md:w-48", rot: "rotate-[6deg]" },
-  { src: "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=320&q=80", pos: "bottom-[25%] left-[8%]", w: "w-32 md:w-40", rot: "rotate-[-6deg]" },
-  { src: "https://images.unsplash.com/photo-1558769132-cb1aea304033?w=320&q=80", pos: "bottom-[20%] right-[6%]", w: "w-36 md:w-44", rot: "rotate-[7deg]" },
-  { src: "https://images.unsplash.com/photo-1558171813-4c088753af8f?w=320&q=80", pos: "top-[55%] left-[18%]", w: "w-28 md:w-36", rot: "-rotate-[10deg]" },
-  { src: "https://images.unsplash.com/photo-1564257631407-2f31f46d1f24?w=320&q=80", pos: "bottom-[35%] right-[18%]", w: "w-30 md:w-38", rot: "rotate-[-5deg]" },
-  { src: "https://images.unsplash.com/photo-1551488831-00ddcb6c6bd3?w=320&q=80", pos: "top-[6%] left-[32%]", w: "w-24 md:w-32", rot: "rotate-[12deg]" },
-  { src: "https://images.unsplash.com/photo-1594938298603-c8148c4dae35?w=320&q=80", pos: "bottom-[8%] left-[28%]", w: "w-28 md:w-36", rot: "-rotate-[7deg]" },
+// Outfit images from public/outfits (local assets)
+const OUTFIT_FILES = [
+  "outfit1.jpg",
+  "outfit2.jpg",
+  "outfit3.jpeg",
+  "outfit4.jpg",
+  "outfit5.jpg",
+  "outfit6.jpg",
+  "outfit7.jpg",
+  "outfit8.webp",
 ];
 
-// Fits from the community: outfit image + handle
+const COLLAGE_IMAGES = [
+  { src: `/outfits/${OUTFIT_FILES[0]}`, pos: "top-[8%] left-[4%]", w: "w-36 md:w-44", rot: "-rotate-[8deg]" },
+  { src: `/outfits/${OUTFIT_FILES[1]}`, pos: "top-[12%] right-[10%]", w: "w-32 md:w-40", rot: "rotate-[5deg]" },
+  { src: `/outfits/${OUTFIT_FILES[2]}`, pos: "top-[35%] left-[2%]", w: "w-40 md:w-52", rot: "-rotate-[4deg]" },
+  { src: `/outfits/${OUTFIT_FILES[3]}`, pos: "top-[28%] right-[2%]", w: "w-36 md:w-48", rot: "rotate-[6deg]" },
+  { src: `/outfits/${OUTFIT_FILES[4]}`, pos: "bottom-[25%] left-[8%]", w: "w-32 md:w-40", rot: "rotate-[-6deg]" },
+  { src: `/outfits/${OUTFIT_FILES[5]}`, pos: "bottom-[20%] right-[6%]", w: "w-36 md:w-44", rot: "rotate-[7deg]" },
+  { src: `/outfits/${OUTFIT_FILES[6]}`, pos: "top-[55%] left-[18%]", w: "w-28 md:w-36", rot: "-rotate-[10deg]" },
+  { src: `/outfits/${OUTFIT_FILES[7]}`, pos: "bottom-[35%] right-[18%]", w: "w-30 md:w-38", rot: "rotate-[-5deg]" },
+];
+
+// Fits from the community: outfit image + handle (same local images)
 const COMMUNITY_FITS = [
-  { src: "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=280&q=80", handle: "@MAGGIE" },
-  { src: "https://images.unsplash.com/photo-1496747611176-843222e1e57c?w=280&q=80", handle: "@SAVANNAH" },
-  { src: "https://images.unsplash.com/photo-1509631179647-0177331693ae?w=280&q=80", handle: "@MAXINE" },
-  { src: "https://images.unsplash.com/photo-1483985988355-763728e1935b?w=280&q=80", handle: "@PEARL" },
-  { src: "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=280&q=80", handle: "@EMILY" },
-  { src: "https://images.unsplash.com/photo-1558171813-4c088753af8f?w=280&q=80", handle: "@MICHELLE" },
-  { src: "https://images.unsplash.com/photo-1551488831-00ddcb6c6bd3?w=280&q=80", handle: "@SISSI" },
-  { src: "https://images.unsplash.com/photo-1594938298603-c8148c4dae35?w=280&q=80", handle: "@AMY" },
+  { src: `/outfits/${OUTFIT_FILES[5]}`, handle: "@MICHELLE" },
+  { src: `/outfits/${OUTFIT_FILES[2]}`, handle: "@CYNTHIA" },
+  { src: `/outfits/${OUTFIT_FILES[4]}`, handle: "@ANGIE" },
+  { src: `/outfits/${OUTFIT_FILES[7]}`, handle: "@AMY" },
+  { src: `/outfits/${OUTFIT_FILES[3]}`, handle: "@SIMON" },
+  { src: `/outfits/${OUTFIT_FILES[6]}`, handle: "@SISSI" },
+  { src: `/outfits/${OUTFIT_FILES[1]}`, handle: "@EVAN" },
+  {src: `/outfits/${OUTFIT_FILES[0]}`, handle: "@MAGGIE" },
 ];
 
 export function Landing() {
@@ -38,7 +47,6 @@ export function Landing() {
   const collageY = [
     parallax(-12, 24), parallax(18, -20), parallax(-8, 16), parallax(14, -12),
     parallax(-20, 10), parallax(10, -18), parallax(-16, 14), parallax(22, -8),
-    parallax(-10, 20), parallax(16, -14),
   ];
 
   // @ symbol: fades and drifts slightly as you scroll
