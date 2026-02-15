@@ -378,7 +378,7 @@ export function HomeFeed() {
       <header className="sticky top-0 z-30 border-b border-neutral-200/60 bg-white/90 backdrop-blur-xl">
         <div className="mx-auto max-w-5xl px-4 py-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between">
-            <img src="/logo.png" alt="fitz" className="h-8 w-auto object-contain" />
+            <img src="/fitz.png" alt="fitz" className="h-8 w-auto object-contain" />
             <div className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-orange-400/10 to-rose-500/10 px-3 py-1">
               <Flame className="h-3 w-3 text-orange-500" />
               <span className="text-xs text-neutral-700">{streak} day streak</span>
