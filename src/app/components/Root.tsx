@@ -1,5 +1,5 @@
 import { Outlet, Link, useLocation } from "react-router";
-import { Home, Sparkles, User, ShoppingBag, Plus, Ruler } from "lucide-react";
+import { Home, Search, User, ShoppingBag, Plus, Ruler } from "lucide-react";
 import { motion } from "motion/react";
 
 export function Root() {
@@ -69,7 +69,7 @@ export function Root() {
               className={`text-xs transition-all ${isActive("/ai-generator") ? "text-[#8B9B8E]" : "text-neutral-400"
                 }`}
             >
-              Curate
+              Shop
             </span>
             {isActive("/ai-generator") && (
               <motion.div
