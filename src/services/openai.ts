@@ -290,6 +290,8 @@ export async function analyzeBodyType(options: {
     throw new Error('Provide either dimensions or at least one photo.');
   }
 
+  const hasImages = imageUrls && imageUrls.length > 0;
+
   const dimensionsText =
     typeof dimensions === 'string'
       ? dimensions
@@ -297,21 +299,21 @@ export async function analyzeBodyType(options: {
         ? `Measurements (inches/lbs): ${JSON.stringify(dimensions)}`
         : '';
 
-  const prompt = `You are a fashion stylist. Based on the following body information, suggest which clothing colors and silhouettes will be most flattering. Be encouraging and specific.
+  const prompt = `You are a fashion stylist. Based on the following body information, suggest which ${hasImages ? 'clothing colors and' : ''} silhouettes will be most flattering. Be encouraging and specific.
 
 ${dimensionsText ? `DIMENSIONS:\n${dimensionsText}\n\n` : ''}
-${dimensionsText && imageUrls?.length ? 'The user also provided photos below for context.\n\n' : ''}
+${dimensionsText && hasImages ? 'The user also provided photos below for context.\n\n' : ''}
 Return ONLY valid JSON with this exact structure (no markdown):
 {
-  "suggestedColors": array of 4-6 color names that tend to flatter (e.g. "Navy", "Burgundy", "Olive", "Cream"),
+  ${hasImages ? '"suggestedColors": array of 4-6 color names that tend to flatter (e.g. "Navy", "Burgundy", "Olive", "Cream"),' : '"suggestedColors": ["Please upload photos for color analysis"],'}
   "suggestedSilhouettes": array of 4-6 silhouettes/fits (e.g. "fitted", "high-waist", "A-line", "tailored", "relaxed", "wide-leg"),
-  "avoidColors": array of 0-3 colors to use sparingly (optional),
+  ${hasImages ? '"avoidColors": array of 0-3 colors to use sparingly (optional),' : ''}
   "avoidSilhouettes": array of 0-3 silhouettes that may not flatter (optional),
   "bodyTypeLabel": short label like "balanced", "pear", "athletic", "rectangle" (optional),
   "tips": array of 2-4 short styling tips (optional)
 }
 
-Use lowercase for silhouettes so we can match to our app (fitted, oversized, loose, tailored, relaxed, high-waist, wide-leg, a-line, etc.).`;
+Use lowercase for silhouettes so we can match to our app (fitted, oversized, loose, tailored, relaxed, high-waist, wide-leg, a-line, etc.).${!hasImages ? ' Since no photos were provided, do NOT suggest specific colors. Use ["Please upload photos for color analysis"] for suggestedColors and omit avoidColors entirely.' : ''}`;
 
   const content: Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }> = [
     { type: 'text', text: prompt },
