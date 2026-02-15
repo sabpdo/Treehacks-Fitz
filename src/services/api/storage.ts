@@ -1,6 +1,18 @@
 import { supabase } from '../../lib/supabase';
 
 /**
+ * Convert a data URL (e.g. from canvas or file input) to a File for upload.
+ */
+export function dataURLToFile(dataUrl: string, filename: string): File {
+  const arr = dataUrl.split(',');
+  const mime = (arr[0].match(/:(.*?);/) || [])[1] || 'image/png';
+  const bstr = atob(arr[1] || '');
+  const u8arr = new Uint8Array(bstr.length);
+  for (let i = 0; i < bstr.length; i++) u8arr[i] = bstr.charCodeAt(i);
+  return new File([u8arr], filename, { type: mime });
+}
+
+/**
  * Upload an image to Supabase Storage
  * @param file - The image file to upload
  * @param bucket - The storage bucket name (default: 'closet-images')

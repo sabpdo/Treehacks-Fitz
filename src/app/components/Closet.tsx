@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from "react";
-import { Plus, Grid3x3, List, X, ChevronRight, Flame, Upload } from "lucide-react";
+import { useSearchParams } from "react-router";
+import { Plus, Grid3x3, List, X, ChevronRight, Flame, Upload, Trash2 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { mockClosetItems, type ClosetItem, currentUserProfile } from "../data/mockData";
 import { useAppStore } from "../context/AppStore";
-import { getCurrentProfile, getClosetItems, createClosetItem, updateClosetItem, uploadImage, getClosetItem } from "../../services/api";
+import { getCurrentProfile, getClosetItems, createClosetItem, updateClosetItem, deleteClosetItem, uploadImage, getClosetItem } from "../../services/api";
 import { apiClosetItemToUI } from "../../lib/adapters";
 
 // Map UI category to database category (reverse of adapter)
@@ -19,6 +20,16 @@ function mapCategoryToUI(dbCategory: string): "tops" | "bottoms" | "outerwear" |
   return categoryMap[dbCategory] || "tops";
 }
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "./ui/alert-dialog";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
@@ -106,6 +117,9 @@ export function Closet() {
   const [editItemError, setEditItemError] = useState<string | null>(null);
   const [detailModalCategory, setDetailModalCategory] = useState<Category | "">("");
   const [savingCategory, setSavingCategory] = useState(false);
+  const [deletingItem, setDeletingItem] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [detailFormData, setDetailFormData] = useState({
     image: null as File | null,
     imagePreview: null as string | null,
@@ -132,6 +146,7 @@ export function Closet() {
     subcategory: "",
   });
   const { isUsingApi, currentUserId, getUser } = useAppStore();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   // Map UI category back to database category
   const mapCategoryToDB = (uiCategory: string): Category => {
@@ -236,6 +251,17 @@ export function Closet() {
     }
   }, [isUsingApi, currentUserId]);
 
+  // Open item from URL when navigating from post detail (e.g. /closet?item=uuid)
+  useEffect(() => {
+    const itemId = searchParams.get("item");
+    if (!itemId || closetItems.length === 0) return;
+    const item = closetItems.find((i) => i.id === itemId);
+    if (item) {
+      setSelectedItem(item);
+      setSearchParams({}, { replace: true });
+    }
+  }, [closetItems, searchParams, setSearchParams]);
+
   const filteredItems =
     filter === "all"
       ? closetItems
@@ -280,21 +306,19 @@ export function Closet() {
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setViewMode("grid")}
-                className={`flex h-9 w-9 items-center justify-center rounded-lg transition-all ${
-                  viewMode === "grid"
-                    ? "bg-neutral-900 text-white"
-                    : "text-neutral-400 hover:bg-neutral-100"
-                }`}
+                className={`flex h-9 w-9 items-center justify-center rounded-lg transition-all ${viewMode === "grid"
+                  ? "bg-neutral-900 text-white"
+                  : "text-neutral-400 hover:bg-neutral-100"
+                  }`}
               >
                 <Grid3x3 className="h-4 w-4" />
               </button>
               <button
                 onClick={() => setViewMode("list")}
-                className={`flex h-9 w-9 items-center justify-center rounded-lg transition-all ${
-                  viewMode === "list"
-                    ? "bg-neutral-900 text-white"
-                    : "text-neutral-400 hover:bg-neutral-100"
-                }`}
+                className={`flex h-9 w-9 items-center justify-center rounded-lg transition-all ${viewMode === "list"
+                  ? "bg-neutral-900 text-white"
+                  : "text-neutral-400 hover:bg-neutral-100"
+                  }`}
               >
                 <List className="h-4 w-4" />
               </button>
@@ -563,11 +587,10 @@ export function Closet() {
                                   : [...prev.colors, color],
                               }));
                             }}
-                            className={`rounded-full px-3 py-1 text-xs capitalize transition-colors ${
-                              formData.colors.includes(color)
-                                ? "bg-neutral-900 text-white"
-                                : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
-                            }`}
+                            className={`rounded-full px-3 py-1 text-xs capitalize transition-colors ${formData.colors.includes(color)
+                              ? "bg-neutral-900 text-white"
+                              : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
+                              }`}
                           >
                             {color}
                           </button>
@@ -651,11 +674,10 @@ export function Closet() {
                                   : [...prev.vibeTags, vibe],
                               }));
                             }}
-                            className={`rounded-full px-3 py-1 text-xs transition-colors ${
-                              formData.vibeTags.includes(vibe)
-                                ? "bg-neutral-900 text-white"
-                                : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
-                            }`}
+                            className={`rounded-full px-3 py-1 text-xs transition-colors ${formData.vibeTags.includes(vibe)
+                              ? "bg-neutral-900 text-white"
+                              : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
+                              }`}
                           >
                             {vibe}
                           </button>
@@ -751,11 +773,10 @@ export function Closet() {
             <button
               key={cat.value}
               onClick={() => setFilter(cat.value as CategoryFilter)}
-              className={`flex-shrink-0 rounded-full px-4 py-1.5 text-xs transition-all ${
-                filter === cat.value
-                  ? "bg-neutral-900 text-white"
-                  : "border border-neutral-200 bg-white text-neutral-600 hover:border-neutral-300"
-              }`}
+              className={`flex-shrink-0 rounded-full px-4 py-1.5 text-xs transition-all ${filter === cat.value
+                ? "bg-neutral-900 text-white"
+                : "border border-neutral-200 bg-white text-neutral-600 hover:border-neutral-300"
+                }`}
             >
               {cat.label}
             </button>
@@ -785,39 +806,39 @@ export function Closet() {
               </div>
             ) : (
               filteredItems.map((item, index) => (
-              <motion.button
-                key={item.id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.03 }}
-                onClick={() => setSelectedItem(item)}
-                className="group overflow-hidden rounded-xl border border-neutral-200/60 bg-white text-left transition-all hover:border-neutral-300 hover:shadow-lg"
-              >
-                <div className="relative aspect-square overflow-hidden bg-neutral-50">
-                  <img
-                    src={item.imageUrl}
-                    alt={`${item.brand} ${item.category}`}
-                    className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-                  />
-                  {/* Color Dot */}
-                  <div
-                    className="absolute right-3 top-3 h-5 w-5 rounded-full border-2 border-white shadow-sm"
-                    style={{
-                      backgroundColor: getColorHex(item.color),
-                    }}
-                  />
-                </div>
-                <div className="p-3">
-                  <p className="mb-1 text-xs uppercase tracking-wide text-neutral-400">
-                    {item.category}
-                  </p>
-                  <p className="text-sm text-neutral-900">
-                    {(item as any).subcategory && item.brand 
-                      ? `${(item as any).subcategory} • ${item.brand}` 
-                      : (item as any).subcategory || item.brand || item.style || "—"}
-                  </p>
-                </div>
-              </motion.button>
+                <motion.button
+                  key={item.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: index * 0.03 }}
+                  onClick={() => setSelectedItem(item)}
+                  className="group overflow-hidden rounded-xl border border-neutral-200/60 bg-white text-left transition-all hover:border-neutral-300 hover:shadow-lg"
+                >
+                  <div className="relative aspect-square overflow-hidden bg-neutral-50">
+                    <img
+                      src={item.imageUrl}
+                      alt={`${item.brand} ${item.category}`}
+                      className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                    />
+                    {/* Color Dot */}
+                    <div
+                      className="absolute right-3 top-3 h-5 w-5 rounded-full border-2 border-white shadow-sm"
+                      style={{
+                        backgroundColor: getColorHex(item.color),
+                      }}
+                    />
+                  </div>
+                  <div className="p-3">
+                    <p className="mb-1 text-xs uppercase tracking-wide text-neutral-400">
+                      {item.category}
+                    </p>
+                    <p className="text-sm text-neutral-900">
+                      {(item as any).subcategory && item.brand
+                        ? `${(item as any).subcategory} • ${item.brand}`
+                        : (item as any).subcategory || item.brand || item.style || "—"}
+                    </p>
+                  </div>
+                </motion.button>
               ))
             )}
           </div>
@@ -845,43 +866,43 @@ export function Closet() {
                 </div>
               ) : (
                 filteredItems.map((item, index) => (
-                <motion.button
-                  key={item.id}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: index * 0.02 }}
-                  onClick={() => setSelectedItem(item)}
-                  className="grid w-full grid-cols-[60px_1fr_100px_100px_80px_100px_100px] items-center gap-4 px-4 py-3 text-left text-sm transition-colors hover:bg-neutral-50"
-                >
-                  <div className="h-12 w-12 overflow-hidden rounded-lg bg-neutral-100">
-                    <img
-                      src={item.imageUrl}
-                      alt={item.brand || "Item"}
-                      className="h-full w-full object-cover"
-                    />
-                  </div>
-                  <div>
-                    <p className="text-sm text-neutral-900">{item.brand || "—"}</p>
-                    <p className="text-xs text-neutral-400">{item.style}</p>
-                  </div>
-                  <div className="text-xs capitalize text-neutral-600">
-                    {item.category}
-                  </div>
-                  <div className="text-xs text-neutral-600">{item.brand || "—"}</div>
-                  <div className="flex items-center gap-2">
-                    <div
-                      className="h-3 w-3 rounded-full border border-neutral-300"
-                      style={{
-                        backgroundColor: getColorHex(item.color),
-                      }}
-                    />
-                    <span className="text-xs text-neutral-600">{item.color}</span>
-                  </div>
-                  <div className="text-xs text-neutral-600">{item.fabric || "—"}</div>
-                  <div className="text-xs text-neutral-600">
-                    {item.silhouette || "—"}
-                  </div>
-                </motion.button>
+                  <motion.button
+                    key={item.id}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ delay: index * 0.02 }}
+                    onClick={() => setSelectedItem(item)}
+                    className="grid w-full grid-cols-[60px_1fr_100px_100px_80px_100px_100px] items-center gap-4 px-4 py-3 text-left text-sm transition-colors hover:bg-neutral-50"
+                  >
+                    <div className="h-12 w-12 overflow-hidden rounded-lg bg-neutral-100">
+                      <img
+                        src={item.imageUrl}
+                        alt={item.brand || "Item"}
+                        className="h-full w-full object-cover"
+                      />
+                    </div>
+                    <div>
+                      <p className="text-sm text-neutral-900">{item.brand || "—"}</p>
+                      <p className="text-xs text-neutral-400">{item.style}</p>
+                    </div>
+                    <div className="text-xs capitalize text-neutral-600">
+                      {item.category}
+                    </div>
+                    <div className="text-xs text-neutral-600">{item.brand || "—"}</div>
+                    <div className="flex items-center gap-2">
+                      <div
+                        className="h-3 w-3 rounded-full border border-neutral-300"
+                        style={{
+                          backgroundColor: getColorHex(item.color),
+                        }}
+                      />
+                      <span className="text-xs text-neutral-600">{item.color}</span>
+                    </div>
+                    <div className="text-xs text-neutral-600">{item.fabric || "—"}</div>
+                    <div className="text-xs text-neutral-600">
+                      {item.silhouette || "—"}
+                    </div>
+                  </motion.button>
                 ))
               )}
             </div>
@@ -1134,11 +1155,10 @@ export function Closet() {
                                   : [...prev.colors, color],
                               }));
                             }}
-                            className={`rounded-full px-3 py-1 text-xs capitalize transition-colors ${
-                              detailFormData.colors.includes(color)
-                                ? "bg-neutral-900 text-white"
-                                : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
-                            }`}
+                            className={`rounded-full px-3 py-1 text-xs capitalize transition-colors ${detailFormData.colors.includes(color)
+                              ? "bg-neutral-900 text-white"
+                              : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
+                              }`}
                           >
                             {color}
                           </button>
@@ -1211,11 +1231,10 @@ export function Closet() {
                                   : [...prev.vibeTags, vibe],
                               }));
                             }}
-                            className={`rounded-full px-3 py-1 text-xs transition-colors ${
-                              detailFormData.vibeTags.includes(vibe)
-                                ? "bg-neutral-900 text-white"
-                                : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
-                            }`}
+                            className={`rounded-full px-3 py-1 text-xs transition-colors ${detailFormData.vibeTags.includes(vibe)
+                              ? "bg-neutral-900 text-white"
+                              : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
+                              }`}
                           >
                             {vibe}
                           </button>
@@ -1267,6 +1286,68 @@ export function Closet() {
                       <p className="text-xs text-neutral-500">this season</p>
                     </div>
                   </div>
+
+                  {/* Remove from wardrobe */}
+                  <div className="mt-6 border-t border-neutral-200/60 pt-4">
+                    {deleteError && (
+                      <p className="mb-3 text-sm text-red-600">{deleteError}</p>
+                    )}
+                    <button
+                      type="button"
+                      disabled={deletingItem}
+                      onClick={() => setDeleteConfirmOpen(true)}
+                      className="flex w-full items-center justify-center gap-2 rounded-xl border border-red-200 bg-white py-3 text-sm text-red-600 transition-colors hover:bg-red-50 disabled:opacity-50"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Remove from wardrobe
+                    </button>
+                  </div>
+
+                  <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+                    <AlertDialogContent className="max-w-[calc(100%-2rem)] rounded-2xl border-neutral-200/60 bg-white p-6 shadow-xl sm:max-w-md">
+                      <AlertDialogHeader>
+                        <AlertDialogTitle className="text-left text-lg font-semibold text-neutral-900">
+                          Remove from wardrobe?
+                        </AlertDialogTitle>
+                        <AlertDialogDescription className="text-left text-sm text-neutral-500">
+                          This item will be removed from your closet. This can't be undone.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter className="mt-6 flex flex-row gap-3 sm:justify-end">
+                        <AlertDialogCancel
+                          onClick={() => setDeleteError(null)}
+                          className="rounded-xl border-neutral-300"
+                        >
+                          Cancel
+                        </AlertDialogCancel>
+                        <AlertDialogAction
+                          onClick={async (e) => {
+                            e.preventDefault();
+                            if (!selectedItem) return;
+                            setDeleteError(null);
+                            setDeletingItem(true);
+                            try {
+                              if (isUsingApi && selectedItem.id) {
+                                await deleteClosetItem(selectedItem.id);
+                              }
+                              setClosetItems((prev) => prev.filter((i) => i.id !== selectedItem.id));
+                              setSelectedItem(null);
+                              setDeleteConfirmOpen(false);
+                            } catch (err) {
+                              console.error("Failed to delete item:", err);
+                              setDeleteError(err instanceof Error ? err.message : "Failed to remove item");
+                              setDeleteConfirmOpen(false);
+                            } finally {
+                              setDeletingItem(false);
+                            }
+                          }}
+                          className="rounded-xl bg-red-600 text-white hover:bg-red-700"
+                        >
+                          {deletingItem ? "Removing…" : "Remove"}
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
                 </div>
               </div>
             </motion.div>
@@ -1500,11 +1581,10 @@ export function Closet() {
                           : [...prev.colors, color],
                       }));
                     }}
-                    className={`rounded-full px-3 py-1 text-xs capitalize transition-colors ${
-                      formData.colors.includes(color)
-                        ? "bg-neutral-900 text-white"
-                        : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
-                    }`}
+                    className={`rounded-full px-3 py-1 text-xs capitalize transition-colors ${formData.colors.includes(color)
+                      ? "bg-neutral-900 text-white"
+                      : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
+                      }`}
                   >
                     {color}
                   </button>
@@ -1588,11 +1668,10 @@ export function Closet() {
                           : [...prev.vibeTags, vibe],
                       }));
                     }}
-                    className={`rounded-full px-3 py-1 text-xs transition-colors ${
-                      formData.vibeTags.includes(vibe)
-                        ? "bg-neutral-900 text-white"
-                        : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
-                    }`}
+                    className={`rounded-full px-3 py-1 text-xs transition-colors ${formData.vibeTags.includes(vibe)
+                      ? "bg-neutral-900 text-white"
+                      : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
+                      }`}
                   >
                     {vibe}
                   </button>

@@ -1,3 +1,4 @@
+import React from "react";
 import { createBrowserRouter, useNavigate } from "react-router";
 import { Root } from "./components/Root";
 import { HomeFeed } from "./components/HomeFeed";

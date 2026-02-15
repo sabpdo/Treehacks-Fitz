@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { motion } from "motion/react";
 import { Bookmark, ImageOff, Trash2 } from "lucide-react";
@@ -54,15 +54,16 @@ export function PostCard({
   const commentPreview = firstComment?.text;
   const saved = showFeedMeta && isSaved(post.id);
   const [imageError, setImageError] = useState(false);
+  const outfitItems = post.outfitItems ?? [];
 
   const baseClass = cn(
-    "group block overflow-hidden rounded-xl border border-neutral-200/60 bg-white shadow-sm transition-all duration-300 hover:border-neutral-300 hover:shadow-md active:scale-[0.995]",
+    "group block overflow-hidden rounded-2xl border border-neutral-200/50 bg-white shadow-sm transition-all duration-300 hover:border-neutral-200 hover:shadow-md active:scale-[0.998]",
     className
   );
 
   const cardContent = (
     <>
-      <div className="relative aspect-[4/5] min-h-[200px] overflow-hidden bg-neutral-100">
+      <div className="relative aspect-[4/5] min-h-[200px] overflow-hidden bg-[#FAFAF8]">
         {imageError ? (
           <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-neutral-400">
             <ImageOff className="h-10 w-10" />
@@ -72,7 +73,7 @@ export function PostCard({
           <img
             src={ensurePublicStorageUrl(post.imageUrl)}
             alt={post.caption || "Post"}
-            className="h-full w-full object-cover object-center transition-transform duration-500 group-hover:scale-105"
+            className="h-full w-full object-cover object-center transition-transform duration-500 group-hover:scale-[1.02]"
             loading="lazy"
             decoding="async"
             onError={(e) => {
@@ -104,43 +105,62 @@ export function PostCard({
             </button>
           </div>
         )}
+        {post.tags && post.tags.length > 0 && (
+          <div className="absolute bottom-0 left-0 right-0 z-10 flex flex-wrap gap-1.5 bg-gradient-to-t from-black/85 via-black/50 to-transparent p-2.5 pt-8 pb-2">
+            {post.tags.slice(0, 4).map((tag, i) => (
+              <span
+                key={`${tag.label}-${i}`}
+                className="rounded-full bg-white/95 px-2 py-0.5 text-[10px] font-medium text-neutral-800 shadow-sm"
+              >
+                {tag.label}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
-      <div className="p-4">
-        <div className="mb-2 flex items-center justify-between">
+      <div className="p-5">
+        <div className="flex items-baseline justify-between gap-2">
           <Link
             to={`/profile/${post.userId}`}
-            className="flex items-center gap-2 transition-opacity hover:opacity-70"
+            className="text-sm font-medium text-neutral-900 transition-opacity hover:opacity-70"
             onClick={(e) => e.stopPropagation()}
           >
-            <img
-              src={user?.avatarUrl ? ensurePublicStorageUrl(user.avatarUrl) : DEFAULT_AVATAR}
-              alt={user?.name ?? ""}
-              className="h-6 w-6 rounded-full object-cover"
-            />
-            <p className="text-xs font-medium text-neutral-900">{user?.name ?? user?.handle}</p>
+            {user?.name ?? user?.handle}
           </Link>
+          <span className="text-[11px] text-neutral-400">{formatPostTime(post.createdAt)}</span>
         </div>
-        <p className="text-[10px] text-neutral-400">{formatPostTime(post.createdAt)}</p>
-        {post.caption && !showFeedMeta && (
-          <p className="mt-2 line-clamp-2 text-xs text-neutral-600">{post.caption}</p>
+        {post.caption && (
+          <p className="mt-2 text-sm leading-relaxed text-neutral-600">{post.caption}</p>
+        )}
+        {post.vibeTag && (
+          <span className="mt-2 inline-block rounded-full border border-neutral-200/80 bg-neutral-50/80 px-2.5 py-0.5 text-[11px] text-neutral-500">
+            {post.vibeTag}
+          </span>
+        )}
+        {outfitItems.length > 0 && (
+          <div className="mt-4 border-t border-neutral-100 pt-3">
+            <p className="mb-2 text-[10px] font-medium uppercase tracking-wider text-neutral-400">
+              The look
+            </p>
+            <ul className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-neutral-600">
+              {outfitItems.map((oi) => (
+                <li key={oi.id ?? oi.label}>
+                  {oi.brand ? `${oi.label} · ${oi.brand}` : oi.label}
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
         {showFeedMeta && (
-          <div className="mt-3 flex items-start justify-between gap-2 border-t border-neutral-100 pt-3">
-            <div className="min-w-0 flex-1">
-              {post.commentCount > 0 && (
-                <p className="line-clamp-1 text-[11px] text-neutral-500">
-                  {commentPreview && (
-                    <span className="text-neutral-600">{commentPreview}</span>
-                  )}
-                  {commentPreview && post.commentCount > 1 && (
-                    <span className="text-neutral-400"> · {post.commentCount} comments</span>
-                  )}
-                  {!commentPreview && (
-                    <span className="text-neutral-400">{post.commentCount} comments</span>
-                  )}
-                </p>
+          <div className="mt-4 flex items-center justify-between border-t border-neutral-100 pt-3">
+            <span className="text-[11px] text-neutral-500">
+              {post.commentCount > 0 && commentPreview && (
+                <span className="text-neutral-600">{commentPreview}</span>
               )}
-            </div>
+              {post.commentCount > 0 && !commentPreview && (
+                <span>{post.commentCount} comments</span>
+              )}
+            </span>
             <button
               type="button"
               onClick={(e) => {
@@ -148,7 +168,7 @@ export function PostCard({
                 e.stopPropagation();
                 toggleSave(post.id);
               }}
-              className="flex-shrink-0 text-neutral-400 transition-colors hover:text-neutral-600"
+              className="text-neutral-400 transition-colors hover:text-neutral-600"
               aria-label={saved ? "Saved" : "Save"}
             >
               <Bookmark
@@ -162,7 +182,7 @@ export function PostCard({
   );
 
   const handleCardClick = (e: React.MouseEvent) => {
-    if ((e.target as HTMLElement).closest('a, button')) return;
+    if ((e.target as HTMLElement).closest("a, button")) return;
     navigate(`/post/${post.id}`);
   };
 
@@ -249,6 +269,18 @@ export function PostCard({
             {score != null && (
               <div className="absolute right-2 top-2">
                 <Badge variant="accent">{score}%</Badge>
+              </div>
+            )}
+            {post.tags && post.tags.length > 0 && (
+              <div className="absolute bottom-0 left-0 right-0 z-10 flex flex-wrap gap-1 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-2 pt-6 pb-1.5">
+                {post.tags.slice(0, 3).map((tag, i) => (
+                  <span
+                    key={`${tag.label}-${i}`}
+                    className="rounded-full bg-white/95 px-1.5 py-0.5 text-[9px] font-medium text-neutral-800 shadow-sm"
+                  >
+                    {tag.label}
+                  </span>
+                ))}
               </div>
             )}
           </div>

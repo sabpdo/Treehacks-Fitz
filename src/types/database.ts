@@ -62,6 +62,25 @@ export interface ClosetItem {
   updated_at: string;
 }
 
+/**
+ * Item on a post — same schema as closet item for the clothing piece.
+ * Every post has items; optionally an item is also in the user's wardrobe (closet_item_id).
+ */
+export interface PostOutfitItem {
+  id?: string;
+  image_url: string;
+  category: Category;
+  brand: string | null;
+  subcategory: string | null;
+  colors: string[];
+  fabric: string | null;
+  silhouette: Silhouette | null;
+  vibe_tags: VibeTag[];
+  price_tier?: PriceTier | null;
+  /** When set, this item is also in the user's wardrobe (closet_items.id) */
+  closet_item_id?: string;
+}
+
 export interface Post {
   id: string;
   user_id: string;
@@ -74,10 +93,14 @@ export interface Post {
 
   // Populated fields (not in DB)
   user?: Profile;
-  items?: ClosetItem[];
+  /** Items in this outfit — same schema as closet items; from outfit_items JSONB or post_items join */
+  items?: PostOutfitItem[];
   is_liked?: boolean;
   is_saved?: boolean;
   compatibility_score?: number;
+
+  // Legacy: simple tags (label + type); prefer items when available
+  tags?: { label: string; type: string }[];
 }
 
 export interface PostItem {
@@ -142,7 +165,12 @@ export interface UpdateClosetItemRequest {
 export interface CreatePostRequest {
   image_url: string;
   caption?: string;
-  item_ids?: string[]; // closet item IDs to associate with post
+  /** Items in this outfit — same schema as closet items; adding to wardrobe is optional (closet_item_id) */
+  items?: PostOutfitItem[];
+  /** @deprecated Use items[].closet_item_id instead. Closet item IDs to link and mark as worn. */
+  item_ids?: string[];
+  /** @deprecated Use items instead. Kept for backward compat. */
+  tags?: { label: string; type: string }[];
 }
 
 export interface AIImageAnalysis {

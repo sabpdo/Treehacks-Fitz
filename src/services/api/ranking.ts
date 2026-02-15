@@ -10,13 +10,22 @@ import {
   calculateRankings,
 } from '../../lib/ranking';
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function isUuid(id: string): boolean {
+  return Boolean(id && UUID_REGEX.test(id));
+}
+
 /**
- * Get all items in a category for a user with Elo ratings
+ * Get all items in a category for a user with Elo ratings.
+ * Returns [] if userId is not a valid UUID (e.g. mock "me" / "u1") to avoid 400 from Supabase.
  */
 export async function getItemsInCategory(
   userId: string,
   category: Category
 ): Promise<ItemWithRanking[]> {
+  if (!isUuid(userId)) {
+    return [];
+  }
   const { data, error } = await supabase
     .from('closet_items')
     .select('*')

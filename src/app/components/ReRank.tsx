@@ -1,13 +1,10 @@
-import { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "./ui/button";
 import { useAppStore } from "../context/AppStore";
-import {
-  getItemsInCategory,
-  submitComparison,
-  type Category,
-} from "../../services/api/ranking";
+import { getItemsInCategory, submitComparison } from "../../services/api/ranking";
+import type { Category } from "../../types/database";
 import type { ItemWithRanking } from "../../lib/ranking";
 
 const CATEGORIES: { value: Category; label: string }[] = [
