@@ -187,9 +187,16 @@ export function Closet() {
     fabric: "",
     silhouette: "" as Silhouette | "",
     subcategory: "",
+    preferenceTier: "like" as PreferenceTier | "",
   });
   const { isUsingApi, currentUserId, getUser } = useAppStore();
   const [searchParams, setSearchParams] = useSearchParams();
+  const [rankingSessionData, setRankingSessionData] = useState<{
+    newItem: ItemWithRanking;
+    itemsToCompare: ItemWithRanking[];
+    totalComparisons: number;
+    category: Category;
+  } | null>(null);
 
   // Map UI category back to database category
   const mapCategoryToDB = (uiCategory: string): Category => {
@@ -519,6 +526,7 @@ export function Closet() {
                           image_url: imageUrl,
                           brand: formData.brand || undefined,
                           category: formData.category as Category,
+                          preference_tier: formData.preferenceTier as PreferenceTier,
                           vibe_tags: formData.vibeTags.length > 0 ? formData.vibeTags : undefined,
                           price_tier: formData.priceTier || undefined,
                           colors: formData.colors.length > 0 ? formData.colors : undefined,
@@ -530,6 +538,31 @@ export function Closet() {
                         // Convert to UI format and add to list
                         const uiItem = apiClosetItemToUI(newItem);
                         setClosetItems((prev) => [uiItem, ...prev]);
+
+                        // Check if we should start a ranking session
+                        // Trigger when there are 3+ items in same category & preference tier
+                        const sameCategory = closetItems.filter(
+                          (i) => (i as any).category === mapCategoryToUI(newItem.category)
+                        );
+                        const sameTier = sameCategory.filter(
+                          (i) => (i as any).preferenceTier === newItem.preference_tier
+                        );
+
+                        if (sameTier.length >= 2) {
+                          // Start ranking session (new item + at least 2 existing = 3 total)
+                          try {
+                            const sessionData = await startRankingSession(
+                              newItem.id,
+                              newItem.category
+                            );
+                            setRankingSessionData({
+                              ...sessionData,
+                              category: newItem.category,
+                            });
+                          } catch (err) {
+                            console.warn("Failed to start ranking session:", err);
+                          }
+                        }
 
                         // Reset form and close dialog
                         setFormData({
@@ -543,6 +576,7 @@ export function Closet() {
                           fabric: "",
                           silhouette: "" as Silhouette | "",
                           subcategory: "",
+                          preferenceTier: "like" as PreferenceTier | "",
                         });
                         setAddItemOpen(false);
                       } catch (err) {
@@ -829,6 +863,46 @@ export function Closet() {
                       </div>
                     </div>
 
+                    {/* Preference Tier - How much do you like this item? */}
+                    <div className="space-y-2">
+                      <Label>How much do you like this item?</Label>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setFormData((prev) => ({ ...prev, preferenceTier: "dont_like" }))}
+                          className={`flex-1 rounded-xl px-4 py-3 text-sm transition-all ${
+                            formData.preferenceTier === "dont_like"
+                              ? "bg-red-100 border-2 border-red-300 text-red-700 font-medium"
+                              : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
+                          }`}
+                        >
+                          😕 I don't like it
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setFormData((prev) => ({ ...prev, preferenceTier: "like" }))}
+                          className={`flex-1 rounded-xl px-4 py-3 text-sm transition-all ${
+                            formData.preferenceTier === "like"
+                              ? "bg-yellow-100 border-2 border-yellow-300 text-yellow-700 font-medium"
+                              : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
+                          }`}
+                        >
+                          🙂 I like it
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setFormData((prev) => ({ ...prev, preferenceTier: "love" }))}
+                          className={`flex-1 rounded-xl px-4 py-3 text-sm transition-all ${
+                            formData.preferenceTier === "love"
+                              ? "bg-green-100 border-2 border-green-300 text-green-700 font-medium"
+                              : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
+                          }`}
+                        >
+                          😍 I love it
+                        </button>
+                      </div>
+                    </div>
+
                     {/* Error Message */}
                     {addItemError && (
                       <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
@@ -854,6 +928,7 @@ export function Closet() {
                             fabric: "",
                             silhouette: "" as Silhouette | "",
                             subcategory: "",
+                            preferenceTier: "like" as PreferenceTier | "",
                           });
                           setAddItemError(null);
                         }}
@@ -971,6 +1046,20 @@ export function Closet() {
                         backgroundColor: getColorHex(item.color),
                       }}
                     />
+                    {/* Score Badge */}
+                    {(() => {
+                      const rating = (item as any).rating ?? 0;
+                      const preferenceTier = (item as any).preferenceTier;
+                      const badge = getPreferenceTierBadge(preferenceTier);
+                      if (badge && rating > 0) {
+                        return (
+                          <div className={`absolute left-3 top-3 rounded-lg px-2 py-1 text-xs font-semibold shadow-sm ${badge.bg} ${badge.text} border ${badge.border}`}>
+                            {rating.toFixed(1)}
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
                   </div>
                   <div className="p-3">
                     <p className="mb-1 text-xs uppercase tracking-wide text-neutral-400">
@@ -992,7 +1081,7 @@ export function Closet() {
         {!loading && viewMode === "list" && (
           <div className="overflow-hidden rounded-xl border border-neutral-200/60 bg-white">
             {/* Table Header */}
-            <div className="grid grid-cols-[60px_1fr_100px_100px_80px_100px_100px] gap-4 border-b border-neutral-200/60 bg-neutral-50 px-4 py-3 text-xs uppercase tracking-wide text-neutral-500">
+            <div className="grid grid-cols-[60px_1fr_100px_100px_80px_100px_100px_80px] gap-4 border-b border-neutral-200/60 bg-neutral-50 px-4 py-3 text-xs uppercase tracking-wide text-neutral-500">
               <div></div>
               <div>Item</div>
               <div>Category</div>
@@ -1000,6 +1089,7 @@ export function Closet() {
               <div>Color</div>
               <div>Fabric</div>
               <div>Silhouette</div>
+              <div>Score</div>
             </div>
 
             {/* Table Rows */}
@@ -1016,7 +1106,7 @@ export function Closet() {
                     animate={{ opacity: 1 }}
                     transition={{ delay: index * 0.02 }}
                     onClick={() => setSelectedItem(item)}
-                    className="grid w-full grid-cols-[60px_1fr_100px_100px_80px_100px_100px] items-center gap-4 px-4 py-3 text-left text-sm transition-colors hover:bg-neutral-50"
+                    className="grid w-full grid-cols-[60px_1fr_100px_100px_80px_100px_100px_80px] items-center gap-4 px-4 py-3 text-left text-sm transition-colors hover:bg-neutral-50"
                   >
                     <div className="h-12 w-12 overflow-hidden rounded-lg bg-neutral-100">
                       <img
@@ -1045,6 +1135,21 @@ export function Closet() {
                     <div className="text-xs text-neutral-600">{item.fabric || "—"}</div>
                     <div className="text-xs text-neutral-600">
                       {item.silhouette || "—"}
+                    </div>
+                    <div>
+                      {(() => {
+                        const rating = (item as any).rating ?? 0;
+                        const preferenceTier = (item as any).preferenceTier;
+                        const badge = getPreferenceTierBadge(preferenceTier);
+                        if (badge && rating > 0) {
+                          return (
+                            <div className={`inline-block rounded-lg px-2 py-1 text-xs font-semibold ${badge.bg} ${badge.text} border ${badge.border}`}>
+                              {rating.toFixed(1)}
+                            </div>
+                          );
+                        }
+                        return <span className="text-xs text-neutral-400">—</span>;
+                      })()}
                     </div>
                   </motion.button>
                 ))
@@ -1923,6 +2028,32 @@ export function Closet() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Ranking Session Modal */}
+      {rankingSessionData && (
+        <RankingSession
+          newItem={rankingSessionData.newItem}
+          itemsToCompare={rankingSessionData.itemsToCompare}
+          totalComparisons={rankingSessionData.totalComparisons}
+          category={rankingSessionData.category}
+          onComplete={async () => {
+            setRankingSessionData(null);
+            // Reload closet items to get updated scores
+            if (isUsingApi && currentUserId) {
+              try {
+                const items = await getClosetItems(currentUserId);
+                const uiItems = items.map(apiClosetItemToUI);
+                setClosetItems(uiItems);
+              } catch (err) {
+                console.error("Failed to reload items after ranking:", err);
+              }
+            }
+          }}
+          onSkip={() => {
+            setRankingSessionData(null);
+          }}
+        />
+      )}
 
       <style>{`
         .scrollbar-hide::-webkit-scrollbar {
