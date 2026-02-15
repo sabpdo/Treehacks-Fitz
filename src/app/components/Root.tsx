@@ -15,7 +15,7 @@ export function Root() {
   return (
     <div className="min-h-screen bg-[#FAFAF8]">
       {/* Main Content */}
-      <main className="pb-20">
+      <main className="pb-24 md:pb-28">
         <Outlet />
       </main>
 
@@ -23,7 +23,7 @@ export function Root() {
       {location.pathname === "/" && (
         <Link
           to="/post"
-          className="fixed right-6 bottom-24 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-[#8B9B8E] shadow-lg transition-all hover:bg-[#7A8A7D] hover:shadow-md active:scale-95"
+          className="fixed right-6 bottom-28 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-[#8B9B8E] shadow-lg transition-all hover:bg-[#7A8A7D] hover:shadow-md active:scale-95 md:right-8 md:bottom-32"
         >
           <Plus className="h-6 w-6 text-white" strokeWidth={2.5} />
         </Link>
@@ -31,7 +31,7 @@ export function Root() {
 
       {/* Bottom Navigation */}
       <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-neutral-200/50 bg-white/90 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-lg items-center justify-around px-6 py-3">
+        <div className="mx-auto flex max-w-lg items-center justify-around px-6 py-3.5 md:max-w-xl md:px-8 lg:max-w-2xl lg:px-10 md:py-4">
           <Link
             to="/"
             className="relative flex flex-col items-center gap-1.5 transition-colors duration-200"

@@ -278,7 +278,7 @@ export function Community() {
           </Tabs>
         </header>
 
-        <div className="relative mt-4 min-h-[200px] overflow-hidden pb-24">
+        <div className="relative mt-6 md:mt-8 min-h-[200px] overflow-hidden pb-28 md:pb-32">
           <AnimatePresence mode="wait" custom={slideDirectionRef.current}>
             <motion.div
               key={tab}

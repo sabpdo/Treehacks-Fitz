@@ -196,8 +196,8 @@ export function PostDetail() {
       </header>
 
       <div className="mx-auto max-w-3xl px-6 py-6">
-        {/* Outfit image */}
-        <div className="mb-6 overflow-hidden rounded-2xl border border-neutral-200/60 bg-white shadow-sm">
+        {/* Outfit image - capped on wide screens so it doesn't dominate */}
+        <div className="mb-6 max-w-xl mx-auto overflow-hidden rounded-2xl border border-neutral-200/60 bg-white shadow-sm lg:max-w-2xl">
           <div className="relative aspect-[4/5] overflow-hidden bg-neutral-50">
             <img
               src={ensurePublicStorageUrl(post.imageUrl)}

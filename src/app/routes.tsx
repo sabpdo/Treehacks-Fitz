@@ -15,7 +15,7 @@ import { BodyAnalyze } from "./components/BodyAnalyze";
 import { Login } from "./components/Login";
 import { SignUp } from "./components/SignUp";
 import { ConfirmEmail } from "./components/ConfirmEmail";
-import { ProtectedRoute } from "./components/ProtectedRoute";
+import { LandingOrApp } from "./components/LandingOrApp";
 import { Providers } from "./Providers";
 
 export const router = createBrowserRouter([
@@ -28,11 +28,7 @@ export const router = createBrowserRouter([
       { path: "confirm-email", Component: ConfirmEmail },
       {
         path: "",
-        element: (
-          <ProtectedRoute>
-            <Root />
-          </ProtectedRoute>
-        ),
+        element: <LandingOrApp />,
         children: [
           { index: true, Component: HomeFeed },
           { path: "post", Component: OOTDPost },

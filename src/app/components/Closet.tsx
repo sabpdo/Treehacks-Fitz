@@ -400,7 +400,7 @@ export function Closet() {
     <div className="min-h-screen bg-[#FAFAF8]">
       {/* Header */}
       <header className="sticky top-0 z-30 border-b border-neutral-200/60 bg-white/90 backdrop-blur-xl">
-        <div className="mx-auto max-w-6xl px-6 py-4">
+        <div className="mx-auto max-w-6xl px-6 py-4 md:px-8 md:py-5">
           <div className="flex items-center justify-between">
             <h1 className="text-base tracking-tight text-neutral-900">My Closet</h1>
             <div className="flex items-center gap-2">
@@ -427,9 +427,9 @@ export function Closet() {
         </div>
       </header>
 
-      <div className="mx-auto max-w-6xl px-6 py-6">
+      <div className="mx-auto max-w-6xl px-6 py-8 md:px-8 md:py-10">
         {/* Dashboard Overview */}
-        <div className="mb-6 overflow-hidden rounded-2xl border border-neutral-200/60 bg-white">
+        <div className="mb-8 overflow-hidden rounded-2xl border border-neutral-200/60 bg-white">
           <div className="grid gap-px bg-neutral-200/60 md:grid-cols-3">
             {/* Streak */}
             <div className="bg-white p-6">

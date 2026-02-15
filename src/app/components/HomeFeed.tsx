@@ -376,7 +376,7 @@ export function HomeFeed() {
   return (
     <div className="min-h-screen bg-[#FAFAF8]">
       <header className="sticky top-0 z-30 border-b border-neutral-200/60 bg-white/90 backdrop-blur-xl">
-        <div className="mx-auto max-w-5xl px-4 py-4 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-5xl px-4 py-4 sm:px-6 lg:px-8 md:py-5">
           <div className="flex items-center justify-between">
             <img src="/logo.png" alt="fitz" className="h-8 w-auto object-contain" />
             <div className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-orange-400/10 to-rose-500/10 px-3 py-1">
@@ -387,9 +387,9 @@ export function HomeFeed() {
         </div>
       </header>
 
-      <div className="mx-auto max-w-5xl px-4 pb-12 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-5xl px-4 pt-2 pb-16 sm:px-6 lg:px-8 md:pb-20">
         {/* Today's OOTD Prompt — shows "posted" state with preview if user already posted today */}
-        <section className="py-8">
+        <section className="py-8 md:py-10">
           <div className={todaysPost ? "mx-auto max-w-[320px] overflow-hidden rounded-2xl border border-neutral-200/60 bg-white shadow-sm" : "mx-auto max-w-md overflow-hidden rounded-2xl border border-neutral-200/60 bg-white shadow-sm"}>
             {todaysPost ? (
               <>
@@ -453,8 +453,8 @@ export function HomeFeed() {
         </section>
 
         {/* Friends Today */}
-        <section className="mb-12">
-          <div className="mb-5 flex items-center justify-between">
+        <section className="mb-14 md:mb-16">
+          <div className="mb-6 md:mb-7 flex items-center justify-between">
             <div>
               <h3 className="mb-0.5 text-sm uppercase tracking-wide text-neutral-500">
                 Friends Today
@@ -481,15 +481,15 @@ export function HomeFeed() {
         </section>
 
         {/* Compatibility Highlights - keep existing style with first 4 from feed */}
-        <section className="mb-12">
-          <div className="mb-5">
+        <section className="mb-14 md:mb-16">
+          <div className="mb-6 md:mb-7">
             <h3 className="mb-0.5 text-sm uppercase tracking-wide text-neutral-500">
               Fits That Align With You
             </h3>
             <p className="text-xs text-neutral-400">Based on your wardrobe core</p>
           </div>
 
-          <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-hide">
+          <div className="flex gap-5 overflow-x-auto pb-3 scrollbar-hide">
             {posts.slice(0, 4).map((post, index) => {
               const compatibility = post.compatibilityScore || 91 - index * 4;
               const poster = getUser(post.userId);
@@ -560,9 +560,9 @@ export function HomeFeed() {
         </section>
 
         {/* Two Column Layout: Rankings + AI Suggestion */}
-        <div className="grid gap-6 lg:grid-cols-2">
+        <div className="grid gap-8 lg:grid-cols-2 lg:gap-10">
           <section>
-            <div className="mb-5">
+            <div className="mb-6 md:mb-7">
               <h3 className="mb-0.5 text-sm uppercase tracking-wide text-neutral-500">
                 Top Ranked in Your Network
               </h3>
@@ -618,7 +618,7 @@ export function HomeFeed() {
           </section>
 
           <section>
-            <div className="mb-5">
+            <div className="mb-6 md:mb-7">
               <h3 className="mb-0.5 text-sm uppercase tracking-wide text-neutral-500">
                 Today's Generated Look
               </h3>

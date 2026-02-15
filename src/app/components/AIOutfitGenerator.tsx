@@ -120,7 +120,7 @@ export function AIOutfitGenerator() {
     <div className="min-h-screen bg-[#FAFAF8]">
       {/* Header */}
       <header className="sticky top-0 z-30 border-b border-neutral-200/60 bg-white/90 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-4xl items-center justify-between px-6 py-4">
+        <div className="mx-auto flex max-w-4xl items-center justify-between px-6 py-4 md:px-8 md:py-5">
           <div className="flex items-center gap-2">
             <Sparkles className="h-4 w-4 text-neutral-900" />
             <h1 className="text-base tracking-tight text-neutral-900">AI Search</h1>
@@ -136,15 +136,15 @@ export function AIOutfitGenerator() {
         </div>
       </header>
 
-      <div className="mx-auto max-w-4xl px-6 py-8">
+      <div className="mx-auto max-w-4xl px-6 py-10 md:px-8 md:py-12">
         {/* Search Section */}
-        <div className="mb-8">
+        <div className="mb-10">
           <motion.div
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             className="overflow-hidden rounded-2xl border border-neutral-200/60 bg-white shadow-sm"
           >
-            <div className="p-6">
+            <div className="p-6 md:p-7">
               <div className="mb-4">
                 <p className="mb-1 text-xs uppercase tracking-wide text-neutral-500">
                   Search Your Style
@@ -210,7 +210,7 @@ export function AIOutfitGenerator() {
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="mb-6 overflow-hidden rounded-2xl border border-neutral-200/60 bg-white p-6 shadow-sm"
+                className="mb-8 overflow-hidden rounded-2xl border border-neutral-200/60 bg-white p-6 md:p-7 shadow-sm"
               >
                 <div className="mb-3 flex items-center gap-2">
                   <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[#8B9B8E]/10">
@@ -226,15 +226,15 @@ export function AIOutfitGenerator() {
               </motion.div>
 
               {/* From Your Closet */}
-              <div className="mb-8">
-                <div className="mb-4 flex items-center justify-between">
+              <div className="mb-10">
+                <div className="mb-5 flex items-center justify-between">
                   <h3 className="text-sm uppercase tracking-wide text-neutral-500">
                     From Your Closet
                   </h3>
                   <span className="text-xs text-neutral-400">3 outfits</span>
                 </div>
 
-                <div className="grid gap-4 md:grid-cols-3">
+                <div className="grid gap-5 md:grid-cols-3 md:gap-6">
                   {results
                     .filter((r) => r.source === "closet")
                     .map((result, index) => (
@@ -283,14 +283,14 @@ export function AIOutfitGenerator() {
 
               {/* Curated Picks */}
               <div>
-                <div className="mb-4 flex items-center justify-between">
+                <div className="mb-5 flex items-center justify-between">
                   <h3 className="text-sm uppercase tracking-wide text-neutral-500">
                     Curated For You
                   </h3>
                   <span className="text-xs text-neutral-400">3 picks</span>
                 </div>
 
-                <div className="grid gap-4 md:grid-cols-3">
+                <div className="grid gap-5 md:grid-cols-3 md:gap-6">
                   {results
                     .filter((r) => r.source === "external")
                     .map((result, index) => (
