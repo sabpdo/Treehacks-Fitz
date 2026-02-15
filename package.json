@@ -6,6 +6,8 @@
   "scripts": {
     "build": "vite build",
     "dev": "vite",
+    "server": "node server.js",
+    "dev:all": "concurrently \"npm run server\" \"npm run dev\"",
     "supabase:deploy": "npx supabase functions deploy segment-outfit-image"
   },
   "dependencies": {

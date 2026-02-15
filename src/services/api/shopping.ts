@@ -56,7 +56,7 @@ export async function searchProducts(query: string): Promise<ScrapedProduct[]> {
 }
 
 /**
- * Search a specific store using Bright Data Scraper API (trigger endpoint)
+ * Search a specific store using Bright Data Scraper API (synchronous scrape endpoint)
  * Uses discovery mode with category_url
  */
 async function searchStore(
@@ -74,12 +74,12 @@ async function searchStore(
     // Build search URL for the store
     const searchUrl = buildSearchUrl(storeName, query);
 
-    console.log(`Triggering scrape for ${storeName} with query: ${query}`);
+    console.log(`Scraping ${storeName} with query: ${query}`);
     console.log(`Search URL: ${searchUrl}`);
 
-    // Step 1: Trigger the scraping job via proxy server
-    const triggerResponse = await fetch(
-      `${PROXY_BASE_URL}/api/brightdata/trigger`,
+    // Call the synchronous scrape endpoint via proxy server
+    const scrapeResponse = await fetch(
+      `${PROXY_BASE_URL}/api/brightdata/scrape`,
       {
         method: 'POST',
         headers: {
@@ -92,165 +92,46 @@ async function searchStore(
       }
     );
 
-    if (!triggerResponse.ok) {
-      const errorText = await triggerResponse.text();
-      console.error('Bright Data trigger error:', errorText);
-      throw new Error(`Bright Data API error: ${triggerResponse.status}`);
+    if (!scrapeResponse.ok) {
+      const errorText = await scrapeResponse.text();
+      console.error('Bright Data scrape error:', errorText);
+      throw new Error(`Bright Data API error: ${scrapeResponse.status}`);
     }
 
-    const triggerData: any = await triggerResponse.json();
-    console.log('Trigger response:', JSON.stringify(triggerData, null, 2));
-    
-    const snapshotId = triggerData.snapshot_id || triggerData.snapshotId || triggerData.id;
-    
-    if (!snapshotId) {
-      console.error('No snapshot ID in response:', triggerData);
-      throw new Error('Failed to get snapshot ID from Bright Data');
+    const data: any = await scrapeResponse.json();
+    console.log('Scrape response:', JSON.stringify(data, null, 2));
+
+    // Handle array response (products returned directly)
+    if (Array.isArray(data)) {
+      // Filter out error objects from the array
+      const errors = data.filter((item: any) => item.error || item.status === 'error');
+      const validData = data.filter((item: any) => !item.error && item.status !== 'error');
+      
+      if (errors.length > 0) {
+        console.warn(`⚠️ Found ${errors.length} error(s) in scrape:`, errors);
+      }
+      
+      if (validData.length > 0) {
+        console.log(`✅ Scrape completed! Found ${validData.length} valid items (${errors.length} errors filtered out)`);
+        return parseScrapedData(validData, storeName);
+      } else {
+        console.warn('Scrape returned empty array (no products found)');
+        return [];
+      }
     }
 
-    console.log(`Scraping job triggered, snapshot ID: ${snapshotId}`);
+    // Handle error response
+    if (data.error) {
+      console.error('Scrape error:', data.error);
+      return [];
+    }
 
-    // Step 2: Poll for results
-    const products = await pollForResults(snapshotId, storeName);
-
-    return products;
+    console.warn('Unexpected response format:', typeof data);
+    return [];
   } catch (error) {
     console.error(`Error scraping ${storeName}:`, error);
     return [];
   }
-}
-
-/**
- * Poll for scraping results using snapshot ID
- */
-async function pollForResults(
-  snapshotId: string,
-  storeName: 'H&M' | 'Zara' | 'Uniqlo',
-  maxAttempts: number = 30,
-  delayMs: number = 3000
-): Promise<ScrapedProduct[]> {
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    try {
-      console.log(`Polling for results (attempt ${attempt + 1}/${maxAttempts})...`);
-
-      // First check progress to see if snapshot is ready
-      const progressResponse = await fetch(
-        `${PROXY_BASE_URL}/api/brightdata/progress/${snapshotId}`,
-        {
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        }
-      );
-
-      if (progressResponse.ok) {
-        const progressData: any = await progressResponse.json();
-        console.log('Progress check:', JSON.stringify(progressData, null, 2));
-        
-        // If not ready yet, wait and continue
-        if (progressData.status && progressData.status !== 'ready') {
-          const waitTime = progressData.message?.includes('30s') ? 30000 : delayMs;
-          console.log(`Status: ${progressData.status}${progressData.message ? ` - ${progressData.message}` : ''}, waiting ${waitTime/1000}s...`);
-          await new Promise(resolve => setTimeout(resolve, waitTime));
-          continue;
-        }
-      }
-
-      // Now download the snapshot data
-      const response = await fetch(
-        `${PROXY_BASE_URL}/api/brightdata/snapshot/${snapshotId}`,
-        {
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        }
-      );
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error(`Snapshot API error: ${response.status}`, errorText);
-        await new Promise(resolve => setTimeout(resolve, delayMs));
-        continue;
-      }
-
-      const data: any = await response.json();
-      console.log('Snapshot download response:', JSON.stringify(data, null, 2));
-
-      // According to Bright Data docs, the snapshot endpoint returns the data array directly when ready
-      // Handle array response (data is ready)
-      if (Array.isArray(data)) {
-        // Filter out error objects from the array
-        const errors = data.filter((item: any) => item.error || item.status === 'error');
-        const validData = data.filter((item: any) => !item.error && item.status !== 'error');
-        
-        if (errors.length > 0) {
-          console.warn(`⚠️ Found ${errors.length} error(s) in snapshot:`, errors);
-        }
-        
-        if (validData.length > 0) {
-          console.log(`✅ Results ready! Found ${validData.length} valid items (${errors.length} errors filtered out)`);
-          console.log('First item sample:', JSON.stringify(validData[0], null, 2));
-          return parseScrapedData(validData, storeName);
-        } else {
-          // Empty or all errors
-          if (errors.length > 0) {
-            console.error('❌ Snapshot contains only errors:', errors);
-            console.error('This might indicate issues with the scraping configuration or the search URL.');
-          } else {
-            console.warn('Snapshot is ready but returned empty array (no products found)');
-          }
-          return [];
-        }
-      }
-
-      // Handle object format (status response or error)
-      if (data && typeof data === 'object' && !Array.isArray(data)) {
-        // If status is ready, try to find data in the response
-        if (data.status === 'ready') {
-          let productsData: any[] | null = null;
-          
-          if (data.data && Array.isArray(data.data)) {
-            productsData = data.data;
-          } else if (data.results && Array.isArray(data.results)) {
-            productsData = data.results;
-          } else if (data.items && Array.isArray(data.items)) {
-            productsData = data.items;
-          }
-          
-          if (productsData && productsData.length > 0) {
-            console.log(`✅ Results ready! Found ${productsData.length} items`);
-            return parseScrapedData(productsData, storeName);
-          } else {
-            console.warn('Status is ready but no data found in response');
-            return [];
-          }
-        }
-        
-        // Handle various "still processing" statuses
-        if (data.status === 'running' || data.status === 'processing' || data.status === 'pending') {
-          const waitTime = data.message?.includes('30s') ? 30000 : delayMs;
-          console.log(`Status: ${data.status}${data.message ? ` - ${data.message}` : ''}, waiting ${waitTime/1000}s...`);
-          await new Promise(resolve => setTimeout(resolve, waitTime));
-          continue;
-        }
-
-        if (data.status === 'failed' || data.status === 'error') {
-          console.error('Scraping job failed:', data);
-          return [];
-        }
-      }
-
-      // Unexpected format - wait and retry
-      console.log(`Unexpected response format, waiting before retry:`, typeof data);
-      await new Promise(resolve => setTimeout(resolve, delayMs));
-    } catch (error) {
-      console.error('Error polling for results:', error);
-      await new Promise(resolve => setTimeout(resolve, delayMs));
-    }
-  }
-
-  console.warn('Timeout waiting for scraping results');
-  return [];
 }
 
 /**
