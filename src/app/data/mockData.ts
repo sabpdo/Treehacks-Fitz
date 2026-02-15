@@ -430,6 +430,9 @@ export interface OOTDPost {
   commentCount: number;
   likedByUserIds: string[];
   compatibilityScore: number;
+  /** For "Fits That Align" insight text (from compatibility calc) */
+  compatibilityMatchingVibes?: string[];
+  compatibilityMatchingColors?: string[];
   aiInsight: string;
   /** Tagged items from capture flow (label + category) */
   tags?: OOTDPostTag[];

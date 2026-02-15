@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { mockClosetItems, type ClosetItem, currentUserProfile } from "../data/mockData";
 import { useAppStore } from "../context/AppStore";
 import { getCurrentProfile, getClosetItems, createClosetItem, updateClosetItem, deleteClosetItem, uploadImage, getClosetItem } from "../../services/api";
-import { analyzeClothingImage, getPairingDescriptionsAndRanking, getThingsToBuySuggestions, type PairingResultItem } from "../../services/openai";
+import { analyzeClothingImage, getPairingDescriptionsAndRanking, getThingsToBuySuggestions, looksLikeShoppingUrl, type PairingResultItem } from "../../services/openai";
 import { apiClosetItemToUI } from "../../lib/adapters";
 import { compressImage } from "../../services/api/storage";
 import { startRankingSession } from "../../services/api/ranking";
@@ -188,6 +188,7 @@ export function Closet() {
     silhouette: "" as Silhouette | "",
     subcategory: "",
     preferenceTier: "like" as PreferenceTier | "",
+    shoppingLink: "",
   });
   const { isUsingApi, currentUserId, getUser } = useAppStore();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -424,7 +425,7 @@ export function Closet() {
     <div className="min-h-screen bg-[#FAFAF8]">
       {/* Header */}
       <header className="sticky top-0 z-30 border-b border-neutral-200/60 bg-white/90 backdrop-blur-xl">
-        <div className="mx-auto max-w-6xl px-6 py-4">
+        <div className="mx-auto max-w-6xl px-6 py-4 md:px-8 md:py-5">
           <div className="flex items-center justify-between">
             <h1 className="text-base tracking-tight text-neutral-900">My Closet</h1>
             <div className="flex items-center gap-2">
@@ -451,9 +452,9 @@ export function Closet() {
         </div>
       </header>
 
-      <div className="mx-auto max-w-6xl px-6 py-6">
+      <div className="mx-auto max-w-6xl px-6 py-8 md:px-8 md:py-10">
         {/* Dashboard Overview */}
-        <div className="mb-6 overflow-hidden rounded-2xl border border-neutral-200/60 bg-white">
+        <div className="mb-8 overflow-hidden rounded-2xl border border-neutral-200/60 bg-white">
           <div className="grid gap-px bg-neutral-200/60 md:grid-cols-3">
             {/* Streak */}
             <div className="bg-white p-6">
@@ -533,35 +534,27 @@ export function Closet() {
                           fabric: formData.fabric || undefined,
                           silhouette: formData.silhouette || undefined,
                           subcategory: formData.subcategory || undefined,
+                          shopping_link: formData.shoppingLink?.trim() || undefined,
                         });
 
                         // Convert to UI format and add to list
                         const uiItem = apiClosetItemToUI(newItem);
                         setClosetItems((prev) => [uiItem, ...prev]);
 
-                        // Check if we should start a ranking session
-                        // Trigger when there are 3+ items in same category & preference tier
-                        const sameCategory = closetItems.filter(
-                          (i) => (i as any).category === mapCategoryToUI(newItem.category)
-                        );
-                        const sameTier = sameCategory.filter(
-                          (i) => (i as any).preferenceTier === newItem.preference_tier
-                        );
-
-                        if (sameTier.length >= 2) {
-                          // Start ranking session (new item + at least 2 existing = 3 total)
-                          try {
-                            const sessionData = await startRankingSession(
-                              newItem.id,
-                              newItem.category
-                            );
+                        // Launch ranking for the new item when there are comparisons available
+                        try {
+                          const sessionData = await startRankingSession(
+                            newItem.id,
+                            newItem.category
+                          );
+                          if (sessionData.totalComparisons > 0) {
                             setRankingSessionData({
                               ...sessionData,
                               category: newItem.category,
                             });
-                          } catch (err) {
-                            console.warn("Failed to start ranking session:", err);
                           }
+                        } catch (err) {
+                          console.warn("Failed to start ranking session:", err);
                         }
 
                         // Reset form and close dialog
@@ -577,6 +570,7 @@ export function Closet() {
                           silhouette: "" as Silhouette | "",
                           subcategory: "",
                           preferenceTier: "like" as PreferenceTier | "",
+                          shoppingLink: "",
                         });
                         setAddItemOpen(false);
                       } catch (err) {
@@ -644,6 +638,7 @@ export function Closet() {
                                 setAnalyzingImage(true);
                                 try {
                                   const analysis = await analyzeClothingImage(dataUrl);
+                                  const detectedLink = analysis.detected_shopping_link?.trim();
                                   setFormData((prev) => ({
                                     ...prev,
                                     category: analysis.category,
@@ -652,6 +647,7 @@ export function Closet() {
                                     fabric: analysis.fabric || "",
                                     silhouette: (analysis.silhouette || "") as Silhouette | "",
                                     vibeTags: Array.isArray(analysis.vibe_tags) ? (analysis.vibe_tags as VibeTag[]) : [],
+                                    ...(looksLikeShoppingUrl(detectedLink) ? { shoppingLink: detectedLink! } : {}),
                                   }));
                                   setAddItemError(null);
                                 } catch (err) {
@@ -836,6 +832,39 @@ export function Closet() {
                       />
                     </div>
 
+                    {/* Shopping link */}
+                    <div className="space-y-2">
+                      <Label htmlFor="shoppingLink">Shopping link</Label>
+                      <div className="flex gap-2">
+                        <Input
+                          id="shoppingLink"
+                          type="url"
+                          value={formData.shoppingLink}
+                          onChange={(e) => setFormData((prev) => ({ ...prev, shoppingLink: e.target.value }))}
+                          placeholder="https://..."
+                          className="flex-1"
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="shrink-0"
+                          onClick={async () => {
+                            try {
+                              const text = await navigator.clipboard.readText();
+                              if (looksLikeShoppingUrl(text))
+                                setFormData((prev) => ({ ...prev, shoppingLink: text.trim() }));
+                            } catch {
+                              // clipboard permission denied or unsupported
+                            }
+                          }}
+                        >
+                          Paste
+                        </Button>
+                      </div>
+                      <p className="text-[10px] text-neutral-400">Optional. Auto-filled if we detect a link in the image; or paste from clipboard.</p>
+                    </div>
+
                     {/* Vibe Tags */}
                     <div className="space-y-2">
                       <Label>Vibe Tags</Label>
@@ -870,33 +899,30 @@ export function Closet() {
                         <button
                           type="button"
                           onClick={() => setFormData((prev) => ({ ...prev, preferenceTier: "dont_like" }))}
-                          className={`flex-1 rounded-xl px-4 py-3 text-sm transition-all ${
-                            formData.preferenceTier === "dont_like"
-                              ? "bg-red-100 border-2 border-red-300 text-red-700 font-medium"
-                              : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
-                          }`}
+                          className={`flex-1 rounded-xl px-4 py-3 text-sm transition-all ${formData.preferenceTier === "dont_like"
+                            ? "bg-red-100 border-2 border-red-300 text-red-700 font-medium"
+                            : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
+                            }`}
                         >
                           😕 I don't like it
                         </button>
                         <button
                           type="button"
                           onClick={() => setFormData((prev) => ({ ...prev, preferenceTier: "like" }))}
-                          className={`flex-1 rounded-xl px-4 py-3 text-sm transition-all ${
-                            formData.preferenceTier === "like"
-                              ? "bg-yellow-100 border-2 border-yellow-300 text-yellow-700 font-medium"
-                              : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
-                          }`}
+                          className={`flex-1 rounded-xl px-4 py-3 text-sm transition-all ${formData.preferenceTier === "like"
+                            ? "bg-yellow-100 border-2 border-yellow-300 text-yellow-700 font-medium"
+                            : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
+                            }`}
                         >
                           🙂 I like it
                         </button>
                         <button
                           type="button"
                           onClick={() => setFormData((prev) => ({ ...prev, preferenceTier: "love" }))}
-                          className={`flex-1 rounded-xl px-4 py-3 text-sm transition-all ${
-                            formData.preferenceTier === "love"
-                              ? "bg-green-100 border-2 border-green-300 text-green-700 font-medium"
-                              : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
-                          }`}
+                          className={`flex-1 rounded-xl px-4 py-3 text-sm transition-all ${formData.preferenceTier === "love"
+                            ? "bg-green-100 border-2 border-green-300 text-green-700 font-medium"
+                            : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
+                            }`}
                         >
                           😍 I love it
                         </button>
@@ -929,6 +955,7 @@ export function Closet() {
                             silhouette: "" as Silhouette | "",
                             subcategory: "",
                             preferenceTier: "like" as PreferenceTier | "",
+                            shoppingLink: "",
                           });
                           setAddItemError(null);
                         }}
@@ -1730,6 +1757,8 @@ export function Closet() {
                   fabric: "",
                   silhouette: "" as Silhouette | "",
                   subcategory: "",
+                  preferenceTier: "like" as PreferenceTier | "",
+                  shoppingLink: "",
                 });
                 setEditItemOpen(false);
               } catch (err) {
@@ -2014,6 +2043,8 @@ export function Closet() {
                     fabric: "",
                     silhouette: "" as Silhouette | "",
                     subcategory: "",
+                    preferenceTier: "like" as PreferenceTier | "",
+                    shoppingLink: "",
                   });
                   setEditItemError(null);
                 }}

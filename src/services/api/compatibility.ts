@@ -111,13 +111,15 @@ export async function calculateFeedCompatibility(posts: Post[]): Promise<Post[]>
     return posts.map(post => ({ ...post, compatibility_score: 0 }));
   }
 
-  // Calculate compatibility for each post
+  // Calculate compatibility for each post (score + breakdown for insights)
   const postsWithScores = await Promise.all(
     posts.map(async (post) => {
       const compatibility = await calculateCompatibilityScore(post, closet);
       return {
         ...post,
         compatibility_score: compatibility.score,
+        compatibility_matching_vibes: compatibility.matching_vibes,
+        compatibility_matching_colors: compatibility.matching_colors,
       };
     })
   );

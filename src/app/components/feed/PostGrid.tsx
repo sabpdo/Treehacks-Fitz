@@ -40,12 +40,17 @@ export function PostGrid({
     );
   }
 
+  const cellClass =
+    columns >= 3
+      ? "w-full max-w-[320px] md:max-w-[300px] lg:max-w-[280px] mx-auto"
+      : "w-full";
+
   return (
     <div
       className={cn(
         "grid gap-3 sm:gap-4 lg:gap-5",
         columns === 2 && "grid-cols-2",
-        columns === 3 && "grid-cols-2 sm:grid-cols-2 md:grid-cols-3",
+        columns === 3 && "grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4",
         columns === 4 && "grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4",
         className
       )}
@@ -64,6 +69,7 @@ export function PostGrid({
           return (
             <motion.div
               key={post.id}
+              className={cellClass}
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{
@@ -76,7 +82,11 @@ export function PostGrid({
             </motion.div>
           );
         }
-        return <div key={post.id}>{card}</div>;
+        return (
+          <div key={post.id} className={cellClass}>
+            {card}
+          </div>
+        );
       })}
     </div>
   );

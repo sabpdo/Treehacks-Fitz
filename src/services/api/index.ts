@@ -8,6 +8,7 @@ export {
   getClosetItemsByCategory,
   getTopRatedItems,
   getItemsByVibe,
+  getSimilarClosetItemsFromAllUsers,
   createClosetItem,
   updateClosetItem,
   deleteClosetItem,
@@ -62,6 +63,12 @@ export {
   getRecommendedItems,
   suggestOutfits,
 } from './compatibility';
+
+// Shopping items (link product URLs to wardrobe items)
+export { linkShoppingItemToWardrobe } from './shoppingItems';
+
+// Google Shopping search (SerpAPI, for "Suggest" link flow)
+export { searchGoogleShopping, type ShoppingSearchResult } from './shoppingSearch';
 
 // Storage API
 export {

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router";
-import { ArrowLeft, X, ChevronDown, ChevronUp, ExternalLink, Check, Plus, ShoppingBag, Sparkles } from "lucide-react";
+import { ArrowLeft, X, Check, Plus, ShoppingBag, Sparkles } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useAppStore } from "../context/AppStore";
 import { formatPostTime, type OutfitItem } from "../data/mockData";
@@ -29,7 +29,6 @@ export function PostDetail() {
   const [commentText, setCommentText] = useState("");
   const [fetchedPost, setFetchedPost] = useState<ReturnType<typeof apiPostToOOTDPost> | null>(null);
   const [loading, setLoading] = useState(!!postId);
-  const [isOutfitBreakdownExpanded, setIsOutfitBreakdownExpanded] = useState(false);
   const [showShopModal, setShowShopModal] = useState(false);
 
   const postFromStore = posts.find((p) => p.id === postId);
@@ -195,52 +194,43 @@ export function PostDetail() {
         </div>
       </header>
 
-      <div className="mx-auto max-w-3xl px-6 py-6">
-        {/* Outfit image */}
-        <div className="mb-6 overflow-hidden rounded-2xl border border-neutral-200/60 bg-white shadow-sm">
-          <div className="relative aspect-[4/5] overflow-hidden bg-neutral-50">
-            <img
-              src={ensurePublicStorageUrl(post.imageUrl)}
-              alt={post.caption}
-              className="h-full w-full object-cover"
-            />
-          </div>
-        </div>
-
-        {/* Caption + vibe */}
-        <div className="mb-4">
-          {post.caption && (
-            <p className="mb-3 text-sm leading-relaxed text-neutral-600">{post.caption}</p>
-          )}
-          {post.vibeTag && (
-            <span className="rounded-full border border-neutral-200 bg-white px-3 py-1 text-xs text-neutral-700">
-              {post.vibeTag}
-            </span>
-          )}
-          {post.aiInsight && (
-            <p className="mt-3 text-xs italic text-neutral-500">{post.aiInsight}</p>
-          )}
-        </div>
-
-        {/* Outfit breakdown: always show section; empty state or list */}
-        <div className="mb-6">
-          <div className="mb-4 flex items-center justify-between">
-            <h3 className="text-xs uppercase tracking-wide text-neutral-500">Outfit Breakdown</h3>
-            {outfitItems.length > 0 && (
-              <button
-                type="button"
-                onClick={() => setIsOutfitBreakdownExpanded(!isOutfitBreakdownExpanded)}
-                className="flex items-center gap-1 text-xs text-neutral-400 hover:text-neutral-900"
-              >
-                {isOutfitBreakdownExpanded ? (
-                  <>Collapse <ChevronUp className="h-3.5 w-3.5" /></>
-                ) : (
-                  <>View Details <ChevronDown className="h-3.5 w-3.5" /></>
+      <div className="mx-auto max-w-2xl px-4 pb-12 sm:px-6">
+        {/* Hero: image + caption in one card */}
+        <article className="mb-8">
+          <div className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-neutral-200/60">
+            <div className="relative aspect-[4/5] overflow-hidden bg-neutral-100">
+              <img
+                src={ensurePublicStorageUrl(post.imageUrl)}
+                alt={post.caption || "Outfit"}
+                className="h-full w-full object-cover"
+              />
+            </div>
+            <div className="px-5 py-4">
+              {post.caption && (
+                <p className="mb-3 text-sm leading-relaxed text-neutral-700">{post.caption}</p>
+              )}
+              <div className="flex flex-wrap items-center gap-2">
+                {post.vibeTag && (
+                  <span className="rounded-full bg-[#8B9B8E]/10 px-3 py-1 text-xs font-medium text-[#5a6b5d]">
+                    {post.vibeTag}
+                  </span>
                 )}
-              </button>
-            )}
+                {post.compatibilityScore != null && post.compatibilityScore > 0 && (
+                  <span className="rounded-full bg-neutral-100 px-3 py-1 text-xs text-neutral-600">
+                    {post.compatibilityScore}% fit
+                  </span>
+                )}
+              </div>
+              {post.aiInsight && (
+                <p className="mt-3 text-xs italic text-neutral-500">{post.aiInsight}</p>
+              )}
+            </div>
           </div>
+        </article>
 
+        {/* Outfit: grid of items */}
+        <section className="mb-8">
+          <h2 className="mb-4 text-sm font-medium text-neutral-900">What they're wearing</h2>
           {outfitItems.length === 0 ? (
             <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-neutral-200 bg-neutral-50/80 py-10 px-6 text-center">
               <p className="text-sm text-neutral-500">Nothing here yet.</p>
@@ -262,134 +252,73 @@ export function PostDetail() {
               )}
             </div>
           ) : (
-            <>
-              {!isOutfitBreakdownExpanded && (
-                <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
-                  {sortedItems.map((oi, idx) => {
-                    const inWardrobe = isOwnPost && (oi as OutfitItem & { closetItemId?: string }).closetItemId;
-                    const Wrapper = inWardrobe
-                      ? ({ children }: { children: React.ReactNode }) => (
-                        <button
-                          type="button"
-                          onClick={() => navigate(`/closet?item=${(oi as OutfitItem & { closetItemId?: string }).closetItemId}`)}
-                          className="flex-shrink-0 text-left"
-                        >
-                          {children}
-                        </button>
-                      )
-                      : ({ children }: { children: React.ReactNode }) => <div className="flex-shrink-0">{children}</div>;
-                    return (
-                      <motion.div
-                        key={oi.id ?? `oi-${idx}`}
-                        whileHover={{ scale: 1.02 }}
-                        whileTap={{ scale: 0.98 }}
-                        className="flex-shrink-0"
-                      >
-                        <Wrapper>
-                          <div className="w-24 overflow-hidden rounded-lg border border-neutral-200/60 bg-white shadow-sm hover:shadow-md hover:border-neutral-300">
-                            <div className="relative aspect-square overflow-hidden bg-neutral-50">
-                              {oi.imageUrl ? (
-                                <img src={ensurePublicStorageUrl(oi.imageUrl)} alt={oi.label} className="h-full w-full object-cover" />
-                              ) : (
-                                <div className="h-full w-full bg-neutral-200" />
-                              )}
-                            </div>
-                            <div className="p-2">
-                              <p className="truncate text-[10px] uppercase tracking-wide text-neutral-400">{oi.type}</p>
-                              <p className="truncate text-xs text-neutral-900">
-                                {oi.brand && oi.brand.toLowerCase() !== "unknown" ? oi.brand : oi.label}
-                              </p>
-                              {inWardrobe && (
-                                <p className="mt-0.5 text-[10px] text-neutral-500">In wardrobe · tap to view</p>
-                              )}
-                            </div>
-                          </div>
-                        </Wrapper>
-                      </motion.div>
-                    );
-                  })}
-                </div>
-              )}
-
-              <AnimatePresence>
-                {isOutfitBreakdownExpanded && (
+            <div className="grid grid-cols-2 gap-3 sm:gap-4">
+              {sortedItems.map((oi, idx) => {
+                const closetId = (oi as OutfitItem & { closetItemId?: string }).closetItemId;
+                const inWardrobe = isOwnPost && closetId;
+                const displayName = oi.brand && oi.brand.toLowerCase() !== "unknown" ? oi.brand : oi.label;
+                return (
                   <motion.div
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: "auto", opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    transition={{ duration: 0.3, ease: "easeInOut" }}
-                    className="overflow-hidden"
+                    key={oi.id ?? `oi-${idx}`}
+                    whileHover={{ y: -2 }}
+                    transition={{ duration: 0.2 }}
+                    className={cn(
+                      "overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-neutral-200/60",
+                      inWardrobe && "cursor-pointer"
+                    )}
+                    role={inWardrobe ? "button" : undefined}
+                    onClick={inWardrobe ? () => navigate(`/closet?item=${closetId}`) : undefined}
+                    onKeyDown={
+                      inWardrobe
+                        ? (e: React.KeyboardEvent) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            navigate(`/closet?item=${closetId}`);
+                          }
+                        }
+                        : undefined
+                    }
+                    tabIndex={inWardrobe ? 0 : undefined}
                   >
-                    <div className="overflow-hidden rounded-xl border border-neutral-200/60 bg-white">
-                      <div className="divide-y divide-neutral-100">
-                        {sortedItems.map((oi, idx) => {
-                          const closetId = (oi as OutfitItem & { closetItemId?: string }).closetItemId;
-                          const inWardrobe = isOwnPost && closetId;
-                          return (
-                            <div
-                              key={oi.id ?? `oi-${idx}`}
-                              className={cn(
-                                "flex w-full items-center gap-3 p-3 text-left",
-                                inWardrobe && "cursor-pointer hover:bg-neutral-50/80"
-                              )}
-                              role={inWardrobe ? "button" : undefined}
-                              onClick={inWardrobe ? () => navigate(`/closet?item=${closetId}`) : undefined}
-                              onKeyDown={
-                                inWardrobe
-                                  ? (e) => {
-                                    if (e.key === "Enter" || e.key === " ") {
-                                      e.preventDefault();
-                                      navigate(`/closet?item=${closetId}`);
-                                    }
-                                  }
-                                  : undefined
-                              }
-                              tabIndex={inWardrobe ? 0 : undefined}
-                            >
-                              {oi.imageUrl ? (
-                                <img
-                                  src={ensurePublicStorageUrl(oi.imageUrl)}
-                                  alt={oi.label}
-                                  className="h-16 w-16 rounded-lg object-cover"
-                                />
-                              ) : (
-                                <div className="h-16 w-16 rounded-lg bg-neutral-200" />
-                              )}
-                              <div className="flex-1 min-w-0">
-                                <p className="text-xs uppercase tracking-wide text-neutral-400">{oi.type}</p>
-                                <p className="text-sm text-neutral-900">{oi.label}</p>
-                                {oi.brand && oi.brand.toLowerCase() !== "unknown" && (
-                                  <p className="text-xs text-neutral-500">{oi.brand}</p>
-                                )}
-                                <div className="mt-2 flex flex-wrap gap-1.5">
-                                  {oi.color && (
-                                    <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] text-neutral-600">{oi.color}</span>
-                                  )}
-                                  {oi.fabric && (
-                                    <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] text-neutral-600">{oi.fabric}</span>
-                                  )}
-                                </div>
-                                {inWardrobe && (
-                                  <p className="mt-2 text-[10px] text-neutral-500">In your wardrobe · tap to view details</p>
-                                )}
-                              </div>
-                              <ExternalLink className="h-3.5 w-3.5 shrink-0 text-neutral-400" />
-                            </div>
-                          );
-                        })}
-                      </div>
+                    <div className="aspect-square overflow-hidden bg-neutral-100">
+                      {oi.imageUrl ? (
+                        <img
+                          src={ensurePublicStorageUrl(oi.imageUrl)}
+                          alt={oi.label}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-neutral-300">
+                          <Sparkles className="h-8 w-8" />
+                        </div>
+                      )}
+                    </div>
+                    <div className="p-3">
+                      <p className="text-[10px] font-medium uppercase tracking-wider text-neutral-400">{oi.type}</p>
+                      <p className="mt-0.5 truncate text-sm font-medium text-neutral-900">{displayName}</p>
+                      {oi.color && <p className="mt-1 text-xs text-neutral-500">{oi.color}</p>}
+                      {inWardrobe && (
+                        <p className="mt-2 inline-flex items-center gap-1 text-[10px] text-[#8B9B8E]">
+                          <Check className="h-3 w-3" />
+                          In your wardrobe
+                        </p>
+                      )}
                     </div>
                   </motion.div>
-                )}
-              </AnimatePresence>
-            </>
+                );
+              })}
+            </div>
           )}
-        </div>
+        </section>
 
-        {/* Compatibility + actions */}
-        <div className="mb-6 flex flex-col gap-4 rounded-xl border border-neutral-200/60 bg-white p-4">
-          <div className="flex items-center justify-between">
-            <Badge variant="accent">{post.compatibilityScore}%</Badge>
+        {/* Actions: like, comment, save + Shop the Look */}
+        <section className="mb-8 rounded-2xl bg-neutral-50/80 p-5">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              {post.compatibilityScore != null && post.compatibilityScore > 0 && (
+                <Badge variant="accent">{post.compatibilityScore}% fit</Badge>
+              )}
+            </div>
             <ActionRow
               isLiked={isLikedState}
               isSaved={isSaved(post.id)}
@@ -397,7 +326,7 @@ export function PostDetail() {
               commentCount={post.commentCount}
               onLike={handleLike}
               onSave={() => toggleSave(post.id)}
-              onComment={() => { }}
+              onComment={() => {}}
             />
           </div>
           {outfitItems.length > 0 && (
@@ -405,22 +334,22 @@ export function PostDetail() {
               type="button"
               whileTap={{ scale: 0.98 }}
               onClick={() => setShowShopModal(true)}
-              className="flex w-full items-center justify-center gap-2 rounded-lg border border-neutral-900 bg-neutral-900 py-2.5 text-sm text-white transition-all hover:bg-neutral-800"
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-neutral-900 py-3 text-sm font-medium text-white transition-colors hover:bg-neutral-800"
             >
               <ShoppingBag className="h-4 w-4" />
               Shop the Look
             </motion.button>
           )}
-        </div>
+          {likedByFriendsCount > 0 && (
+            <p className="mt-3 text-center text-xs text-neutral-400">
+              Liked by {likedByFriendsCount} {likedByFriendsCount === 1 ? "friend" : "friends"}
+            </p>
+          )}
+        </section>
 
-        {likedByFriendsCount > 0 && (
-          <p className="mb-4 text-[11px] text-neutral-400">
-            Liked by {likedByFriendsCount} {likedByFriendsCount === 1 ? "friend" : "friends"}
-          </p>
-        )}
-
-        <div className="border-t border-neutral-200/50 pt-5">
-          <h3 className="mb-3 text-[10px] font-medium uppercase tracking-wider text-neutral-400">Comments</h3>
+        {/* Comments */}
+        <section className="pt-6">
+          <h2 className="mb-4 text-sm font-medium text-neutral-900">Comments</h2>
           <CommentList comments={comments} className="mb-4" />
           <div className="flex gap-2">
             <Input
@@ -428,18 +357,18 @@ export function PostDetail() {
               value={commentText}
               onChange={(e) => setCommentText(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSubmitComment()}
-              className={cn("flex-1 rounded-full border-neutral-200")}
+              className={cn("flex-1 rounded-xl border-neutral-200 bg-white")}
             />
             <Button
               size="sm"
-              className="rounded-full bg-neutral-900 text-white hover:bg-neutral-800"
+              className="shrink-0 rounded-xl bg-neutral-900 px-4 text-white hover:bg-neutral-800"
               onClick={handleSubmitComment}
               disabled={!commentText.trim()}
             >
               Post
             </Button>
           </div>
-        </div>
+        </section>
       </div>
 
       {/* Shop the Look Modal */}

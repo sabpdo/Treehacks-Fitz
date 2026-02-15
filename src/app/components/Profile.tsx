@@ -268,7 +268,7 @@ export function Profile() {
   return (
     <div className="min-h-screen bg-[#FAFAF8]">
       <header className="sticky top-0 z-30 border-b border-neutral-200/60 bg-white/90 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-4xl items-center px-4 py-4">
+        <div className="mx-auto flex max-w-4xl items-center px-4 py-4 sm:px-6 md:py-5">
           <div className="w-9 flex-shrink-0">
             {!isOwnProfile && (
               <button
@@ -308,9 +308,9 @@ export function Profile() {
         </div>
       </header>
 
-      <div className="mx-auto max-w-4xl px-6 py-6">
+      <div className="mx-auto max-w-4xl px-6 py-8 md:px-8 md:py-10">
         {/* Profile header */}
-        <div className="mb-6 overflow-hidden rounded-2xl border border-neutral-200/60 bg-white">
+        <div className="mb-8 overflow-hidden rounded-2xl border border-neutral-200/60 bg-white">
           <div className="p-6">
             <div className="mb-5 flex items-start gap-5">
               {isOwnProfile ? (

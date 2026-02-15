@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { X, Camera, Flame, Check, ChevronDown, Sparkles, Search, Plus, Upload, ChevronRight, GripVertical, ChevronLeft, Trash2 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { mockClosetItems, type OOTDPost, type ClosetItem } from "../data/mockData";
-import { analyzeOutfitImage } from "../../services/openai";
+import { analyzeOutfitImage, getShoppingSearchQueryFromImage, looksLikeShoppingUrl } from "../../services/openai";
 import type { AIImageAnalysis, PostOutfitItem, Category } from "../../types/database";
 import {
   segmentOutfitImage,
@@ -12,11 +12,18 @@ import {
   createPost,
   updateStreak,
   getClosetItems,
+  getClosetItemsByCategory,
+  getSimilarClosetItemsFromAllUsers,
   createClosetItem,
+  searchGoogleShopping,
   type SegmentResult,
 } from "../../services/api";
+import type { ShoppingSearchResult } from "../../services/api/shoppingSearch";
+import { startRankingSession } from "../../services/api/ranking";
 import { apiPostToOOTDPost, apiClosetItemToUI, ensurePublicStorageUrl } from "../../lib/adapters";
 import { useAppStore } from "../context/AppStore";
+import { RankingSession } from "./RankingSession";
+import type { ItemWithRanking } from "../../lib/ranking";
 
 type CaptureStep = "camera" | "scanning" | "tagging" | "confirm";
 type SwapModalView = "select" | "add-new";
@@ -36,8 +43,29 @@ interface DetectedItem {
     id: string;
     brand: string;
     imageUrl: string;
+    /** When set, post will link closet_item_id only if ownerId === currentUserId */
+    ownerId?: string;
   };
   isConfirmed: boolean;
+}
+
+/** Treat "unknown" / empty as no label; use fallback so we never display "Unknown". */
+function normalizeLabel(value: string | undefined | null, fallback: string): string {
+  const v = (value ?? "").trim();
+  if (!v || v.toLowerCase() === "unknown") return fallback;
+  return v;
+}
+
+/** Human-readable fallback label from category/type so we never show "Unknown" or blank. */
+function fallbackLabelFromType(type: string): string {
+  const t = (type || "").toLowerCase();
+  if (t === "top" || t === "tops") return "Top";
+  if (t === "bottom" || t === "bottoms") return "Bottom";
+  if (t === "dress" || t === "skirt") return "Dress";
+  if (t === "jacket" || t === "outerwear") return "Jacket";
+  if (t === "shoes" || t === "shoe") return "Shoes";
+  if (t === "bag" || t === "bags" || t === "accessory" || t === "accessories") return "Accessory";
+  return "Item";
 }
 
 /** Map API category to display type; pass through unknown as-is. */
@@ -66,11 +94,14 @@ function detectedTypeToDbCategory(type: string): Category {
 }
 
 /** Convert detected items to post outfit items (same schema as closet). Never persist "Unknown" as brand. */
-function detectedItemsToPostOutfitItems(detected: DetectedItem[]): PostOutfitItem[] {
+function detectedItemsToPostOutfitItems(detected: DetectedItem[], currentUserId?: string): PostOutfitItem[] {
   return detected.map((di) => {
     const rawBrand = di.closetMatch?.brand ?? null;
     const brand =
       rawBrand && rawBrand.trim().toLowerCase() !== "unknown" ? rawBrand : null;
+    const linkToCloset =
+      di.closetMatch?.id &&
+      (!di.closetMatch.ownerId || di.closetMatch.ownerId === currentUserId);
     return {
       image_url: di.imageUrl || di.closetMatch?.imageUrl || "",
       category: detectedTypeToDbCategory(di.type),
@@ -80,7 +111,7 @@ function detectedItemsToPostOutfitItems(detected: DetectedItem[]): PostOutfitIte
       fabric: di.fabric ?? null,
       silhouette: (di.silhouette as PostOutfitItem["silhouette"]) ?? null,
       vibe_tags: [],
-      ...(di.closetMatch?.id ? { closet_item_id: di.closetMatch.id } : {}),
+      ...(linkToCloset ? { closet_item_id: di.closetMatch!.id } : {}),
     };
   });
 }
@@ -89,11 +120,16 @@ function aiAnalysisToDetectedItems(items: AIImageAnalysis[]): DetectedItem[] {
   return items.map((item, index) => {
     const type = categoryToType(item.category);
     const y = 25 + (index * 25);
+    const rawSub = (item.subcategory ?? "").trim();
+    const rawDesc = item.description?.slice(0, 30)?.trim();
+    const fallback = fallbackLabelFromType(type);
+    const label = normalizeLabel(item.subcategory, normalizeLabel(rawDesc || null, fallback));
+    const safeIdPart = (rawSub && rawSub.toLowerCase() !== "unknown" ? rawSub : `item-${index}`).replace(/\s/g, "-");
     return {
-      id: `item-${index}-${item.subcategory.replace(/\s/g, "-")}`,
+      id: `item-${index}-${safeIdPart}`,
       type,
       position: { x: 50, y: Math.min(y, 85) },
-      label: item.subcategory || item.description?.slice(0, 30) || "Item",
+      label,
       color: item.colors?.[0] ?? "—",
       fabric: item.fabric,
       silhouette: item.silhouette,
@@ -314,11 +350,14 @@ function segmentsToDetectedItems(segments: SegmentResult[]): DetectedItem[] {
   return segments.map((seg, index) => {
     const type = categoryToType(seg.category);
     const y = 25 + (index * 25);
+    const fallback = fallbackLabelFromType(type);
+    const label = normalizeLabel(seg.description, normalizeLabel(seg.category, fallback));
+    const idPart = (normalizeLabel(seg.description, "") || normalizeLabel(seg.category, "") || `seg-${index}`).replace(/\s/g, "-").slice(0, 20);
     return {
-      id: `segment-${index}-${seg.description.replace(/\s/g, "-").slice(0, 20)}`,
+      id: `segment-${index}-${idPart || `seg-${index}`}`,
       type,
       position: { x: 50, y: Math.min(y, 85) },
-      label: seg.description || seg.category || "Item",
+      label,
       color: seg.color?.trim() && seg.color !== "—" ? seg.color : "—",
       fabric: seg.fabric?.trim() || undefined,
       silhouette: seg.silhouette?.trim() || undefined,
@@ -372,6 +411,8 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
   const [step, setStep] = useState<CaptureStep>("camera");
   const [capturedImage, setCapturedImage] = useState<string>("");
   const [selectedPin, setSelectedPin] = useState<string | null>(null);
+  const [similarItemsFromAllWardrobes, setSimilarItemsFromAllWardrobes] = useState<Array<{ item: ClosetItem; ownerId: string }>>([]);
+  const [similarItemsLoading, setSimilarItemsLoading] = useState(false);
   const [draggedItemId, setDraggedItemId] = useState<string | null>(null);
   const [caption, setCaption] = useState("");
   const [detectedItems, setDetectedItems] = useState<DetectedItem[]>([]);
@@ -398,6 +439,7 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
     colors: [] as string[],
     fabric: "",
     silhouette: "",
+    shoppingLink: "",
   });
 
   const ADD_ITEM_BRANDS = [
@@ -442,10 +484,23 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
 
   // Closet items for swap modal (when using API)
   const [closetItemsForSwap, setClosetItemsForSwap] = useState<ClosetItem[]>([]);
+  // Best matches = similar items from all wardrobes (for swap modal)
+  const [swapModalBestMatches, setSwapModalBestMatches] = useState<Array<{ item: ClosetItem; ownerId: string }>>([]);
+  const [swapModalBestMatchesLoading, setSwapModalBestMatchesLoading] = useState(false);
   const [addingToCloset, setAddingToCloset] = useState(false);
+  const [suggestModalOpen, setSuggestModalOpen] = useState(false);
+  const [suggestLoading, setSuggestLoading] = useState(false);
+  const [suggestResults, setSuggestResults] = useState<ShoppingSearchResult[] | null>(null);
+  const [suggestError, setSuggestError] = useState<string | null>(null);
   const [addToClosetError, setAddToClosetError] = useState<string | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
   const scannedImageRef = useRef<string | null>(null);
+  const [ootdRankingSessionData, setOotdRankingSessionData] = useState<{
+    newItem: ItemWithRanking;
+    itemsToCompare: ItemWithRanking[];
+    totalComparisons: number;
+    category: Category;
+  } | null>(null);
 
   // Start camera when on camera step (try back camera first, then front/user for desktop)
   useEffect(() => {
@@ -646,6 +701,70 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
     };
   }, [showSwapModal, isUsingApi, currentUserId]);
 
+  // Fetch best matches (similar items from all wardrobes) when swap modal opens
+  useEffect(() => {
+    if (!showSwapModal || !swappingItemId || !isUsingApi) {
+      setSwapModalBestMatches([]);
+      return;
+    }
+    const detected = detectedItems.find((i) => i.id === swappingItemId);
+    if (!detected) {
+      setSwapModalBestMatches([]);
+      return;
+    }
+    const category = detectedTypeToDbCategory(detected.type);
+    setSwapModalBestMatchesLoading(true);
+    let cancelled = false;
+    getSimilarClosetItemsFromAllUsers(category, 15)
+      .then((rows) => {
+        if (cancelled) return;
+        setSwapModalBestMatches(
+          rows.map((row) => ({ item: apiClosetItemToUI(row), ownerId: row.user_id }))
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setSwapModalBestMatches([]);
+      })
+      .finally(() => {
+        if (!cancelled) setSwapModalBestMatchesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [showSwapModal, swappingItemId, isUsingApi, detectedItems]);
+
+  // Fetch current user's closet items by category when a pin is selected (for "Do you recognize it from your closet?")
+  useEffect(() => {
+    if (!selectedPin || !isUsingApi || !currentUserId) {
+      setSimilarItemsFromAllWardrobes([]);
+      return;
+    }
+    const detected = detectedItems.find((i) => i.id === selectedPin);
+    if (!detected) {
+      setSimilarItemsFromAllWardrobes([]);
+      return;
+    }
+    const category = detectedTypeToDbCategory(detected.type);
+    setSimilarItemsLoading(true);
+    let cancelled = false;
+    getClosetItemsByCategory(currentUserId, category)
+      .then((rows) => {
+        if (cancelled) return;
+        setSimilarItemsFromAllWardrobes(
+          rows.map((row) => ({ item: apiClosetItemToUI(row), ownerId: row.user_id }))
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setSimilarItemsFromAllWardrobes([]);
+      })
+      .finally(() => {
+        if (!cancelled) setSimilarItemsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedPin, isUsingApi, currentUserId, detectedItems]);
+
   /** Map UI closet category (tops, bottoms, …) to DetectedItem type */
   const uiCategoryToType = (cat: string): DetectedItem["type"] => {
     if (cat === "tops") return "top";
@@ -683,6 +802,7 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
             id: closetItem.id,
             brand: closetItem.brand || "Unknown",
             imageUrl: closetItem.imageUrl,
+            ownerId: currentUserId ?? undefined,
           },
           isConfirmed: false,
         },
@@ -700,6 +820,7 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
               id: closetItem.id,
               brand: closetItem.brand || "Unknown",
               imageUrl: closetItem.imageUrl,
+              ownerId: currentUserId ?? undefined,
             },
             label: `${closetItem.color} ${closetItem.category}`,
             color: closetItem.color,
@@ -714,6 +835,58 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
     setSwappingItemId(null);
   };
 
+  /** Select a best-match item from the swap modal (similar items from all wardrobes). */
+  const selectBestMatchItem = (similar: { item: ClosetItem; ownerId: string }) => {
+    if (!swappingItemId) return;
+    const { item, ownerId } = similar;
+    setDetectedItems((items) =>
+      items.map((i) =>
+        i.id === swappingItemId
+          ? {
+            ...i,
+            closetMatch: {
+              id: item.id,
+              brand: item.brand || "Unknown",
+              imageUrl: item.imageUrl,
+              ownerId,
+            },
+            label: item.style || i.label,
+            color: item.color || i.color,
+            fabric: item.fabric ?? i.fabric,
+            silhouette: item.silhouette ?? i.silhouette,
+          }
+          : i
+      )
+    );
+    setShowSwapModal(false);
+    setSwappingItemId(null);
+  };
+
+  /** Match the currently selected pin to a similar item from any wardrobe ("Do you recognize it?"). */
+  const selectSimilarItem = (similar: { item: ClosetItem; ownerId: string }) => {
+    if (!selectedPin) return;
+    const { item, ownerId } = similar;
+    setDetectedItems((items) =>
+      items.map((i) =>
+        i.id === selectedPin
+          ? {
+            ...i,
+            closetMatch: {
+              id: item.id,
+              brand: item.brand || "Unknown",
+              imageUrl: item.imageUrl,
+              ownerId,
+            },
+            label: item.style || i.label,
+            color: item.color || i.color,
+            fabric: item.fabric ?? i.fabric,
+            silhouette: item.silhouette ?? i.silhouette,
+          }
+          : i
+      )
+    );
+  };
+
   /** Open the Add New Item form pre-filled from a detected item (for "Not in Closet" → Add as New Item). */
   const openAddAsNewItem = (item: DetectedItem) => {
     setSwappingItemId(item.id);
@@ -726,6 +899,7 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
       colors: preselectColorsFromDetected(item.color),
       fabric: normalizeDetectedFabric(item.fabric),
       silhouette: normalizeDetectedSilhouette(item.silhouette),
+      shoppingLink: "",
     });
     setSwapModalView("add-new");
     setShowSwapModal(true);
@@ -757,7 +931,7 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
             return;
           }
         }
-        const dbCategory = detectedTypeToDbCategory(newItemData.category || "top");
+        const dbCategory = detectedTypeToDbCategory(newItemData.category || "top") as Category;
         const created = await createClosetItem({
           image_url: imageUrl,
           category: dbCategory,
@@ -766,6 +940,8 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
           colors: newItemData.colors.length > 0 ? newItemData.colors : undefined,
           fabric: newItemData.fabric || undefined,
           silhouette: (newItemData.silhouette as import("../../types/database").Silhouette) || undefined,
+          preference_tier: "like",
+          shopping_link: newItemData.shoppingLink?.trim() || undefined,
         });
         const uiItem = apiClosetItemToUI(created);
         setClosetItemsForSwap((prev) => [uiItem, ...prev]);
@@ -779,6 +955,7 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
                     id: created.id,
                     brand: created.brand || "Unknown",
                     imageUrl: ensurePublicStorageUrl(created.image_url),
+                    ownerId: currentUserId ?? undefined,
                   },
                   label: newItemData.subcategory || item.label,
                   color: newItemData.colors[0] || item.color,
@@ -789,10 +966,24 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
             )
           );
         }
+        setNewItemData({ image: "", category: "", subcategory: "", brand: "", colors: [], fabric: "", silhouette: "", shoppingLink: "" });
+        try {
+          const sessionData = await startRankingSession(created.id, dbCategory);
+          if (sessionData.totalComparisons > 0) {
+            setOotdRankingSessionData({
+              ...sessionData,
+              category: dbCategory,
+            });
+            setSwapModalView("select");
+            setSwappingItemId(null);
+            return;
+          }
+        } catch (_) {
+          /* continue without ranking */
+        }
         setShowSwapModal(false);
         setSwapModalView("select");
         setSwappingItemId(null);
-        setNewItemData({ image: "", category: "", subcategory: "", brand: "", colors: [], fabric: "", silhouette: "" });
       } catch (e) {
         console.error("Add to closet failed:", e);
         setAddToClosetError(e instanceof Error ? e.message : "Failed to add to closet");
@@ -823,7 +1014,7 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
     setShowSwapModal(false);
     setSwapModalView("select");
     setIsAddingNewItem(false);
-    setNewItemData({ image: "", category: "", subcategory: "", brand: "", colors: [], fabric: "", silhouette: "" });
+    setNewItemData({ image: "", category: "", subcategory: "", brand: "", colors: [], fabric: "", silhouette: "", shoppingLink: "" });
   };
 
   /** Remove a tagged item from the list (e.g. wrong detection like a handbag that isn't there). */
@@ -865,7 +1056,7 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
         setPosting(true);
         const file = dataURLToFile(capturedImage, "ootd.jpg");
         const imageUrl = await uploadImage(file);
-        const items = detectedItemsToPostOutfitItems(detectedItems);
+        const items = detectedItemsToPostOutfitItems(detectedItems, currentUserId);
         const apiPost = await createPost({
           image_url: imageUrl,
           caption: caption.trim() || "Outfit of the day",
@@ -926,36 +1117,6 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
     }
 
     return filtered;
-  };
-
-  // Map DetectedItem type (any string) to ClosetItem category for swap modal
-  const typeToCategory: Record<string, string> = {
-    top: "tops",
-    tops: "tops",
-    bottom: "bottoms",
-    bottoms: "bottoms",
-    dress: "bottoms",
-    jacket: "tops",
-    shoes: "shoes",
-    accessory: "accessories",
-    accessories: "accessories",
-    bag: "accessories",
-    handbag: "accessories",
-  };
-
-  // Get AI suggested matches (mock - would use actual AI in production)
-  const getAISuggestedMatches = () => {
-    const swappingItem = detectedItems.find((item) => item.id === swappingItemId);
-    if (!swappingItem) return [];
-
-    const category = typeToCategory[swappingItem.type] ?? swappingItem.type;
-    return mockClosetItems
-      .filter((item) => item.category === category)
-      .slice(0, 3)
-      .map((item, index) => ({
-        ...item,
-        compatibility: 95 - index * 8,
-      }));
   };
 
   const allItemsConfirmed = detectedItems.every((item) => item.isConfirmed);
@@ -1293,12 +1454,20 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
                             <div className="flex items-center gap-3 rounded-xl border border-neutral-200/60 bg-neutral-50 p-3">
                               <img
                                 src={item.closetMatch.imageUrl}
-                                alt={item.closetMatch.brand}
+                                alt={item.closetMatch.brand || item.label}
                                 className="h-16 w-16 rounded-lg object-cover"
                               />
                               <div className="flex-1 min-w-0">
-                                <p className="mb-0.5 text-sm font-medium text-neutral-900">{item.closetMatch.brand}</p>
-                                <p className="text-xs text-neutral-500">{item.label}</p>
+                                <p className="mb-0.5 text-sm font-medium text-neutral-900">
+                                  {item.closetMatch.brand?.trim() && item.closetMatch.brand.toLowerCase() !== "unknown"
+                                    ? item.closetMatch.brand
+                                    : item.label}
+                                </p>
+                                <p className="text-xs text-neutral-500">
+                                  {item.closetMatch.brand?.trim() && item.closetMatch.brand.toLowerCase() !== "unknown"
+                                    ? item.label
+                                    : "From your closet"}
+                                </p>
                               </div>
                               {item.isConfirmed && (
                                 <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#8B9B8E]">
@@ -1307,9 +1476,47 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
                               )}
                             </div>
                           </div>
-                        ) : (
+                        ) : null}
+
+                        <div className="mb-5">
+                          <p className="mb-3 text-xs uppercase tracking-wide text-neutral-500">
+                            Do you recognize it from your closet?
+                          </p>
+                          {similarItemsLoading ? (
+                            <div className="flex items-center justify-center gap-2 rounded-xl border border-neutral-200 bg-neutral-50 py-6">
+                              <div className="h-4 w-4 animate-spin rounded-full border-2 border-neutral-300 border-t-[#8B9B8E]" />
+                              <span className="text-xs text-neutral-500">Loading your closet…</span>
+                            </div>
+                          ) : similarItemsFromAllWardrobes.length > 0 ? (
+                            <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+                              {similarItemsFromAllWardrobes.map(({ item: similar, ownerId: owner }) => (
+                                <button
+                                  key={similar.id}
+                                  type="button"
+                                  onClick={() => selectSimilarItem({ item: similar, ownerId: owner })}
+                                  className="flex shrink-0 flex-col items-center gap-1.5 rounded-xl border border-neutral-200 bg-white p-2 text-left transition-all hover:border-[#8B9B8E] hover:bg-neutral-50"
+                                >
+                                  <img
+                                    src={ensurePublicStorageUrl(similar.imageUrl)}
+                                    alt={similar.brand || similar.style}
+                                    className="h-14 w-14 rounded-lg object-cover"
+                                  />
+                                  <span className="max-w-[72px] truncate text-xs text-neutral-700">
+                                    {similar.brand || similar.style || "Item"}
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="rounded-xl border border-neutral-200 bg-neutral-50 py-4 text-center text-xs text-neutral-500">
+                              No items in your closet in this category.
+                            </p>
+                          )}
+                        </div>
+
+                        {!item.closetMatch && (
                           <div className="mb-5">
-                            <p className="mb-3 text-xs uppercase tracking-wide text-neutral-500">Not in Closet</p>
+                            <p className="mb-3 text-sm font-medium text-neutral-700">No?</p>
                             <button
                               type="button"
                               onClick={() => openAddAsNewItem(item)}
@@ -1438,13 +1645,15 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
                     {item.closetMatch && (
                       <img
                         src={item.closetMatch.imageUrl}
-                        alt={item.closetMatch.brand}
+                        alt={item.closetMatch.brand && item.closetMatch.brand.toLowerCase() !== "unknown" ? item.closetMatch.brand : item.label}
                         className="h-12 w-12 rounded-lg object-cover"
                       />
                     )}
                     <div className="flex-1">
                       <p className="mb-0.5 text-sm text-neutral-900">
-                        {item.closetMatch?.brand || item.label}
+                        {item.closetMatch?.brand?.trim() && item.closetMatch.brand.toLowerCase() !== "unknown"
+                          ? item.closetMatch.brand
+                          : item.label}
                       </p>
                       <p className="text-xs capitalize text-neutral-500">
                         {item.type}
@@ -1563,54 +1772,56 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
                         </p>
                       </div>
 
-                      <div className="space-y-2">
-                        {getAISuggestedMatches().map((item) => (
-                          <motion.button
-                            key={item.id}
-                            onClick={() => selectSwapItem(item.id)}
-                            whileHover={{ scale: 1.01 }}
-                            whileTap={{ scale: 0.99 }}
-                            className="flex w-full items-center gap-3 rounded-xl border border-neutral-200/60 bg-white p-3 text-left shadow-sm transition-all hover:shadow-md"
-                          >
-                            <img
-                              src={item.imageUrl}
-                              alt={item.brand || "Item"}
-                              className="h-16 w-16 rounded-lg object-cover"
-                            />
-                            <div className="flex-1">
-                              <p className="mb-1 text-sm text-neutral-900">
-                                {item.brand || "Unknown Brand"}
-                              </p>
-                              <div className="mb-1.5 flex items-center gap-2">
-                                <div
-                                  className="h-2.5 w-2.5 rounded-full border border-neutral-300"
-                                  style={{
-                                    backgroundColor: getColorStyle(item.color),
-                                  }}
-                                />
-                                <span className="text-xs text-neutral-500">
-                                  {item.color}
-                                </span>
-                                {item.silhouette && (
-                                  <>
-                                    <span className="text-neutral-300">·</span>
-                                    <span className="text-xs text-neutral-500">
-                                      {item.silhouette}
-                                    </span>
-                                  </>
+                      {swapModalBestMatchesLoading ? (
+                        <div className="flex items-center justify-center gap-2 rounded-xl border border-neutral-200 bg-neutral-50 py-8">
+                          <div className="h-4 w-4 animate-spin rounded-full border-2 border-neutral-300 border-t-[#8B9B8E]" />
+                          <span className="text-xs text-neutral-500">Loading similar items…</span>
+                        </div>
+                      ) : swapModalBestMatches.length > 0 ? (
+                        <div className="space-y-2">
+                          {swapModalBestMatches.map(({ item, ownerId }) => (
+                            <motion.button
+                              key={`${item.id}-${ownerId}`}
+                              onClick={() => selectBestMatchItem({ item, ownerId })}
+                              whileHover={{ scale: 1.01 }}
+                              whileTap={{ scale: 0.99 }}
+                              className="flex w-full items-center gap-3 rounded-xl border border-neutral-200/60 bg-white p-3 text-left shadow-sm transition-all hover:shadow-md"
+                            >
+                              <img
+                                src={ensurePublicStorageUrl(item.imageUrl)}
+                                alt={item.brand || item.style || "Item"}
+                                className="h-16 w-16 rounded-lg object-cover"
+                              />
+                              <div className="flex-1 min-w-0">
+                                <p className="mb-1 truncate text-sm text-neutral-900">
+                                  {item.brand && item.brand.toLowerCase() !== "unknown" ? item.brand : item.style || item.color || "Item"}
+                                </p>
+                                <div className="flex items-center gap-2">
+                                  <div
+                                    className="h-2.5 w-2.5 shrink-0 rounded-full border border-neutral-300"
+                                    style={{ backgroundColor: getColorStyle(item.color) }}
+                                  />
+                                  <span className="text-xs text-neutral-500">{item.color}</span>
+                                  {item.silhouette && (
+                                    <>
+                                      <span className="text-neutral-300">·</span>
+                                      <span className="truncate text-xs text-neutral-500">{item.silhouette}</span>
+                                    </>
+                                  )}
+                                </div>
+                                {ownerId === currentUserId && (
+                                  <span className="mt-1 inline-block text-[10px] text-[#8B9B8E]">From your closet</span>
                                 )}
                               </div>
-                              <div className="flex w-fit items-center gap-1.5 rounded-full bg-[#8B9B8E]/10 px-2 py-0.5">
-                                <div className="h-1 w-1 rounded-full bg-[#8B9B8E]" />
-                                <span className="text-[10px] text-[#8B9B8E]">
-                                  {item.compatibility}% compatible
-                                </span>
-                              </div>
-                            </div>
-                            <ChevronRight className="h-4 w-4 text-neutral-400" />
-                          </motion.button>
-                        ))}
-                      </div>
+                              <ChevronRight className="h-4 w-4 shrink-0 text-neutral-400" />
+                            </motion.button>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="rounded-xl border border-neutral-200 bg-neutral-50 py-4 text-center text-xs text-neutral-500">
+                          No similar items from other wardrobes right now.
+                        </p>
+                      )}
                     </div>
 
                     <div>
@@ -1933,6 +2144,65 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
                           className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm outline-none transition-all focus:border-neutral-900"
                         />
                       </div>
+
+                      <div>
+                        <label className="mb-2 block text-xs uppercase tracking-wide text-neutral-500">
+                          Shopping link
+                        </label>
+                        <div className="flex gap-2">
+                          <input
+                            type="url"
+                            value={newItemData.shoppingLink}
+                            onChange={(e) =>
+                              setNewItemData({ ...newItemData, shoppingLink: e.target.value })
+                            }
+                            placeholder="https://..."
+                            className="flex-1 rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm outline-none transition-all focus:border-neutral-900"
+                          />
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (!newItemData.image) return;
+                              setSuggestModalOpen(true);
+                              setSuggestLoading(true);
+                              setSuggestResults(null);
+                              setSuggestError(null);
+                              try {
+                                const query = await getShoppingSearchQueryFromImage(newItemData.image);
+                                const results = await searchGoogleShopping(query);
+                                setSuggestResults(results);
+                              } catch (e) {
+                                const msg = e instanceof Error ? e.message : "Search failed";
+                                setSuggestError(msg.includes("404") ? "Suggest needs a SerpAPI key. Add VITE_SERPAPI_KEY to .env (see .env.example)." : msg);
+                              } finally {
+                                setSuggestLoading(false);
+                              }
+                            }}
+                            disabled={!newItemData.image}
+                            className="shrink-0 rounded-xl border border-neutral-200 bg-white px-3 py-2.5 text-xs text-neutral-600 hover:bg-neutral-50 disabled:opacity-50"
+                            title="Search for similar items and pick a link"
+                          >
+                            Suggest
+                          </button>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                const text = await navigator.clipboard.readText();
+                                if (looksLikeShoppingUrl(text))
+                                  setNewItemData((prev) => ({ ...prev, shoppingLink: text.trim() }));
+                              } catch {
+                                // clipboard permission denied or unsupported
+                              }
+                            }}
+                            className="shrink-0 rounded-xl border border-neutral-200 bg-white px-3 py-2.5 text-xs text-neutral-600 hover:bg-neutral-50"
+                            title="Paste link from clipboard"
+                          >
+                            Paste
+                          </button>
+                        </div>
+                        <p className="mt-1 text-[10px] text-neutral-400">Optional. Suggest searches for similar items; or paste from clipboard.</p>
+                      </div>
                     </div>
                   </div>
 
@@ -1955,6 +2225,100 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
           </>
         )}
       </AnimatePresence>
+
+      {/* Ranking session after adding new item from OOTD */}
+      {ootdRankingSessionData && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4">
+          <div className="relative max-h-[90vh] w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <RankingSession
+              newItem={ootdRankingSessionData.newItem}
+              itemsToCompare={ootdRankingSessionData.itemsToCompare}
+              totalComparisons={ootdRankingSessionData.totalComparisons}
+              category={ootdRankingSessionData.category}
+              onComplete={() => {
+                setOotdRankingSessionData(null);
+                setShowSwapModal(false);
+                setSwappingItemId(null);
+              }}
+              onSkip={() => {
+                setOotdRankingSessionData(null);
+                setShowSwapModal(false);
+                setSwappingItemId(null);
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Suggest shopping link modal: Google Shopping results to pick from */}
+      {suggestModalOpen && (
+        <div className="fixed inset-0 z-[75] flex items-center justify-center bg-black/50 p-4">
+          <div className="relative max-h-[85vh] w-full max-w-2xl overflow-hidden rounded-2xl bg-white shadow-2xl flex flex-col">
+            <div className="flex items-center justify-between border-b border-neutral-200 px-4 py-3">
+              <div>
+                <h3 className="text-sm font-semibold text-neutral-900">Suggest a link</h3>
+                <p className="text-[10px] text-neutral-400 mt-0.5">Uses 1 SerpAPI search · Up to 5 results</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setSuggestModalOpen(false);
+                  setSuggestResults(null);
+                  setSuggestError(null);
+                }}
+                className="rounded-full p-1.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600"
+                aria-label="Close"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4">
+              {suggestLoading && (
+                <div className="flex flex-col items-center justify-center py-12 text-neutral-500">
+                  <div className="h-8 w-8 animate-spin rounded-full border-2 border-neutral-300 border-t-neutral-900 mb-3" />
+                  <p className="text-sm">Searching for similar items…</p>
+                </div>
+              )}
+              {suggestError && !suggestLoading && (
+                <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{suggestError}</p>
+              )}
+              {suggestResults && suggestResults.length === 0 && !suggestLoading && (
+                <p className="py-6 text-center text-sm text-neutral-500">No results found. Try pasting a link instead.</p>
+              )}
+              {suggestResults && suggestResults.length > 0 && (
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  {suggestResults.map((r, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => {
+                        setNewItemData((prev) => ({ ...prev, shoppingLink: r.product_link }));
+                        setSuggestModalOpen(false);
+                        setSuggestResults(null);
+                      }}
+                      className="flex flex-col rounded-xl border border-neutral-200 bg-white text-left shadow-sm transition hover:border-neutral-400 hover:shadow-md"
+                    >
+                      <div className="aspect-square w-full overflow-hidden rounded-t-xl bg-neutral-100">
+                        {r.thumbnail ? (
+                          <img src={r.thumbnail} alt="" className="h-full w-full object-cover" />
+                        ) : (
+                          <div className="flex h-full items-center justify-center text-neutral-400 text-xs">No image</div>
+                        )}
+                      </div>
+                      <div className="flex flex-1 flex-col gap-0.5 p-2">
+                        <span className="line-clamp-2 text-xs font-medium text-neutral-900">{r.title || "Product"}</span>
+                        {r.price && <span className="text-[10px] text-neutral-500">{r.price}</span>}
+                        {r.source && <span className="text-[10px] text-neutral-400">{r.source}</span>}
+                        <span className="mt-1 text-[10px] text-neutral-600 underline">Use this link</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       <style>{`
         .scrollbar-hide::-webkit-scrollbar {

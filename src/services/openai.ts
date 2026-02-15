@@ -35,6 +35,7 @@ export async function analyzeClothingImage(imageUrl: string): Promise<AIImageAna
                 "vibe_tags": array of 1-2 occasion tags from ["date night", "casual", "workout", "office"],
                 "description": brief description of the item (1-2 sentences),
                 "short_label": a 3-8 word product-style name for display (e.g. "Beige leather crossbody bag", "High-waisted dark wash jeans"). Do NOT use generic words like "bottoms" or "accessories"—use the specific type and details.
+                "detected_shopping_link": If you see any visible product URL, webpage link, or shopping link in the image (e.g. on a tag, label, receipt, or a screenshot of a product page), output the exact full URL as a string. Otherwise use null. Only include real URLs (http/https); do not make up or guess URLs.
               }
 
               CATEGORY RULES:
@@ -97,6 +98,78 @@ export async function analyzeClothingImage(imageUrl: string): Promise<AIImageAna
   }
 }
 
+/** Heuristic: string looks like a product/shopping URL we can store */
+export function looksLikeShoppingUrl(s: string | null | undefined): boolean {
+  if (!s || typeof s !== 'string') return false;
+  const t = s.trim();
+  return t.length > 10 && (t.startsWith('http://') || t.startsWith('https://'));
+}
+
+/**
+ * Try to extract a single shopping/product URL visible in an image (e.g. screenshot, tag).
+ * Use when you only need the link and don't want to run full clothing analysis.
+ */
+export async function extractShoppingLinkFromImage(imageUrl: string): Promise<string | null> {
+  if (!OPENAI_ENABLED || !openai) {
+    return null;
+  }
+  try {
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      messages: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'text',
+              text: 'Look at this image. If you see any visible URL or link that looks like a product page, shopping page, or store link (e.g. https://...), respond with ONLY that exact URL, nothing else. If you see no such link, respond with exactly: NONE',
+            },
+            { type: 'image_url', image_url: { url: imageUrl } },
+          ],
+        },
+      ],
+      max_tokens: 200,
+    });
+    const raw = (response.choices[0]?.message?.content ?? '').trim();
+    if (!raw || raw.toUpperCase() === 'NONE') return null;
+    // Model might return URL with backticks or extra text
+    const urlMatch = raw.match(/https?:\/\/[^\s<>"{}|\\^`[\]]+/i);
+    const url = urlMatch ? urlMatch[0] : raw;
+    return looksLikeShoppingUrl(url) ? url : null;
+  } catch (err) {
+    console.warn('extractShoppingLinkFromImage failed:', err);
+    return null;
+  }
+}
+
+/**
+ * Generate a short Google Shopping search query from an item image (e.g. "women's black leather jacket").
+ * Used to power the "Suggest" shopping link flow.
+ */
+export async function getShoppingSearchQueryFromImage(imageUrl: string): Promise<string> {
+  if (!OPENAI_ENABLED || !openai) {
+    throw new Error('OpenAI API is not configured. Please add VITE_OPENAI_API_KEY to your .env file.');
+  }
+  const response = await openai.chat.completions.create({
+    model: 'gpt-4o',
+    messages: [
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'text',
+            text: 'Look at this clothing/item image. Reply with a single short phrase (3–8 words) that would work well as a Google Shopping search query to find similar products to buy. Examples: "women black leather jacket", "high waisted blue jeans", "white leather sneakers". No quotes, no punctuation, just the search words.',
+          },
+          { type: 'image_url', image_url: { url: imageUrl } },
+        ],
+      },
+    ],
+    max_tokens: 60,
+  });
+  const raw = (response.choices[0]?.message?.content ?? '').trim();
+  return raw || 'clothing';
+}
+
 export async function analyzeOutfitImage(imageUrl: string): Promise<{
   items: AIImageAnalysis[];
   overall_vibe: VibeTag[];
@@ -135,6 +208,7 @@ export async function analyzeOutfitImage(imageUrl: string): Promise<{
               - If photo shows jacket + pants, create 2 items (one "jackets_outerwear", one "pants")
               - If photo shows shirt + skirt + shoes, create 3 items
               - Only include items that are CLEARLY visible
+              - Always use a specific subcategory and description for each item (e.g. "t-shirt", "high-waisted jeans", "white sneakers"). Do NOT use "unknown" for subcategory or description.
 
               CATEGORY RULES:
               - "shirts" = all tops, t-shirts, blouses, button-ups, tank tops, crop tops
