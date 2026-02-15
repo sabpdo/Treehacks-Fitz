@@ -5,15 +5,25 @@
 -- =====================================================
 -- CLOSET_ITEMS: ranking and extraction columns
 -- =====================================================
+
+-- Create preference_tier enum type if it doesn't exist
+DO $$ BEGIN
+  CREATE TYPE preference_tier AS ENUM ('dont_like', 'like', 'love');
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+
 ALTER TABLE closet_items
   ADD COLUMN IF NOT EXISTS rating DECIMAL DEFAULT 0,
   ADD COLUMN IF NOT EXISTS elo_rating DECIMAL DEFAULT 1500,
+  ADD COLUMN IF NOT EXISTS preference_tier preference_tier DEFAULT 'like',
   ADD COLUMN IF NOT EXISTS source_post_id UUID REFERENCES posts(id) ON DELETE SET NULL,
   ADD COLUMN IF NOT EXISTS extraction_source TEXT;
 
 -- Backfill elo_rating for rows that have NULL (e.g. created before column existed)
 UPDATE closet_items SET elo_rating = 1500 WHERE elo_rating IS NULL;
 UPDATE closet_items SET rating = 0 WHERE rating IS NULL;
+UPDATE closet_items SET preference_tier = 'like' WHERE preference_tier IS NULL;
 
 -- =====================================================
 -- POSTS: segmentation columns (for extract-ootd-items) + tags (OOTDCapture)
