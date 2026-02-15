@@ -171,7 +171,13 @@ export async function analyzeOutfitImage(imageUrl: string): Promise<{
     const jsonString = jsonMatch ? jsonMatch[1] : content;
 
     return JSON.parse(jsonString);
-  } catch (error) {
+  } catch (error: unknown) {
+    const err = error as { status?: number; message?: string };
+    if (err?.status === 429 || (typeof err?.message === 'string' && err.message.includes('429'))) {
+      const msg = 'Rate limit reached. Please wait a minute and try again, or add a payment method at platform.openai.com for higher limits.';
+      console.warn(msg);
+      throw new Error(msg);
+    }
     console.error('Error analyzing outfit with OpenAI:', error);
     throw error;
   }

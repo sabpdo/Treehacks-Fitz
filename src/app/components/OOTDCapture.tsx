@@ -444,6 +444,8 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
   const [closetItemsForSwap, setClosetItemsForSwap] = useState<ClosetItem[]>([]);
   const [addingToCloset, setAddingToCloset] = useState(false);
   const [addToClosetError, setAddToClosetError] = useState<string | null>(null);
+  const [scanError, setScanError] = useState<string | null>(null);
+  const scannedImageRef = useRef<string | null>(null);
 
   // Start camera when on camera step (try back camera first, then front/user for desktop)
   useEffect(() => {
@@ -531,11 +533,15 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
   // AI scanning: try segmentation first (HF or edge OpenAI with bbox → real crops), then direct OpenAI, then mock
   useEffect(() => {
     if (step !== "scanning" || !capturedImage) return;
+    if (scannedImageRef.current === capturedImage) return;
+    scannedImageRef.current = capturedImage;
+    setScanError(null);
 
     let cancelled = false;
 
     const goToTagging = (items: DetectedItem[]) => {
       if (!cancelled) {
+        setScanError(null);
         setDetectedItems(items.length > 0 ? items : MOCK_DETECTED_ITEMS);
         setStep("tagging");
       }
@@ -581,7 +587,9 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
           return true;
         }
       } catch (err) {
-        console.warn("OpenAI analysis failed:", err);
+        const msg = err instanceof Error ? err.message : "OpenAI analysis failed";
+        console.warn(msg, err);
+        if (!cancelled) setScanError(msg);
       }
       return false;
     };
@@ -1093,6 +1101,9 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
                 </div>
                 <h2 className="mb-2 text-base text-white">Analyzing your fit...</h2>
                 <p className="text-xs text-white/60">Detecting items and styles</p>
+                {scanError && (
+                  <p className="mt-3 max-w-xs text-xs text-amber-200">{scanError}</p>
+                )}
               </motion.div>
 
               <motion.div

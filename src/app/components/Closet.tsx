@@ -189,25 +189,31 @@ export function Closet() {
   // Initialize detail modal form data when item is selected
   useEffect(() => {
     if (selectedItem && isUsingApi && selectedItem.id) {
+      const openedId = selectedItem.id;
+      const openedItem = selectedItem;
       getClosetItem(selectedItem.id)
         .then((dbItem) => {
-          if (dbItem) {
-            setDetailFormData({
-              image: null,
-              imagePreview: dbItem.image_url || null,
-              brand: dbItem.brand || "",
-              category: dbItem.category,
-              vibeTags: (dbItem.vibe_tags || []) as VibeTag[],
-              priceTier: (dbItem.price_tier || "") as PriceTier | "",
-              colors: dbItem.colors || [],
-              fabric: dbItem.fabric || "",
-              silhouette: (dbItem.silhouette || "") as Silhouette | "",
-            });
-            setDetailModalCategory(dbItem.category);
-          }
+          if (!dbItem || selectedItemIdRef.current !== openedId) return;
+          const uiItem = apiClosetItemToUI(dbItem);
+          setSelectedItem(uiItem);
+          setClosetItems((prev) =>
+            prev.map((i) => (i.id === dbItem.id ? uiItem : i))
+          );
+          setDetailFormData({
+            image: null,
+            imagePreview: dbItem.image_url || null,
+            brand: dbItem.brand || "",
+            category: dbItem.category,
+            vibeTags: (dbItem.vibe_tags || []) as VibeTag[],
+            priceTier: (dbItem.price_tier || "") as PriceTier | "",
+            colors: dbItem.colors || [],
+            fabric: dbItem.fabric || "",
+            silhouette: (dbItem.silhouette || "") as Silhouette | "",
+          });
+          setDetailModalCategory(dbItem.category);
         })
         .catch(() => {
-          // Fallback to UI data
+          if (selectedItemIdRef.current !== openedId) return;
           const dbCategoryMap: Record<string, Category> = {
             tops: "shirts",
             bottoms: "pants",
@@ -217,16 +223,16 @@ export function Closet() {
           };
           setDetailFormData({
             image: null,
-            imagePreview: selectedItem.imageUrl,
-            brand: selectedItem.brand || "",
-            category: dbCategoryMap[selectedItem.category] || "shirts",
-            vibeTags: (selectedItem.aiTags || []) as VibeTag[],
-            priceTier: ((selectedItem as any).priceTier || "") as PriceTier | "",
-            colors: (selectedItem as any).allColors || [selectedItem.color],
-            fabric: selectedItem.fabric || "",
-            silhouette: (selectedItem.silhouette || "") as Silhouette | "",
+            imagePreview: openedItem.imageUrl,
+            brand: openedItem.brand || "",
+            category: dbCategoryMap[openedItem.category] || "shirts",
+            vibeTags: (openedItem.aiTags || []) as VibeTag[],
+            priceTier: ((openedItem as any).priceTier || "") as PriceTier | "",
+            colors: (openedItem as any).allColors || [openedItem.color],
+            fabric: openedItem.fabric || "",
+            silhouette: (openedItem.silhouette || "") as Silhouette | "",
           });
-          setDetailModalCategory(dbCategoryMap[selectedItem.category] || "shirts");
+          setDetailModalCategory(dbCategoryMap[openedItem.category] || "shirts");
         });
     } else if (selectedItem) {
       // Fallback to UI data when not using API
@@ -318,7 +324,7 @@ export function Closet() {
       .finally(() => {
         if (selectedItemIdRef.current === mainId) setThingsToBuyLoading(false);
       });
-  }, [selectedItem?.id, closetItems]);
+  }, [selectedItem?.id]);
 
   // Load closet items from API
   useEffect(() => {
@@ -1040,29 +1046,37 @@ export function Closet() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setSelectedItem(null)}
-              className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm"
+              className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm cursor-pointer"
+              aria-hidden
             />
             <motion.div
               initial={{ opacity: 0, y: 50 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 50 }}
-              className="fixed inset-x-0 bottom-0 z-50 mx-auto max-w-2xl overflow-hidden rounded-t-3xl bg-white shadow-2xl md:inset-y-8 md:rounded-3xl"
+              onClick={(e) => e.stopPropagation()}
+              className="fixed inset-x-0 bottom-0 z-50 mx-auto max-w-2xl overflow-hidden rounded-t-3xl bg-white shadow-2xl md:inset-y-8 md:rounded-3xl flex flex-col"
             >
-              {/* Modal Header */}
-              <div className="flex items-center justify-between border-b border-neutral-200/60 px-6 py-4">
+              {/* Modal Header - sticky so X is always visible and clickable */}
+              <div className="flex flex-shrink-0 items-center justify-between border-b border-neutral-200/60 bg-white px-6 py-4 z-10">
                 <h3 className="text-base">Item Details</h3>
                 <button
-                  onClick={() => setSelectedItem(null)}
-                  className="flex h-8 w-8 items-center justify-center rounded-full text-neutral-500 transition-colors hover:bg-neutral-100"
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setSelectedItem(null);
+                  }}
+                  className="flex h-10 w-10 items-center justify-center rounded-full text-neutral-500 transition-colors hover:bg-neutral-100 touch-manipulation"
+                  aria-label="Close"
                 >
-                  <X className="h-4 w-4" />
+                  <X className="h-5 w-5" />
                 </button>
               </div>
 
               {/* Modal Content */}
-              <div className="max-h-[70vh] overflow-y-auto md:max-h-[85vh]">
+              <div className="min-h-0 flex-1 overflow-y-auto max-h-[70vh] md:max-h-[calc(85vh-4rem)]">
                 <div className="p-4 sm:p-6">
-                  {/* Top: constrained image + key info on larger screens */}
+                  {/* Main image */}
                   <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-start">
                     <div className="flex-shrink-0 overflow-hidden rounded-xl bg-neutral-50 md:w-44 md:max-w-[220px]">
                       <img
@@ -1135,59 +1149,6 @@ export function Closet() {
                     }}
                     className="mb-6 space-y-4"
                   >
-                    {/* Image Preview/Upload */}
-                    <div className="space-y-2">
-                      <Label htmlFor="detail-image">Item Image</Label>
-                      <div className="flex items-center gap-4">
-                        {detailFormData.imagePreview ? (
-                          <div className="relative">
-                            <img
-                              src={detailFormData.imagePreview}
-                              alt="Preview"
-                              className="h-32 w-32 rounded-lg object-cover border border-neutral-200"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setDetailFormData((prev) => ({ ...prev, image: null, imagePreview: null }));
-                              }}
-                              className="absolute -top-2 -right-2 flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-white hover:bg-red-600"
-                            >
-                              <X className="h-4 w-4" />
-                            </button>
-                          </div>
-                        ) : (
-                          <label
-                            htmlFor="detail-image-upload"
-                            className="flex h-32 w-32 cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-neutral-300 bg-neutral-50 hover:border-neutral-400"
-                          >
-                            <Upload className="mb-2 h-6 w-6 text-neutral-400" />
-                            <span className="text-xs text-neutral-500">Change Image</span>
-                          </label>
-                        )}
-                        <input
-                          id="detail-image-upload"
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file) {
-                              const reader = new FileReader();
-                              reader.onloadend = () => {
-                                setDetailFormData((prev) => ({
-                                  ...prev,
-                                  image: file,
-                                  imagePreview: reader.result as string,
-                                }));
-                              };
-                              reader.readAsDataURL(file);
-                            }
-                          }}
-                        />
-                      </div>
-                    </div>
-
                     {/* Brand */}
                     <div className="space-y-2">
                       <Label htmlFor="detail-brand">Brand</Label>
@@ -1395,27 +1356,32 @@ export function Closet() {
                     </div>
                   </form>
 
-                  {/* Stats */}
-                  <div className="grid grid-cols-2 gap-4 rounded-xl border border-neutral-200/60 bg-neutral-50 p-4">
-                    <div>
-                      <p className="mb-1 text-xs uppercase tracking-wide text-neutral-400">
-                        Works With
-                      </p>
-                      <p className="text-2xl text-neutral-900">
-                        {selectedItem.compatibleWith || 0}
-                      </p>
-                      <p className="text-xs text-neutral-500">items in closet</p>
-                    </div>
-                    <div>
-                      <p className="mb-1 text-xs uppercase tracking-wide text-neutral-400">
-                        Times Worn
-                      </p>
-                      <p className="text-2xl text-neutral-900">
-                        {selectedItem.timesWorn || 0}
-                      </p>
-                      <p className="text-xs text-neutral-500">this season</p>
-                    </div>
-                  </div>
+                  {/* Stats: Works With = count of other closet items in complementary categories; Times Worn = from DB */}
+                  {(() => {
+                    const pairCats = PAIR_WITH_CATEGORIES[selectedItem.category as ClosetCategory] || [];
+                    const worksWithCount = closetItems.filter(
+                      (i) => i.id !== selectedItem.id && pairCats.includes(i.category as ClosetCategory)
+                    ).length;
+                    const timesWorn = selectedItem.timesWorn ?? 0;
+                    return (
+                      <div className="grid grid-cols-2 gap-4 rounded-xl border border-neutral-200/60 bg-neutral-50 p-4">
+                        <div>
+                          <p className="mb-1 text-xs uppercase tracking-wide text-neutral-400">
+                            Works With
+                          </p>
+                          <p className="text-2xl text-neutral-900">{worksWithCount}</p>
+                          <p className="text-xs text-neutral-500">items in closet</p>
+                        </div>
+                        <div>
+                          <p className="mb-1 text-xs uppercase tracking-wide text-neutral-400">
+                            Times Worn
+                          </p>
+                          <p className="text-2xl text-neutral-900">{timesWorn}</p>
+                          <p className="text-xs text-neutral-500">this season</p>
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   {/* Pair this item with */}
                   <div className="mt-6 rounded-xl border border-neutral-200/60 bg-white p-5">
