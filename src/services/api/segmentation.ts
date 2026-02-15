@@ -1,6 +1,6 @@
 /**
- * Segment an outfit image via Supabase Edge Function (Replicate mask-clothing).
- * Returns one segment per detected clothing region, with optional category/description from OpenAI.
+ * Segment an outfit image via Supabase Edge Function (OpenAI Vision, clothing-tailored).
+ * Returns one segment per detected item; optional bbox (0-100%) lets the client crop per-item thumbnails.
  * Used by OOTDCapture "tag your items" flow to auto-generate tags for user confirmation.
  *
  * In dev we call via Vite proxy (/api/supabase-functions) to avoid CORS. In production
@@ -15,12 +15,18 @@ export type SegmentResult = {
   color?: string;
   fabric?: string;
   silhouette?: string;
+  /** Bounding box as percentages (0-100); client crops the full image to get per-item thumbnail. */
+  bbox?: { x_min: number; y_min: number; x_max: number; y_max: number };
+  /** Base64 mask from Hugging Face; client derives bbox and crops when present. */
+  mask?: string;
 };
 
-export async function segmentOutfitImage(imageUrl: string): Promise<{ segments: SegmentResult[] }> {
-  const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY ?? "";
+const env = (import.meta as unknown as { env?: { VITE_SUPABASE_ANON_KEY?: string; DEV?: boolean } }).env;
 
-  if (import.meta.env.DEV && typeof window !== "undefined") {
+export async function segmentOutfitImage(imageUrl: string): Promise<{ segments: SegmentResult[] }> {
+  const anonKey = env?.VITE_SUPABASE_ANON_KEY ?? "";
+
+  if (env?.DEV && typeof window !== "undefined") {
     const { data: { session } } = await supabase.auth.getSession();
     const url = `${window.location.origin}/api/supabase-functions/segment-outfit-image`;
     // Supabase gateway accepts anon key; send Bearer for user JWT when signed in, else anon so request is allowed
@@ -39,7 +45,7 @@ export async function segmentOutfitImage(imageUrl: string): Promise<{ segments: 
     const data = await res.json().catch(() => ({}));
     // 401 = auth required by gateway; 502 = function/Replicate error or timeout — fall back without throwing
     if (res.status === 401 || res.status === 502) {
-      if (import.meta.env.DEV && res.status === 502) {
+      if (env?.DEV && res.status === 502) {
         console.warn("Segmentation 502 (function/Replicate failed):", data?.error ?? data?.details ?? res.status);
       }
       return { segments: [] };

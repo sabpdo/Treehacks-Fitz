@@ -145,7 +145,9 @@ export function PostCard({
             <ul className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-neutral-600">
               {outfitItems.map((oi) => (
                 <li key={oi.id ?? oi.label}>
-                  {oi.brand ? `${oi.label} · ${oi.brand}` : oi.label}
+                  {oi.brand && oi.brand.toLowerCase() !== "unknown"
+                    ? `${oi.label} · ${oi.brand}`
+                    : oi.label}
                 </li>
               ))}
             </ul>

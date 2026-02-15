@@ -15,4 +15,4 @@ if (supabaseUrl && supabaseAnonKey) {
   supabase = createClient("https://placeholder.supabase.co", "placeholder-anon-key");
 }
 
-export { supabase };
+export { supabase, supabaseUrl };

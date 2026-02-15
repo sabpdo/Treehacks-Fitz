@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router";
-import { ArrowLeft, X, ChevronDown, ChevronUp, ExternalLink, Check, Plus } from "lucide-react";
+import { ArrowLeft, X, ChevronDown, ChevronUp, ExternalLink, Check, Plus, ShoppingBag, Sparkles } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useAppStore } from "../context/AppStore";
 import { formatPostTime, type OutfitItem } from "../data/mockData";
@@ -30,9 +30,14 @@ export function PostDetail() {
   const [fetchedPost, setFetchedPost] = useState<ReturnType<typeof apiPostToOOTDPost> | null>(null);
   const [loading, setLoading] = useState(!!postId);
   const [isOutfitBreakdownExpanded, setIsOutfitBreakdownExpanded] = useState(false);
+  const [showShopModal, setShowShopModal] = useState(false);
 
   const postFromStore = posts.find((p) => p.id === postId);
   const post = postFromStore ?? fetchedPost;
+
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [postId]);
 
   useEffect(() => {
     if (!postId) return;
@@ -110,6 +115,20 @@ export function PostDetail() {
     }
   };
 
+  const handleAISearch = (item: OutfitItem) => {
+    // Build a descriptive query: e.g. "grey cotton hoodie" instead of just "hoodie"
+    const parts = [
+      item.color,
+      item.fabric,
+      item.label,
+      item.brand,
+    ].filter(Boolean) as string[];
+    const searchQuery = parts.join(" ").trim() || item.label;
+    sessionStorage.setItem("aiSearchQuery", searchQuery);
+    setShowShopModal(false);
+    navigate("/ai-generator");
+  };
+
   const rawOutfitItems = (post as { outfitItems?: OutfitItem[] }).outfitItems ?? [];
   const outfitItems = rawOutfitItems.filter(
     (oi) => oi != null && (typeof oi.id === "string" || typeof oi.label === "string")
@@ -145,7 +164,12 @@ export function PostDetail() {
   const showDailyOOTDCheckmark = isOwnPost && isPostFromToday;
 
   return (
-    <div className="min-h-screen bg-[#FAFAF8]">
+    <motion.div
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, ease: [0.25, 0.46, 0.45, 0.94] }}
+      className="min-h-screen bg-[#FAFAF8]"
+    >
       <header className="sticky top-0 z-30 border-b border-neutral-200/60 bg-white/90 backdrop-blur-xl">
         <div className="mx-auto flex max-w-3xl items-center justify-between px-6 py-4">
           <motion.button
@@ -241,28 +265,49 @@ export function PostDetail() {
             <>
               {!isOutfitBreakdownExpanded && (
                 <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
-                  {sortedItems.map((oi, idx) => (
-                    <motion.div
-                      key={oi.id ?? `oi-${idx}`}
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      className="flex-shrink-0"
-                    >
-                      <div className="w-24 overflow-hidden rounded-lg border border-neutral-200/60 bg-white shadow-sm hover:shadow-md">
-                        <div className="relative aspect-square overflow-hidden bg-neutral-50">
-                          {oi.imageUrl ? (
-                            <img src={ensurePublicStorageUrl(oi.imageUrl)} alt={oi.label} className="h-full w-full object-cover" />
-                          ) : (
-                            <div className="h-full w-full bg-neutral-200" />
-                          )}
-                        </div>
-                        <div className="p-2">
-                          <p className="truncate text-[10px] uppercase tracking-wide text-neutral-400">{oi.type}</p>
-                          <p className="truncate text-xs text-neutral-900">{oi.brand || oi.label}</p>
-                        </div>
-                      </div>
-                    </motion.div>
-                  ))}
+                  {sortedItems.map((oi, idx) => {
+                    const inWardrobe = isOwnPost && (oi as OutfitItem & { closetItemId?: string }).closetItemId;
+                    const Wrapper = inWardrobe
+                      ? ({ children }: { children: React.ReactNode }) => (
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/closet?item=${(oi as OutfitItem & { closetItemId?: string }).closetItemId}`)}
+                          className="flex-shrink-0 text-left"
+                        >
+                          {children}
+                        </button>
+                      )
+                      : ({ children }: { children: React.ReactNode }) => <div className="flex-shrink-0">{children}</div>;
+                    return (
+                      <motion.div
+                        key={oi.id ?? `oi-${idx}`}
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                        className="flex-shrink-0"
+                      >
+                        <Wrapper>
+                          <div className="w-24 overflow-hidden rounded-lg border border-neutral-200/60 bg-white shadow-sm hover:shadow-md hover:border-neutral-300">
+                            <div className="relative aspect-square overflow-hidden bg-neutral-50">
+                              {oi.imageUrl ? (
+                                <img src={ensurePublicStorageUrl(oi.imageUrl)} alt={oi.label} className="h-full w-full object-cover" />
+                              ) : (
+                                <div className="h-full w-full bg-neutral-200" />
+                              )}
+                            </div>
+                            <div className="p-2">
+                              <p className="truncate text-[10px] uppercase tracking-wide text-neutral-400">{oi.type}</p>
+                              <p className="truncate text-xs text-neutral-900">
+                                {oi.brand && oi.brand.toLowerCase() !== "unknown" ? oi.brand : oi.label}
+                              </p>
+                              {inWardrobe && (
+                                <p className="mt-0.5 text-[10px] text-neutral-500">In wardrobe · tap to view</p>
+                              )}
+                            </div>
+                          </div>
+                        </Wrapper>
+                      </motion.div>
+                    );
+                  })}
                 </div>
               )}
 
@@ -277,36 +322,61 @@ export function PostDetail() {
                   >
                     <div className="overflow-hidden rounded-xl border border-neutral-200/60 bg-white">
                       <div className="divide-y divide-neutral-100">
-                        {sortedItems.map((oi, idx) => (
-                          <div
-                            key={oi.id ?? `oi-${idx}`}
-                            className="flex w-full items-center gap-3 p-3 text-left"
-                          >
-                            {oi.imageUrl ? (
-                              <img
-                                src={ensurePublicStorageUrl(oi.imageUrl)}
-                                alt={oi.label}
-                                className="h-16 w-16 rounded-lg object-cover"
-                              />
-                            ) : (
-                              <div className="h-16 w-16 rounded-lg bg-neutral-200" />
-                            )}
-                            <div className="flex-1 min-w-0">
-                              <p className="text-xs uppercase tracking-wide text-neutral-400">{oi.type}</p>
-                              <p className="text-sm text-neutral-900">{oi.label}</p>
-                              <p className="text-xs text-neutral-500">{oi.brand}</p>
-                              <div className="mt-2 flex flex-wrap gap-1.5">
-                                {oi.color && (
-                                  <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] text-neutral-600">{oi.color}</span>
+                        {sortedItems.map((oi, idx) => {
+                          const closetId = (oi as OutfitItem & { closetItemId?: string }).closetItemId;
+                          const inWardrobe = isOwnPost && closetId;
+                          return (
+                            <div
+                              key={oi.id ?? `oi-${idx}`}
+                              className={cn(
+                                "flex w-full items-center gap-3 p-3 text-left",
+                                inWardrobe && "cursor-pointer hover:bg-neutral-50/80"
+                              )}
+                              role={inWardrobe ? "button" : undefined}
+                              onClick={inWardrobe ? () => navigate(`/closet?item=${closetId}`) : undefined}
+                              onKeyDown={
+                                inWardrobe
+                                  ? (e) => {
+                                    if (e.key === "Enter" || e.key === " ") {
+                                      e.preventDefault();
+                                      navigate(`/closet?item=${closetId}`);
+                                    }
+                                  }
+                                  : undefined
+                              }
+                              tabIndex={inWardrobe ? 0 : undefined}
+                            >
+                              {oi.imageUrl ? (
+                                <img
+                                  src={ensurePublicStorageUrl(oi.imageUrl)}
+                                  alt={oi.label}
+                                  className="h-16 w-16 rounded-lg object-cover"
+                                />
+                              ) : (
+                                <div className="h-16 w-16 rounded-lg bg-neutral-200" />
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs uppercase tracking-wide text-neutral-400">{oi.type}</p>
+                                <p className="text-sm text-neutral-900">{oi.label}</p>
+                                {oi.brand && oi.brand.toLowerCase() !== "unknown" && (
+                                  <p className="text-xs text-neutral-500">{oi.brand}</p>
                                 )}
-                                {oi.fabric && (
-                                  <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] text-neutral-600">{oi.fabric}</span>
+                                <div className="mt-2 flex flex-wrap gap-1.5">
+                                  {oi.color && (
+                                    <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] text-neutral-600">{oi.color}</span>
+                                  )}
+                                  {oi.fabric && (
+                                    <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] text-neutral-600">{oi.fabric}</span>
+                                  )}
+                                </div>
+                                {inWardrobe && (
+                                  <p className="mt-2 text-[10px] text-neutral-500">In your wardrobe · tap to view details</p>
                                 )}
                               </div>
+                              <ExternalLink className="h-3.5 w-3.5 shrink-0 text-neutral-400" />
                             </div>
-                            <ExternalLink className="h-3.5 w-3.5 text-neutral-400" />
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
                   </motion.div>
@@ -317,17 +387,30 @@ export function PostDetail() {
         </div>
 
         {/* Compatibility + actions */}
-        <div className="mb-6 flex items-center justify-between rounded-xl border border-neutral-200/60 bg-white p-4">
-          <Badge variant="accent">{post.compatibilityScore}%</Badge>
-          <ActionRow
-            isLiked={isLikedState}
-            isSaved={isSaved(post.id)}
-            likeCount={post.likeCount}
-            commentCount={post.commentCount}
-            onLike={handleLike}
-            onSave={() => toggleSave(post.id)}
-            onComment={() => { }}
-          />
+        <div className="mb-6 flex flex-col gap-4 rounded-xl border border-neutral-200/60 bg-white p-4">
+          <div className="flex items-center justify-between">
+            <Badge variant="accent">{post.compatibilityScore}%</Badge>
+            <ActionRow
+              isLiked={isLikedState}
+              isSaved={isSaved(post.id)}
+              likeCount={post.likeCount}
+              commentCount={post.commentCount}
+              onLike={handleLike}
+              onSave={() => toggleSave(post.id)}
+              onComment={() => { }}
+            />
+          </div>
+          {outfitItems.length > 0 && (
+            <motion.button
+              type="button"
+              whileTap={{ scale: 0.98 }}
+              onClick={() => setShowShopModal(true)}
+              className="flex w-full items-center justify-center gap-2 rounded-lg border border-neutral-900 bg-neutral-900 py-2.5 text-sm text-white transition-all hover:bg-neutral-800"
+            >
+              <ShoppingBag className="h-4 w-4" />
+              Shop the Look
+            </motion.button>
+          )}
         </div>
 
         {likedByFriendsCount > 0 && (
@@ -359,10 +442,96 @@ export function PostDetail() {
         </div>
       </div>
 
+      {/* Shop the Look Modal */}
+      <AnimatePresence>
+        {showShopModal && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowShopModal(false)}
+              className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              transition={{ type: "spring", damping: 25, stiffness: 300 }}
+              className="fixed left-1/2 top-1/2 z-[70] w-full max-w-md -translate-x-1/2 -translate-y-1/2 px-6"
+            >
+              <div className="overflow-hidden rounded-3xl border border-neutral-200/60 bg-white shadow-2xl">
+                <div className="border-b border-neutral-200/60 bg-neutral-50/50 p-5">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="mb-0.5 text-base font-medium text-neutral-900">Shop the Look</h3>
+                      <p className="text-xs text-neutral-500">Find these items or similar styles</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowShopModal(false)}
+                      className="flex h-8 w-8 items-center justify-center rounded-full text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-900"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+                <div className="max-h-[60vh] overflow-y-auto">
+                  <div className="divide-y divide-neutral-100">
+                    {sortedItems.map((item, index) => (
+                      <motion.div
+                        key={item.id}
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: index * 0.1 }}
+                        className="flex items-center gap-4 p-4 transition-colors hover:bg-neutral-50"
+                      >
+                        <div className="h-20 w-20 flex-shrink-0 overflow-hidden rounded-xl bg-neutral-50">
+                          {item.imageUrl ? (
+                            <img
+                              src={ensurePublicStorageUrl(item.imageUrl)}
+                              alt={item.label}
+                              className="h-full w-full object-cover"
+                            />
+                          ) : (
+                            <div className="h-full w-full bg-neutral-200" />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="mb-1 text-[10px] uppercase tracking-wide text-neutral-400">{item.type}</p>
+                          <p className="mb-0.5 truncate text-sm font-medium text-neutral-900">{item.label}</p>
+                          {item.brand && item.brand.toLowerCase() !== "unknown" && (
+                            <p className="mb-2 text-xs text-neutral-500">{item.brand}</p>
+                          )}
+                          <motion.button
+                            type="button"
+                            whileTap={{ scale: 0.97 }}
+                            onClick={() => handleAISearch(item)}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-neutral-900 px-3 py-1.5 text-xs text-white shadow-sm transition-all hover:bg-neutral-800 hover:shadow-md"
+                          >
+                            <Sparkles className="h-3 w-3" />
+                            AI Search
+                          </motion.button>
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+                </div>
+                <div className="border-t border-neutral-200/60 bg-neutral-50/50 px-5 py-3">
+                  <p className="text-center text-[10px] leading-relaxed text-neutral-500">
+                    Powered by AI · Find exact items or discover similar styles
+                  </p>
+                </div>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
       <style>{`
         .scrollbar-hide::-webkit-scrollbar { display: none; }
         .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
       `}</style>
-    </div>
+    </motion.div>
   );
 }

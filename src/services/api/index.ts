@@ -1,4 +1,4 @@
-// Central API exports for ClosetRank
+// Central API exports for fitz
 // Import from here instead of individual files
 
 // Closet Items API
@@ -52,6 +52,9 @@ export {
   searchUsers,
 } from './profiles';
 
+// Style Twins (PPR-based style matching)
+export { getStyleTwins, getMatchScore, type StyleTwinResult } from './styleTwins';
+
 // Compatibility API
 export {
   calculateCompatibilityScore,
@@ -63,6 +66,7 @@ export {
 // Storage API
 export {
   uploadImage,
+  uploadImageToPath,
   deleteImage,
   compressImage,
   uploadImageWithCompression,
@@ -71,3 +75,19 @@ export {
 
 // Segmentation (Edge Function: Replicate mask-clothing for "tag your items")
 export { segmentOutfitImage, type SegmentResult } from './segmentation';
+
+// Daily look cache (weather-based outfit suggestion per user per day)
+export {
+  getDailyLook,
+  setDailyLook,
+  type CachedDailyLook,
+  type CachedDailyLookItem,
+} from './dailyLook';
+
+// Body analyses (saved photos + analysis for "Analyze Your Body Type" history and suggestions)
+export {
+  createBodyAnalysis,
+  getBodyAnalyses,
+  getLatestBodyAnalysis,
+  type BodyAnalysisRecord,
+} from './bodyAnalysis';

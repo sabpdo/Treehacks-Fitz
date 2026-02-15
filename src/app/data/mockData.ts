@@ -24,6 +24,8 @@ export interface ClosetItem {
   aiTags?: string[];
   compatibleWith?: number;
   timesWorn?: number;
+  /** Short AI-generated product-style label (e.g. "Beige leather crossbody bag") from upload; use as title when pairing */
+  displayDescription?: string | null;
 }
 
 export interface OutfitCard {
@@ -412,6 +414,8 @@ export interface OutfitItem {
   color?: string;
   fabric?: string;
   silhouette?: string;
+  /** When set, item is in the post author's wardrobe — link to /closet?item=id */
+  closetItemId?: string;
 }
 
 export interface OOTDPost {

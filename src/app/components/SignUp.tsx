@@ -109,9 +109,12 @@ export const SignUp: React.FC = () => {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-50 to-pink-50 p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1">
+          <div className="flex justify-center">
+            <img src="/fitz.png" alt="fitz" className="h-10 w-auto object-contain" />
+          </div>
           <CardTitle className="text-2xl font-bold text-center">Create an Account</CardTitle>
           <CardDescription className="text-center">
-            Join ClosetRank to start sharing your outfits
+            Join fitz to start sharing your outfits
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">

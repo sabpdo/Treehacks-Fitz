@@ -1,11 +1,17 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useSearchParams } from "react-router";
-import { Plus, Grid3x3, List, X, ChevronRight, Flame, Upload, Trash2 } from "lucide-react";
+import { Plus, Grid3x3, List, X, ChevronRight, Flame, Upload, Trash2, ShoppingBag, ExternalLink } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { mockClosetItems, type ClosetItem, currentUserProfile } from "../data/mockData";
 import { useAppStore } from "../context/AppStore";
 import { getCurrentProfile, getClosetItems, createClosetItem, updateClosetItem, deleteClosetItem, uploadImage, getClosetItem } from "../../services/api";
+import { analyzeClothingImage, getPairingDescriptionsAndRanking, getThingsToBuySuggestions, type PairingResultItem } from "../../services/openai";
 import { apiClosetItemToUI } from "../../lib/adapters";
+import { compressImage } from "../../services/api/storage";
+import { startRankingSession } from "../../services/api/ranking";
+import { RankingSession } from "./RankingSession";
+import type { ItemWithRanking } from "../../lib/ranking";
+import type { PreferenceTier } from "../../types/database";
 
 // Map UI category to database category (reverse of adapter)
 function mapCategoryToUI(dbCategory: string): "tops" | "bottoms" | "outerwear" | "shoes" | "accessories" {
@@ -44,6 +50,18 @@ const PREDEFINED_BRANDS = [
   "Target", "ASOS", "Shein", "Urban Outfitters", "Aritzia", "Lululemon",
   "Levi's", "Madewell", "Everlane", "Reformation"
 ];
+
+function getPreferenceTierBadge(tier: string | undefined): { bg: string; text: string; border: string; label: string } | null {
+  if (!tier) return null;
+
+  const tierMap: Record<string, { bg: string; text: string; border: string; label: string }> = {
+    love: { bg: 'bg-green-100', text: 'text-green-700', border: 'border-green-300', label: 'I love it' },
+    like: { bg: 'bg-yellow-100', text: 'text-yellow-700', border: 'border-yellow-300', label: 'I like it' },
+    dont_like: { bg: 'bg-red-100', text: 'text-red-700', border: 'border-red-300', label: "I don't like it" },
+  };
+
+  return tierMap[tier] || null;
+}
 
 // Map color names to actual hex colors
 function getColorHex(colorName: string): string {
@@ -101,6 +119,22 @@ function getColorHex(colorName: string): string {
   return colorMap[color] || "#E5E7EB"; // Default to light gray if color not found
 }
 
+type ClosetCategory = ClosetItem["category"];
+const PAIR_WITH_CATEGORIES: Record<ClosetCategory, ClosetCategory[]> = {
+  tops: ["bottoms", "shoes", "outerwear", "accessories"],
+  bottoms: ["tops", "shoes", "outerwear", "accessories"],
+  outerwear: ["tops", "bottoms", "shoes", "accessories"],
+  shoes: ["tops", "bottoms", "outerwear", "accessories"],
+  accessories: ["tops", "bottoms", "outerwear", "shoes"],
+};
+const THINGS_TO_BUY_BY_CATEGORY: Record<ClosetCategory, string[]> = {
+  tops: ["Structured blazer", "White tee", "Oversized sweater", "Silk blouse"],
+  bottoms: ["High-waisted jeans", "Tailored trousers", "Midi skirt", "Wide-leg pants"],
+  outerwear: ["Neutral coat", "Denim jacket", "Trench", "Cardigan"],
+  shoes: ["White sneakers", "Ankle boots", "Loafers", "Heeled sandals"],
+  accessories: ["Leather belt", "Minimal watch", "Tote bag", "Gold hoops"],
+};
+
 export function Closet() {
   const [filter, setFilter] = useState<CategoryFilter>("all");
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
@@ -111,6 +145,7 @@ export function Closet() {
   const [error, setError] = useState<string | null>(null);
   const [addItemOpen, setAddItemOpen] = useState(false);
   const [addingItem, setAddingItem] = useState(false);
+  const [analyzingImage, setAnalyzingImage] = useState(false);
   const [addItemError, setAddItemError] = useState<string | null>(null);
   const [editItemOpen, setEditItemOpen] = useState(false);
   const [editingItem, setEditingItem] = useState(false);
@@ -133,6 +168,14 @@ export function Closet() {
   });
   const [savingDetails, setSavingDetails] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const [pairingResults, setPairingResults] = useState<PairingResultItem[]>([]);
+  const [thingsToBuySuggestions, setThingsToBuySuggestions] = useState<string[]>([]);
+  const [pairingLoading, setPairingLoading] = useState(false);
+  const [thingsToBuyLoading, setThingsToBuyLoading] = useState(false);
+  const selectedItemIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    selectedItemIdRef.current = selectedItem?.id ?? null;
+  }, [selectedItem?.id]);
   const [formData, setFormData] = useState({
     image: null as File | null,
     imagePreview: null as string | null,
@@ -144,9 +187,16 @@ export function Closet() {
     fabric: "",
     silhouette: "" as Silhouette | "",
     subcategory: "",
+    preferenceTier: "like" as PreferenceTier | "",
   });
   const { isUsingApi, currentUserId, getUser } = useAppStore();
   const [searchParams, setSearchParams] = useSearchParams();
+  const [rankingSessionData, setRankingSessionData] = useState<{
+    newItem: ItemWithRanking;
+    itemsToCompare: ItemWithRanking[];
+    totalComparisons: number;
+    category: Category;
+  } | null>(null);
 
   // Map UI category back to database category
   const mapCategoryToDB = (uiCategory: string): Category => {
@@ -163,25 +213,31 @@ export function Closet() {
   // Initialize detail modal form data when item is selected
   useEffect(() => {
     if (selectedItem && isUsingApi && selectedItem.id) {
+      const openedId = selectedItem.id;
+      const openedItem = selectedItem;
       getClosetItem(selectedItem.id)
         .then((dbItem) => {
-          if (dbItem) {
-            setDetailFormData({
-              image: null,
-              imagePreview: dbItem.image_url || null,
-              brand: dbItem.brand || "",
-              category: dbItem.category,
-              vibeTags: (dbItem.vibe_tags || []) as VibeTag[],
-              priceTier: (dbItem.price_tier || "") as PriceTier | "",
-              colors: dbItem.colors || [],
-              fabric: dbItem.fabric || "",
-              silhouette: (dbItem.silhouette || "") as Silhouette | "",
-            });
-            setDetailModalCategory(dbItem.category);
-          }
+          if (!dbItem || selectedItemIdRef.current !== openedId) return;
+          const uiItem = apiClosetItemToUI(dbItem);
+          setSelectedItem(uiItem);
+          setClosetItems((prev) =>
+            prev.map((i) => (i.id === dbItem.id ? uiItem : i))
+          );
+          setDetailFormData({
+            image: null,
+            imagePreview: dbItem.image_url || null,
+            brand: dbItem.brand || "",
+            category: dbItem.category,
+            vibeTags: (dbItem.vibe_tags || []) as VibeTag[],
+            priceTier: (dbItem.price_tier || "") as PriceTier | "",
+            colors: dbItem.colors || [],
+            fabric: dbItem.fabric || "",
+            silhouette: (dbItem.silhouette || "") as Silhouette | "",
+          });
+          setDetailModalCategory(dbItem.category);
         })
         .catch(() => {
-          // Fallback to UI data
+          if (selectedItemIdRef.current !== openedId) return;
           const dbCategoryMap: Record<string, Category> = {
             tops: "shirts",
             bottoms: "pants",
@@ -191,16 +247,16 @@ export function Closet() {
           };
           setDetailFormData({
             image: null,
-            imagePreview: selectedItem.imageUrl,
-            brand: selectedItem.brand || "",
-            category: dbCategoryMap[selectedItem.category] || "shirts",
-            vibeTags: (selectedItem.aiTags || []) as VibeTag[],
-            priceTier: ((selectedItem as any).priceTier || "") as PriceTier | "",
-            colors: (selectedItem as any).allColors || [selectedItem.color],
-            fabric: selectedItem.fabric || "",
-            silhouette: (selectedItem.silhouette || "") as Silhouette | "",
+            imagePreview: openedItem.imageUrl,
+            brand: openedItem.brand || "",
+            category: dbCategoryMap[openedItem.category] || "shirts",
+            vibeTags: (openedItem.aiTags || []) as VibeTag[],
+            priceTier: ((openedItem as any).priceTier || "") as PriceTier | "",
+            colors: (openedItem as any).allColors || [openedItem.color],
+            fabric: openedItem.fabric || "",
+            silhouette: (openedItem.silhouette || "") as Silhouette | "",
           });
-          setDetailModalCategory(dbCategoryMap[selectedItem.category] || "shirts");
+          setDetailModalCategory(dbCategoryMap[openedItem.category] || "shirts");
         });
     } else if (selectedItem) {
       // Fallback to UI data when not using API
@@ -225,6 +281,74 @@ export function Closet() {
       setDetailModalCategory(dbCategoryMap[selectedItem.category] || "shirts");
     }
   }, [selectedItem, isUsingApi]);
+
+  // Fetch AI pairing descriptions and "things to buy" when item detail opens
+  useEffect(() => {
+    if (!selectedItem) {
+      setPairingResults([]);
+      setThingsToBuySuggestions([]);
+      return;
+    }
+    const pairCats = PAIR_WITH_CATEGORIES[selectedItem.category as ClosetCategory] || [];
+    const fromWardrobe = closetItems.filter(
+      (i) => i.id !== selectedItem.id && pairCats.includes(i.category as ClosetCategory)
+    ).slice(0, 3);
+    const mainId = selectedItem.id;
+
+    setPairingLoading(fromWardrobe.length > 0);
+    setThingsToBuyLoading(true);
+    setPairingResults([]);
+    setThingsToBuySuggestions([]);
+
+    if (fromWardrobe.length > 0) {
+      getPairingDescriptionsAndRanking(
+        {
+          imageUrl: selectedItem.imageUrl,
+          category: selectedItem.category,
+          brand: selectedItem.brand,
+          color: selectedItem.color,
+          fabric: selectedItem.fabric,
+          silhouette: selectedItem.silhouette,
+        },
+        fromWardrobe.map((i) => ({
+          id: i.id,
+          category: i.category,
+          brand: i.brand,
+          color: i.color,
+          fabric: i.fabric,
+          silhouette: i.silhouette,
+          display_description: (i as { displayDescription?: string | null }).displayDescription,
+        }))
+      )
+        .then((items) => {
+          if (selectedItemIdRef.current === mainId) setPairingResults(items);
+        })
+        .catch(() => {
+          if (selectedItemIdRef.current === mainId) setPairingResults([]);
+        })
+        .finally(() => {
+          if (selectedItemIdRef.current === mainId) setPairingLoading(false);
+        });
+    } else {
+      setPairingLoading(false);
+    }
+
+    getThingsToBuySuggestions({
+      imageUrl: selectedItem.imageUrl,
+      category: selectedItem.category,
+      brand: selectedItem.brand,
+      color: selectedItem.color,
+    })
+      .then((list) => {
+        if (selectedItemIdRef.current === mainId) setThingsToBuySuggestions(list.slice(0, 4));
+      })
+      .catch(() => {
+        if (selectedItemIdRef.current === mainId) setThingsToBuySuggestions([]);
+      })
+      .finally(() => {
+        if (selectedItemIdRef.current === mainId) setThingsToBuyLoading(false);
+      });
+  }, [selectedItem?.id]);
 
   // Load closet items from API
   useEffect(() => {
@@ -402,6 +526,7 @@ export function Closet() {
                           image_url: imageUrl,
                           brand: formData.brand || undefined,
                           category: formData.category as Category,
+                          preference_tier: formData.preferenceTier as PreferenceTier,
                           vibe_tags: formData.vibeTags.length > 0 ? formData.vibeTags : undefined,
                           price_tier: formData.priceTier || undefined,
                           colors: formData.colors.length > 0 ? formData.colors : undefined,
@@ -413,6 +538,31 @@ export function Closet() {
                         // Convert to UI format and add to list
                         const uiItem = apiClosetItemToUI(newItem);
                         setClosetItems((prev) => [uiItem, ...prev]);
+
+                        // Check if we should start a ranking session
+                        // Trigger when there are 3+ items in same category & preference tier
+                        const sameCategory = closetItems.filter(
+                          (i) => (i as any).category === mapCategoryToUI(newItem.category)
+                        );
+                        const sameTier = sameCategory.filter(
+                          (i) => (i as any).preferenceTier === newItem.preference_tier
+                        );
+
+                        if (sameTier.length >= 2) {
+                          // Start ranking session (new item + at least 2 existing = 3 total)
+                          try {
+                            const sessionData = await startRankingSession(
+                              newItem.id,
+                              newItem.category
+                            );
+                            setRankingSessionData({
+                              ...sessionData,
+                              category: newItem.category,
+                            });
+                          } catch (err) {
+                            console.warn("Failed to start ranking session:", err);
+                          }
+                        }
 
                         // Reset form and close dialog
                         setFormData({
@@ -426,6 +576,7 @@ export function Closet() {
                           fabric: "",
                           silhouette: "" as Silhouette | "",
                           subcategory: "",
+                          preferenceTier: "like" as PreferenceTier | "",
                         });
                         setAddItemOpen(false);
                       } catch (err) {
@@ -448,10 +599,16 @@ export function Closet() {
                               alt="Preview"
                               className="h-32 w-32 rounded-lg object-cover border border-neutral-200"
                             />
+                            {analyzingImage && (
+                              <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/50 text-xs text-white">
+                                Analyzing…
+                              </div>
+                            )}
                             <button
                               type="button"
                               onClick={() => {
                                 setFormData((prev) => ({ ...prev, image: null, imagePreview: null }));
+                                setAddItemError(null);
                               }}
                               className="absolute -top-2 -right-2 flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-white hover:bg-red-600"
                             >
@@ -476,12 +633,33 @@ export function Closet() {
                             const file = e.target.files?.[0];
                             if (file) {
                               const reader = new FileReader();
-                              reader.onloadend = () => {
+                              reader.onloadend = async () => {
+                                const dataUrl = reader.result as string;
                                 setFormData((prev) => ({
                                   ...prev,
                                   image: file,
-                                  imagePreview: reader.result as string,
+                                  imagePreview: dataUrl,
                                 }));
+                                setAddItemError(null);
+                                setAnalyzingImage(true);
+                                try {
+                                  const analysis = await analyzeClothingImage(dataUrl);
+                                  setFormData((prev) => ({
+                                    ...prev,
+                                    category: analysis.category,
+                                    subcategory: analysis.subcategory || "",
+                                    colors: Array.isArray(analysis.colors) ? analysis.colors : [],
+                                    fabric: analysis.fabric || "",
+                                    silhouette: (analysis.silhouette || "") as Silhouette | "",
+                                    vibeTags: Array.isArray(analysis.vibe_tags) ? (analysis.vibe_tags as VibeTag[]) : [],
+                                  }));
+                                  setAddItemError(null);
+                                } catch (err) {
+                                  console.warn("Auto-fill from image failed:", err);
+                                  setAddItemError("Could not auto-fill details — add them manually.");
+                                } finally {
+                                  setAnalyzingImage(false);
+                                }
                               };
                               reader.readAsDataURL(file);
                             }
@@ -685,6 +863,46 @@ export function Closet() {
                       </div>
                     </div>
 
+                    {/* Preference Tier - How much do you like this item? */}
+                    <div className="space-y-2">
+                      <Label>How much do you like this item?</Label>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setFormData((prev) => ({ ...prev, preferenceTier: "dont_like" }))}
+                          className={`flex-1 rounded-xl px-4 py-3 text-sm transition-all ${
+                            formData.preferenceTier === "dont_like"
+                              ? "bg-red-100 border-2 border-red-300 text-red-700 font-medium"
+                              : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
+                          }`}
+                        >
+                          😕 I don't like it
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setFormData((prev) => ({ ...prev, preferenceTier: "like" }))}
+                          className={`flex-1 rounded-xl px-4 py-3 text-sm transition-all ${
+                            formData.preferenceTier === "like"
+                              ? "bg-yellow-100 border-2 border-yellow-300 text-yellow-700 font-medium"
+                              : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
+                          }`}
+                        >
+                          🙂 I like it
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setFormData((prev) => ({ ...prev, preferenceTier: "love" }))}
+                          className={`flex-1 rounded-xl px-4 py-3 text-sm transition-all ${
+                            formData.preferenceTier === "love"
+                              ? "bg-green-100 border-2 border-green-300 text-green-700 font-medium"
+                              : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
+                          }`}
+                        >
+                          😍 I love it
+                        </button>
+                      </div>
+                    </div>
+
                     {/* Error Message */}
                     {addItemError && (
                       <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
@@ -710,6 +928,7 @@ export function Closet() {
                             fabric: "",
                             silhouette: "" as Silhouette | "",
                             subcategory: "",
+                            preferenceTier: "like" as PreferenceTier | "",
                           });
                           setAddItemError(null);
                         }}
@@ -827,6 +1046,20 @@ export function Closet() {
                         backgroundColor: getColorHex(item.color),
                       }}
                     />
+                    {/* Score Badge */}
+                    {(() => {
+                      const rating = (item as any).rating ?? 0;
+                      const preferenceTier = (item as any).preferenceTier;
+                      const badge = getPreferenceTierBadge(preferenceTier);
+                      if (badge && rating > 0) {
+                        return (
+                          <div className={`absolute left-3 top-3 rounded-lg px-2 py-1 text-xs font-semibold shadow-sm ${badge.bg} ${badge.text} border ${badge.border}`}>
+                            {rating.toFixed(1)}
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
                   </div>
                   <div className="p-3">
                     <p className="mb-1 text-xs uppercase tracking-wide text-neutral-400">
@@ -848,7 +1081,7 @@ export function Closet() {
         {!loading && viewMode === "list" && (
           <div className="overflow-hidden rounded-xl border border-neutral-200/60 bg-white">
             {/* Table Header */}
-            <div className="grid grid-cols-[60px_1fr_100px_100px_80px_100px_100px] gap-4 border-b border-neutral-200/60 bg-neutral-50 px-4 py-3 text-xs uppercase tracking-wide text-neutral-500">
+            <div className="grid grid-cols-[60px_1fr_100px_100px_80px_100px_100px_80px] gap-4 border-b border-neutral-200/60 bg-neutral-50 px-4 py-3 text-xs uppercase tracking-wide text-neutral-500">
               <div></div>
               <div>Item</div>
               <div>Category</div>
@@ -856,6 +1089,7 @@ export function Closet() {
               <div>Color</div>
               <div>Fabric</div>
               <div>Silhouette</div>
+              <div>Score</div>
             </div>
 
             {/* Table Rows */}
@@ -872,7 +1106,7 @@ export function Closet() {
                     animate={{ opacity: 1 }}
                     transition={{ delay: index * 0.02 }}
                     onClick={() => setSelectedItem(item)}
-                    className="grid w-full grid-cols-[60px_1fr_100px_100px_80px_100px_100px] items-center gap-4 px-4 py-3 text-left text-sm transition-colors hover:bg-neutral-50"
+                    className="grid w-full grid-cols-[60px_1fr_100px_100px_80px_100px_100px_80px] items-center gap-4 px-4 py-3 text-left text-sm transition-colors hover:bg-neutral-50"
                   >
                     <div className="h-12 w-12 overflow-hidden rounded-lg bg-neutral-100">
                       <img
@@ -902,6 +1136,21 @@ export function Closet() {
                     <div className="text-xs text-neutral-600">
                       {item.silhouette || "—"}
                     </div>
+                    <div>
+                      {(() => {
+                        const rating = (item as any).rating ?? 0;
+                        const preferenceTier = (item as any).preferenceTier;
+                        const badge = getPreferenceTierBadge(preferenceTier);
+                        if (badge && rating > 0) {
+                          return (
+                            <div className={`inline-block rounded-lg px-2 py-1 text-xs font-semibold ${badge.bg} ${badge.text} border ${badge.border}`}>
+                              {rating.toFixed(1)}
+                            </div>
+                          );
+                        }
+                        return <span className="text-xs text-neutral-400">—</span>;
+                      })()}
+                    </div>
                   </motion.button>
                 ))
               )}
@@ -919,35 +1168,52 @@ export function Closet() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setSelectedItem(null)}
-              className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm"
+              className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm cursor-pointer"
+              aria-hidden
             />
             <motion.div
               initial={{ opacity: 0, y: 50 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 50 }}
-              className="fixed inset-x-0 bottom-0 z-50 mx-auto max-w-2xl overflow-hidden rounded-t-3xl bg-white shadow-2xl md:inset-y-8 md:rounded-3xl"
+              onClick={(e) => e.stopPropagation()}
+              className="fixed inset-x-0 bottom-0 z-50 mx-auto max-w-2xl overflow-hidden rounded-t-3xl bg-white shadow-2xl md:inset-y-8 md:rounded-3xl flex flex-col"
             >
-              {/* Modal Header */}
-              <div className="flex items-center justify-between border-b border-neutral-200/60 px-6 py-4">
+              {/* Modal Header - sticky so X is always visible and clickable */}
+              <div className="flex flex-shrink-0 items-center justify-between border-b border-neutral-200/60 bg-white px-6 py-4 z-10">
                 <h3 className="text-base">Item Details</h3>
                 <button
-                  onClick={() => setSelectedItem(null)}
-                  className="flex h-8 w-8 items-center justify-center rounded-full text-neutral-500 transition-colors hover:bg-neutral-100"
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setSelectedItem(null);
+                  }}
+                  className="flex h-10 w-10 items-center justify-center rounded-full text-neutral-500 transition-colors hover:bg-neutral-100 touch-manipulation"
+                  aria-label="Close"
                 >
-                  <X className="h-4 w-4" />
+                  <X className="h-5 w-5" />
                 </button>
               </div>
 
               {/* Modal Content */}
-              <div className="max-h-[70vh] overflow-y-auto md:max-h-[600px]">
-                <div className="p-6">
-                  {/* Image */}
-                  <div className="mb-6 overflow-hidden rounded-2xl bg-neutral-50">
-                    <img
-                      src={selectedItem.imageUrl}
-                      alt={selectedItem.brand || "Item"}
-                      className="w-full object-cover"
-                    />
+              <div className="min-h-0 flex-1 overflow-y-auto max-h-[70vh] md:max-h-[calc(85vh-4rem)]">
+                <div className="p-4 sm:p-6">
+                  {/* Main image */}
+                  <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-start">
+                    <div className="flex-shrink-0 overflow-hidden rounded-xl bg-neutral-50 md:w-44 md:max-w-[220px]">
+                      <img
+                        src={selectedItem.imageUrl}
+                        alt={selectedItem.brand || "Item"}
+                        className="h-48 w-full object-cover object-top md:h-52 md:max-h-[220px]"
+                      />
+                    </div>
+                    <div className="min-w-0 flex-1 md:pt-1">
+                      <p className="text-sm font-medium text-neutral-900">{selectedItem.brand || "Item"}</p>
+                      <p className="text-xs capitalize text-neutral-500">{selectedItem.category.replace("_", " ")}</p>
+                      {selectedItem.color && (
+                        <p className="mt-1 text-xs text-neutral-600">Color: {selectedItem.color}</p>
+                      )}
+                    </div>
                   </div>
 
                   {/* Editable Form Fields - Matching edit form (without subcategory) */}
@@ -1005,59 +1271,6 @@ export function Closet() {
                     }}
                     className="mb-6 space-y-4"
                   >
-                    {/* Image Preview/Upload */}
-                    <div className="space-y-2">
-                      <Label htmlFor="detail-image">Item Image</Label>
-                      <div className="flex items-center gap-4">
-                        {detailFormData.imagePreview ? (
-                          <div className="relative">
-                            <img
-                              src={detailFormData.imagePreview}
-                              alt="Preview"
-                              className="h-32 w-32 rounded-lg object-cover border border-neutral-200"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setDetailFormData((prev) => ({ ...prev, image: null, imagePreview: null }));
-                              }}
-                              className="absolute -top-2 -right-2 flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-white hover:bg-red-600"
-                            >
-                              <X className="h-4 w-4" />
-                            </button>
-                          </div>
-                        ) : (
-                          <label
-                            htmlFor="detail-image-upload"
-                            className="flex h-32 w-32 cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-neutral-300 bg-neutral-50 hover:border-neutral-400"
-                          >
-                            <Upload className="mb-2 h-6 w-6 text-neutral-400" />
-                            <span className="text-xs text-neutral-500">Change Image</span>
-                          </label>
-                        )}
-                        <input
-                          id="detail-image-upload"
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file) {
-                              const reader = new FileReader();
-                              reader.onloadend = () => {
-                                setDetailFormData((prev) => ({
-                                  ...prev,
-                                  image: file,
-                                  imagePreview: reader.result as string,
-                                }));
-                              };
-                              reader.readAsDataURL(file);
-                            }
-                          }}
-                        />
-                      </div>
-                    </div>
-
                     {/* Brand */}
                     <div className="space-y-2">
                       <Label htmlFor="detail-brand">Brand</Label>
@@ -1265,26 +1478,123 @@ export function Closet() {
                     </div>
                   </form>
 
-                  {/* Stats */}
-                  <div className="grid grid-cols-2 gap-4 rounded-xl border border-neutral-200/60 bg-neutral-50 p-4">
-                    <div>
-                      <p className="mb-1 text-xs uppercase tracking-wide text-neutral-400">
-                        Works With
-                      </p>
-                      <p className="text-2xl text-neutral-900">
-                        {selectedItem.compatibleWith || 0}
-                      </p>
-                      <p className="text-xs text-neutral-500">items in closet</p>
-                    </div>
-                    <div>
-                      <p className="mb-1 text-xs uppercase tracking-wide text-neutral-400">
-                        Times Worn
-                      </p>
-                      <p className="text-2xl text-neutral-900">
-                        {selectedItem.timesWorn || 0}
-                      </p>
-                      <p className="text-xs text-neutral-500">this season</p>
-                    </div>
+                  {/* Stats: Works With = count of other closet items in complementary categories; Times Worn = from DB */}
+                  {(() => {
+                    const pairCats = PAIR_WITH_CATEGORIES[selectedItem.category as ClosetCategory] || [];
+                    const worksWithCount = closetItems.filter(
+                      (i) => i.id !== selectedItem.id && pairCats.includes(i.category as ClosetCategory)
+                    ).length;
+                    const timesWorn = selectedItem.timesWorn ?? 0;
+                    return (
+                      <div className="grid grid-cols-2 gap-4 rounded-xl border border-neutral-200/60 bg-neutral-50 p-4">
+                        <div>
+                          <p className="mb-1 text-xs uppercase tracking-wide text-neutral-400">
+                            Works With
+                          </p>
+                          <p className="text-2xl text-neutral-900">{worksWithCount}</p>
+                          <p className="text-xs text-neutral-500">items in closet</p>
+                        </div>
+                        <div>
+                          <p className="mb-1 text-xs uppercase tracking-wide text-neutral-400">
+                            Times Worn
+                          </p>
+                          <p className="text-2xl text-neutral-900">{timesWorn}</p>
+                          <p className="text-xs text-neutral-500">this season</p>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Pair this item with */}
+                  <div className="mt-6 rounded-xl border border-neutral-200/60 bg-white p-5">
+                    <h4 className="mb-4 text-base font-semibold text-neutral-900">Pair this item with</h4>
+                    {/* From your wardrobe: AI descriptions, sorted by pairing score */}
+                    {(() => {
+                      const pairCats = PAIR_WITH_CATEGORIES[selectedItem.category as ClosetCategory] || [];
+                      const fromWardrobe = closetItems.filter(
+                        (i) => i.id !== selectedItem.id && pairCats.includes(i.category as ClosetCategory)
+                      ).slice(0, 3);
+                      const itemsToShow = pairingResults.length > 0
+                        ? pairingResults
+                        : fromWardrobe.map((i) => ({
+                          id: i.id,
+                          shortDescription: (i as { displayDescription?: string | null }).displayDescription || i.brand || i.category || "Item",
+                          pairingScore: 3,
+                          pairingReason: undefined as string | undefined,
+                        }));
+                      const getItem = (id: string) => closetItems.find((i) => i.id === id);
+                      return (
+                        <>
+                          {fromWardrobe.length > 0 && (
+                            <div className="mb-5">
+                              <p className="mb-3 text-sm font-medium text-neutral-700">From your wardrobe</p>
+                              {pairingLoading ? (
+                                <p className="text-sm text-neutral-500">Loading suggestions…</p>
+                              ) : (
+                                <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+                                  {itemsToShow.map((result) => {
+                                    const item = getItem(result.id);
+                                    if (!item) return null;
+                                    return (
+                                      <button
+                                        key={item.id}
+                                        type="button"
+                                        onClick={() => setSelectedItem(item)}
+                                        className="flex w-full min-w-0 flex-shrink-0 flex-row gap-3 rounded-xl border border-neutral-200 bg-neutral-50/80 p-3 text-left transition-colors hover:border-neutral-300 hover:bg-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-400 sm:w-[calc(50%-6px)] sm:max-w-[280px]"
+                                      >
+                                        <div className="h-20 w-20 flex-shrink-0 overflow-hidden rounded-lg bg-neutral-200">
+                                          <img src={item.imageUrl} alt="" className="h-full w-full object-cover" />
+                                        </div>
+                                        <div className="min-w-0 flex-1">
+                                          <p className="text-sm font-medium text-neutral-900 leading-snug" title={item.displayDescription || result.shortDescription}>
+                                            {item.displayDescription || result.shortDescription}
+                                          </p>
+                                          {result.pairingReason && (
+                                            <p className="mt-1 text-xs text-neutral-600 leading-snug" title={result.pairingReason}>
+                                              {result.pairingReason}
+                                            </p>
+                                          )}
+                                        </div>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          <div>
+                            <p className="mb-3 text-sm font-medium text-neutral-700">Consider adding</p>
+                            {thingsToBuyLoading ? (
+                              <p className="text-sm text-neutral-500">Loading suggestions…</p>
+                            ) : (
+                              <div className="flex gap-3 overflow-x-auto pb-2">
+                                {(thingsToBuySuggestions.length ? thingsToBuySuggestions : (THINGS_TO_BUY_BY_CATEGORY[selectedItem.category as ClosetCategory] || [])).map((suggestion) => {
+                                  const shopUrl = `https://www.google.com/search?tbm=shop&q=${encodeURIComponent(suggestion)}`;
+                                  return (
+                                    <a
+                                      key={suggestion}
+                                      href={shopUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="flex-shrink-0 flex items-center gap-3 w-[220px] rounded-xl border border-neutral-200 bg-white px-4 py-3 shadow-sm transition-shadow hover:shadow-md hover:border-neutral-300"
+                                    >
+                                      <div className="min-w-0 flex-1">
+                                        <p className="text-sm font-medium text-neutral-800">{suggestion}</p>
+                                        <span className="inline-flex items-center gap-1.5 text-xs text-neutral-500 mt-1">
+                                          <ShoppingBag className="h-4 w-4 flex-shrink-0" />
+                                          Shop on Google
+                                        </span>
+                                      </div>
+                                      <ExternalLink className="h-4 w-4 flex-shrink-0 text-neutral-400" />
+                                    </a>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        </>
+                      );
+                    })()}
                   </div>
 
                   {/* Remove from wardrobe */}
@@ -1718,6 +2028,32 @@ export function Closet() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Ranking Session Modal */}
+      {rankingSessionData && (
+        <RankingSession
+          newItem={rankingSessionData.newItem}
+          itemsToCompare={rankingSessionData.itemsToCompare}
+          totalComparisons={rankingSessionData.totalComparisons}
+          category={rankingSessionData.category}
+          onComplete={async () => {
+            setRankingSessionData(null);
+            // Reload closet items to get updated scores
+            if (isUsingApi && currentUserId) {
+              try {
+                const items = await getClosetItems(currentUserId);
+                const uiItems = items.map(apiClosetItemToUI);
+                setClosetItems(uiItems);
+              } catch (err) {
+                console.error("Failed to reload items after ranking:", err);
+              }
+            }
+          }}
+          onSkip={() => {
+            setRankingSessionData(null);
+          }}
+        />
+      )}
 
       <style>{`
         .scrollbar-hide::-webkit-scrollbar {

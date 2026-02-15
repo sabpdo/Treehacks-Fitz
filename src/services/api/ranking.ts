@@ -17,21 +17,29 @@ function isUuid(id: string): boolean {
 
 /**
  * Get all items in a category for a user with Elo ratings.
+ * Optionally filter by preference tier (for ranking sessions).
  * Returns [] if userId is not a valid UUID (e.g. mock "me" / "u1") to avoid 400 from Supabase.
  */
 export async function getItemsInCategory(
   userId: string,
-  category: Category
+  category: Category,
+  preferenceTier?: string
 ): Promise<ItemWithRanking[]> {
   if (!isUuid(userId)) {
     return [];
   }
-  const { data, error } = await supabase
+
+  let query = supabase
     .from('closet_items')
     .select('*')
     .eq('user_id', userId)
-    .eq('category', category)
-    .order('elo_rating', { ascending: false });
+    .eq('category', category);
+
+  if (preferenceTier) {
+    query = query.eq('preference_tier', preferenceTier);
+  }
+
+  const { data, error } = await query.order('elo_rating', { ascending: false });
 
   if (error) throw error;
   return (data || []) as ItemWithRanking[];
@@ -46,10 +54,13 @@ export async function submitComparison(
   winnerId: string,
   loserId: string
 ): Promise<{ newWinnerRating: number; newLoserRating: number }> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
   // Get current items
   const { data: items, error: fetchError } = await supabase
     .from('closet_items')
-    .select('id, elo_rating, rating')
+    .select('id, elo_rating, rating, preference_tier, category, user_id')
     .in('id', [winnerId, loserId]);
 
   if (fetchError || !items || items.length !== 2) {
@@ -62,42 +73,52 @@ export async function submitComparison(
   // Calculate new Elo ratings
   const { newWinnerElo, newLoserElo } = updateEloRatings(
     winner.elo_rating,
-    loser.elo_rating
+    loser.elo_rating,
+    winner.preference_tier
   );
 
-  // Update both items in database
-  const updates = [
+  // Update Elo ratings in database
+  await Promise.all([
     supabase
       .from('closet_items')
-      .update({
-        elo_rating: newWinnerElo,
-        rating: eloToScore(newWinnerElo),
-      })
+      .update({ elo_rating: newWinnerElo })
       .eq('id', winnerId),
     supabase
       .from('closet_items')
-      .update({
-        elo_rating: newLoserElo,
-        rating: eloToScore(newLoserElo),
-      })
+      .update({ elo_rating: newLoserElo })
       .eq('id', loserId),
-  ];
+  ]);
 
-  const results = await Promise.all(updates);
+  // Get ALL items in same category & tier to recalculate normalized scores
+  const allItems = await getItemsInCategory(user.id, winner.category, winner.preference_tier);
 
-  if (results.some((r) => r.error)) {
-    throw new Error('Failed to update item ratings');
-  }
+  // Recalculate rankings (this will normalize scores across all items)
+  const rankedItems = calculateRankings(allItems);
+
+  // Update all items with new normalized scores
+  const scoreUpdates = rankedItems.map((item) =>
+    supabase
+      .from('closet_items')
+      .update({ rating: item.rating })
+      .eq('id', item.id)
+  );
+
+  await Promise.all(scoreUpdates);
+
+  // Return the new ratings for the two items that were compared
+  const winnerItem = rankedItems.find((i) => i.id === winnerId);
+  const loserItem = rankedItems.find((i) => i.id === loserId);
 
   return {
-    newWinnerRating: eloToScore(newWinnerElo),
-    newLoserRating: eloToScore(newLoserElo),
+    newWinnerRating: winnerItem?.rating ?? 0,
+    newLoserRating: loserItem?.rating ?? 0,
   };
 }
 
 /**
  * Start a ranking session for a new item
  * Returns items to compare against using binary search algorithm
+ * Only compares items within the same preference tier
  */
 export async function startRankingSession(
   newItemId: string,
@@ -121,8 +142,8 @@ export async function startRankingSession(
     throw new Error('New item not found');
   }
 
-  // Get existing items in category
-  const existingItems = await getItemsInCategory(user.id, category);
+  // Get existing items in same category AND same preference tier
+  const existingItems = await getItemsInCategory(user.id, category, newItem.preference_tier);
 
   // Filter out the new item
   const otherItems = existingItems.filter((item) => item.id !== newItemId);
@@ -132,8 +153,8 @@ export async function startRankingSession(
     await supabase
       .from('closet_items')
       .update({
-        elo_rating: getInitialElo(),
-        rating: eloToScore(getInitialElo()),
+        elo_rating: getInitialElo(newItem.preference_tier),
+        rating: eloToScore(getInitialElo(newItem.preference_tier), newItem.preference_tier),
       })
       .eq('id', newItemId);
 
@@ -145,10 +166,8 @@ export async function startRankingSession(
   }
 
   // Calculate how many comparisons we'll need
-  const totalComparisons = Math.min(
-    Math.ceil(Math.log2(otherItems.length)) + 2,
-    Math.min(10, otherItems.length)
-  );
+  // Just 2-3 strategic comparisons are enough to place the item accurately
+  const totalComparisons = Math.min(3, otherItems.length);
 
   return {
     newItem: newItem as ItemWithRanking,
@@ -160,6 +179,7 @@ export async function startRankingSession(
 /**
  * Get the next item to compare against in the ranking session
  * Uses binary search to efficiently find the new item's rank
+ * Only returns items from the same preference tier
  */
 export async function getNextComparisonItem(
   newItemId: string,
@@ -178,8 +198,8 @@ export async function getNextComparisonItem(
 
   if (!newItem) return null;
 
-  // Get existing items in category
-  const existingItems = await getItemsInCategory(user.id, category);
+  // Get existing items in same category AND same preference tier
+  const existingItems = await getItemsInCategory(user.id, category, newItem.preference_tier);
 
   // Filter out already compared items and the new item itself
   const comparedSet = new Set([...comparisonsMade, newItemId]);
