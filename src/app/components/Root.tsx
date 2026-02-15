@@ -1,5 +1,5 @@
 import { Outlet, Link, useLocation } from "react-router";
-import { Home, Sparkles, User, ShoppingBag, Plus, Ruler } from "lucide-react";
+import { Home, Search, User, ShoppingBag, Plus, Ruler } from "lucide-react";
 import { motion } from "motion/react";
 
 export function Root() {
@@ -60,7 +60,7 @@ export function Root() {
             to="/ai-generator"
             className="relative flex flex-col items-center gap-1.5 transition-colors duration-200"
           >
-            <Sparkles
+            <Search
               className={`h-6 w-6 transition-all ${isActive("/ai-generator") ? "text-[#8B9B8E]" : "text-neutral-400"
                 }`}
               strokeWidth={isActive("/ai-generator") ? 2.5 : 2}
@@ -69,7 +69,7 @@ export function Root() {
               className={`text-xs transition-all ${isActive("/ai-generator") ? "text-[#8B9B8E]" : "text-neutral-400"
                 }`}
             >
-              AI
+              Shop
             </span>
             {isActive("/ai-generator") && (
               <motion.div
