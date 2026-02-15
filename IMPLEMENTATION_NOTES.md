@@ -80,3 +80,42 @@ To get **real** outfit analysis (detect tops, bottoms, shoes, etc. from a photo)
 
 4. **Backend**  
    Analysis runs in the browser via `src/services/openai.ts` (GPT-4 Vision) when not using segmentation. Segmentation runs only in the Edge Function so the Replicate key stays server-side. See **BACKEND_SETUP.md** for full backend setup (Supabase, schema, storage, etc.).
+
+---
+
+## Shopping / Curate Tab (Web Search)
+
+The **Curate** tab (formerly AI tab) allows users to search for clothing items from web retailers like H&M, Google Shopping, Zara, ASOS, etc.
+
+### Bright Data Integration
+
+To enable **real web search** instead of mock data:
+
+1. **Get Bright Data API credentials**
+   - Sign up at [brightdata.com](https://brightdata.com)
+   - Create a dataset for Google Shopping or e-commerce scraping
+   - Get your **API Key** and **Dataset ID** from the dashboard
+
+2. **Add to `.env` file**
+   ```env
+   VITE_BRIGHT_DATA_API_KEY=your_api_key_here
+   VITE_BRIGHT_DATA_DATASET_ID=gd_XXXXXXXXXXXX
+   ```
+
+3. **How it works**
+   - When users type in the search field, the app calls Bright Data's `/scrape` endpoint
+   - Results appear in real-time as suggestions dropdown
+   - The service automatically maps Bright Data product fields to our `ShoppingItem` format
+   - Falls back to mock data if API is not configured or if there's an error
+
+4. **Response mapping**
+   - The service handles various response structures from Bright Data
+   - Maps fields like `title`, `price`, `image_url`, `url`, `brand` to our format
+   - Automatically detects retailer type (H&M, Zara, ASOS, etc.) from URLs or brand names
+
+5. **Fallback behavior**
+   - If Bright Data API is not configured, the app uses mock data
+   - If API call fails, it gracefully falls back to mock data
+   - No errors are shown to users - seamless experience
+
+See `src/services/shopping.ts` for the implementation.
