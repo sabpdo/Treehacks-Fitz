@@ -174,10 +174,10 @@ export function RankingSession({
 
       {/* Comparison */}
       <div className="flex flex-1 items-center justify-center p-6">
-        <div className="mx-auto w-full max-w-5xl">
-          <h2 className="mb-8 text-center text-xl text-neutral-900">Which do you prefer?</h2>
+        <div className="mx-auto w-full max-w-3xl">
+          <h2 className="mb-6 text-center text-lg text-neutral-900">Which do you prefer?</h2>
 
-          <div className="grid gap-8 md:grid-cols-2">
+          <div className="grid gap-6 md:grid-cols-2">
             <AnimatePresence mode="wait">
               {/* New Item */}
               <ComparisonCard
@@ -238,7 +238,7 @@ function ComparisonCard({
         } ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
     >
       {/* Image */}
-      <div className="relative aspect-[4/5] overflow-hidden bg-neutral-100">
+      <div className="relative aspect-[3/4] overflow-hidden bg-neutral-100">
         <img
           src={item.image_url}
           alt={item.subcategory || 'Item'}

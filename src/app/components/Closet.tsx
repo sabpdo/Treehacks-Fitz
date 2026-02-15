@@ -7,6 +7,11 @@ import { useAppStore } from "../context/AppStore";
 import { getCurrentProfile, getClosetItems, createClosetItem, updateClosetItem, deleteClosetItem, uploadImage, getClosetItem } from "../../services/api";
 import { analyzeClothingImage, getPairingDescriptionsAndRanking, getThingsToBuySuggestions, type PairingResultItem } from "../../services/openai";
 import { apiClosetItemToUI } from "../../lib/adapters";
+import { compressImage } from "../../services/api/storage";
+import { startRankingSession } from "../../services/api/ranking";
+import { RankingSession } from "./RankingSession";
+import type { ItemWithRanking } from "../../lib/ranking";
+import type { PreferenceTier } from "../../types/database";
 
 // Map UI category to database category (reverse of adapter)
 function mapCategoryToUI(dbCategory: string): "tops" | "bottoms" | "outerwear" | "shoes" | "accessories" {
@@ -45,6 +50,18 @@ const PREDEFINED_BRANDS = [
   "Target", "ASOS", "Shein", "Urban Outfitters", "Aritzia", "Lululemon",
   "Levi's", "Madewell", "Everlane", "Reformation"
 ];
+
+function getPreferenceTierBadge(tier: string | undefined): { bg: string; text: string; border: string; label: string } | null {
+  if (!tier) return null;
+
+  const tierMap: Record<string, { bg: string; text: string; border: string; label: string }> = {
+    love: { bg: 'bg-green-100', text: 'text-green-700', border: 'border-green-300', label: 'I love it' },
+    like: { bg: 'bg-yellow-100', text: 'text-yellow-700', border: 'border-yellow-300', label: 'I like it' },
+    dont_like: { bg: 'bg-red-100', text: 'text-red-700', border: 'border-red-300', label: "I don't like it" },
+  };
+
+  return tierMap[tier] || null;
+}
 
 // Map color names to actual hex colors
 function getColorHex(colorName: string): string {
