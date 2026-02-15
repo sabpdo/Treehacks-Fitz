@@ -275,5 +275,6 @@ export function apiClosetItemToUI(dbItem: import('../types/database').ClosetItem
     priceTier: dbItem.price_tier || undefined,
     allColors: dbItem.colors || [],
     subcategory: dbItem.subcategory || undefined,
+    displayDescription: dbItem.display_description || undefined,
   };
 }

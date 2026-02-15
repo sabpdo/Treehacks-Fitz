@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useSearchParams } from "react-router";
-import { Plus, Grid3x3, List, X, ChevronRight, Flame, Upload, Trash2 } from "lucide-react";
+import { Plus, Grid3x3, List, X, ChevronRight, Flame, Upload, Trash2, ShoppingBag, ExternalLink } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { mockClosetItems, type ClosetItem, currentUserProfile } from "../data/mockData";
 import { useAppStore } from "../context/AppStore";
@@ -262,7 +262,7 @@ export function Closet() {
     const pairCats = PAIR_WITH_CATEGORIES[selectedItem.category as ClosetCategory] || [];
     const fromWardrobe = closetItems.filter(
       (i) => i.id !== selectedItem.id && pairCats.includes(i.category as ClosetCategory)
-    ).slice(0, 6);
+    ).slice(0, 3);
     const mainId = selectedItem.id;
 
     setPairingLoading(fromWardrobe.length > 0);
@@ -287,6 +287,7 @@ export function Closet() {
           color: i.color,
           fabric: i.fabric,
           silhouette: i.silhouette,
+          display_description: (i as { displayDescription?: string | null }).displayDescription,
         }))
       )
         .then((items) => {
@@ -1417,27 +1418,32 @@ export function Closet() {
                   </div>
 
                   {/* Pair this item with */}
-                  <div className="mt-6 rounded-xl border border-neutral-200/60 bg-white p-4">
-                    <h4 className="mb-3 text-sm font-semibold text-neutral-900">Pair this item with</h4>
+                  <div className="mt-6 rounded-xl border border-neutral-200/60 bg-white p-5">
+                    <h4 className="mb-4 text-base font-semibold text-neutral-900">Pair this item with</h4>
                     {/* From your wardrobe: AI descriptions, sorted by pairing score */}
                     {(() => {
                       const pairCats = PAIR_WITH_CATEGORIES[selectedItem.category as ClosetCategory] || [];
                       const fromWardrobe = closetItems.filter(
                         (i) => i.id !== selectedItem.id && pairCats.includes(i.category as ClosetCategory)
-                      ).slice(0, 6);
+                      ).slice(0, 3);
                       const itemsToShow = pairingResults.length > 0
                         ? pairingResults
-                        : fromWardrobe.map((i) => ({ id: i.id, shortDescription: i.brand || i.category || "Item", pairingScore: 3 }));
+                        : fromWardrobe.map((i) => ({
+                          id: i.id,
+                          shortDescription: (i as { displayDescription?: string | null }).displayDescription || i.brand || i.category || "Item",
+                          pairingScore: 3,
+                          pairingReason: undefined as string | undefined,
+                        }));
                       const getItem = (id: string) => closetItems.find((i) => i.id === id);
                       return (
                         <>
                           {fromWardrobe.length > 0 && (
-                            <div className="mb-4">
-                              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-500">From your wardrobe</p>
+                            <div className="mb-5">
+                              <p className="mb-3 text-sm font-medium text-neutral-700">From your wardrobe</p>
                               {pairingLoading ? (
-                                <p className="text-xs text-neutral-500">Loading suggestions…</p>
+                                <p className="text-sm text-neutral-500">Loading suggestions…</p>
                               ) : (
-                                <div className="flex gap-2 overflow-x-auto pb-1">
+                                <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
                                   {itemsToShow.map((result) => {
                                     const item = getItem(result.id);
                                     if (!item) return null;
@@ -1446,12 +1452,21 @@ export function Closet() {
                                         key={item.id}
                                         type="button"
                                         onClick={() => setSelectedItem(item)}
-                                        className="flex-shrink-0 w-[100px] rounded-lg border border-neutral-200 bg-neutral-50 overflow-hidden focus:outline-none focus:ring-2 focus:ring-neutral-400 text-left"
+                                        className="flex w-full min-w-0 flex-shrink-0 flex-row gap-3 rounded-xl border border-neutral-200 bg-neutral-50/80 p-3 text-left transition-colors hover:border-neutral-300 hover:bg-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-400 sm:w-[calc(50%-6px)] sm:max-w-[280px]"
                                       >
-                                        <img src={item.imageUrl} alt="" className="h-20 w-full object-cover" />
-                                        <p className="w-full truncate px-1.5 py-1 text-[10px] text-neutral-700 leading-tight" title={result.shortDescription}>
-                                          {result.shortDescription}
-                                        </p>
+                                        <div className="h-20 w-20 flex-shrink-0 overflow-hidden rounded-lg bg-neutral-200">
+                                          <img src={item.imageUrl} alt="" className="h-full w-full object-cover" />
+                                        </div>
+                                        <div className="min-w-0 flex-1">
+                                          <p className="text-sm font-medium text-neutral-900 leading-snug" title={item.displayDescription || result.shortDescription}>
+                                            {item.displayDescription || result.shortDescription}
+                                          </p>
+                                          {result.pairingReason && (
+                                            <p className="mt-1 text-xs text-neutral-600 leading-snug" title={result.pairingReason}>
+                                              {result.pairingReason}
+                                            </p>
+                                          )}
+                                        </div>
                                       </button>
                                     );
                                   })}
@@ -1460,19 +1475,33 @@ export function Closet() {
                             </div>
                           )}
                           <div>
-                            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-500">Consider adding</p>
+                            <p className="mb-3 text-sm font-medium text-neutral-700">Consider adding</p>
                             {thingsToBuyLoading ? (
-                              <p className="text-xs text-neutral-500">Loading suggestions…</p>
+                              <p className="text-sm text-neutral-500">Loading suggestions…</p>
                             ) : (
-                              <ul className="flex flex-wrap gap-2">
-                                {(thingsToBuySuggestions.length ? thingsToBuySuggestions : (THINGS_TO_BUY_BY_CATEGORY[selectedItem.category as ClosetCategory] || [])).map((suggestion) => (
-                                  <li key={suggestion}>
-                                    <span className="inline-flex items-center rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-xs text-neutral-700">
-                                      {suggestion}
-                                    </span>
-                                  </li>
-                                ))}
-                              </ul>
+                              <div className="flex gap-3 overflow-x-auto pb-2">
+                                {(thingsToBuySuggestions.length ? thingsToBuySuggestions : (THINGS_TO_BUY_BY_CATEGORY[selectedItem.category as ClosetCategory] || [])).map((suggestion) => {
+                                  const shopUrl = `https://www.google.com/search?tbm=shop&q=${encodeURIComponent(suggestion)}`;
+                                  return (
+                                    <a
+                                      key={suggestion}
+                                      href={shopUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="flex-shrink-0 flex items-center gap-3 w-[220px] rounded-xl border border-neutral-200 bg-white px-4 py-3 shadow-sm transition-shadow hover:shadow-md hover:border-neutral-300"
+                                    >
+                                      <div className="min-w-0 flex-1">
+                                        <p className="text-sm font-medium text-neutral-800">{suggestion}</p>
+                                        <span className="inline-flex items-center gap-1.5 text-xs text-neutral-500 mt-1">
+                                          <ShoppingBag className="h-4 w-4 flex-shrink-0" />
+                                          Shop on Google
+                                        </span>
+                                      </div>
+                                      <ExternalLink className="h-4 w-4 flex-shrink-0 text-neutral-400" />
+                                    </a>
+                                  );
+                                })}
+                              </div>
                             )}
                           </div>
                         </>
