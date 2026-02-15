@@ -6,7 +6,8 @@
   "scripts": {
     "build": "vite build",
     "dev": "vite",
-    "supabase:deploy": "npx supabase functions deploy segment-outfit-image"
+    "supabase:deploy": "npx supabase functions deploy segment-outfit-image",
+    "populate:shopping": "npx tsx scripts/populate-shopping-items.ts"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",
