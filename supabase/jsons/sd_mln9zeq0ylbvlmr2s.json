@@ -1,0 +1,10 @@
+[
+  {
+    "timestamp": "2026-02-15T04:59:02.379Z",
+    "input": {
+      "url": "https://us.shein.com/pdsearch/white%20shirts/?ici=s1`EditSearch`white%20shirts`_fb`d0`PageOthers&search_source=1&search_type=all&source=search&src_identifier=st%3D2%60sc%3Dwhite%20shirts%60sr%3D0%60ps%3D1&src_identifier_pre_search=%22on%3DPRODUCT_ITEMS_COMPONENT%60cn%3Dinfoflow%60hz%3D0%60ps%3D10_0%60jc%3DitemPicking_003128633%22&src_module=search&src_tab_page_id=page_goods_detail1771131474564"
+    },
+    "error": "Not a product page",
+    "error_code": "dead_page"
+  }
+]
