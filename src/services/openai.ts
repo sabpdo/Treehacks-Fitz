@@ -176,6 +176,89 @@ export async function analyzeOutfitImage(imageUrl: string): Promise<{
   }
 }
 
+/** Result of body-type analysis for fit recommendations */
+export interface BodyTypeAnalysis {
+  /** Colors that tend to flatter this body type */
+  suggestedColors: string[];
+  /** Silhouettes/fits that work well (e.g. fitted, high-waist, A-line) */
+  suggestedSilhouettes: string[];
+  /** Colors to use sparingly or avoid */
+  avoidColors?: string[];
+  /** Silhouettes that may not flatter */
+  avoidSilhouettes?: string[];
+  /** Short label e.g. "balanced", "pear", "athletic" (optional) */
+  bodyTypeLabel?: string;
+  /** Brief styling tips */
+  tips?: string[];
+}
+
+/**
+ * Analyze body type from dimensions and/or photos; returns color + silhouette suggestions for best fits.
+ * Pass either dimensions (object or string) or imageUrls (data URLs or public URLs), or both.
+ */
+export async function analyzeBodyType(options: {
+  dimensions?: Record<string, number> | string;
+  imageUrls?: string[];
+}): Promise<BodyTypeAnalysis> {
+  if (!OPENAI_ENABLED || !openai) {
+    throw new Error('OpenAI API is not configured. Please add VITE_OPENAI_API_KEY to your .env file.');
+  }
+
+  const { dimensions, imageUrls } = options;
+  if (!dimensions && (!imageUrls || imageUrls.length === 0)) {
+    throw new Error('Provide either dimensions or at least one photo.');
+  }
+
+  const dimensionsText =
+    typeof dimensions === 'string'
+      ? dimensions
+      : dimensions
+        ? `Measurements (inches/lbs): ${JSON.stringify(dimensions)}`
+        : '';
+
+  const prompt = `You are a fashion stylist. Based on the following body information, suggest which clothing colors and silhouettes will be most flattering. Be encouraging and specific.
+
+${dimensionsText ? `DIMENSIONS:\n${dimensionsText}\n\n` : ''}
+${dimensionsText && imageUrls?.length ? 'The user also provided photos below for context.\n\n' : ''}
+Return ONLY valid JSON with this exact structure (no markdown):
+{
+  "suggestedColors": array of 4-6 color names that tend to flatter (e.g. "Navy", "Burgundy", "Olive", "Cream"),
+  "suggestedSilhouettes": array of 4-6 silhouettes/fits (e.g. "fitted", "high-waist", "A-line", "tailored", "relaxed", "wide-leg"),
+  "avoidColors": array of 0-3 colors to use sparingly (optional),
+  "avoidSilhouettes": array of 0-3 silhouettes that may not flatter (optional),
+  "bodyTypeLabel": short label like "balanced", "pear", "athletic", "rectangle" (optional),
+  "tips": array of 2-4 short styling tips (optional)
+}
+
+Use lowercase for silhouettes so we can match to our app (fitted, oversized, loose, tailored, relaxed, high-waist, wide-leg, a-line, etc.).`;
+
+  const content: Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }> = [
+    { type: 'text', text: prompt },
+  ];
+  if (imageUrls?.length) {
+    for (const url of imageUrls.slice(0, 4)) {
+      content.push({ type: 'image_url', image_url: { url } });
+    }
+  }
+
+  const response = await openai.chat.completions.create({
+    model: 'gpt-4o',
+    messages: [{ role: 'user', content }],
+    max_tokens: 600,
+  });
+
+  const raw = (response.choices[0]?.message?.content ?? '').trim();
+  if (!raw.startsWith('{') && !raw.includes('```')) {
+    throw new Error(`OpenAI returned non-JSON: ${raw.slice(0, 80)}`);
+  }
+  const jsonMatch = raw.match(/```json\n?(.*?)\n?```/s) || raw.match(/(\{[\s\S]*\})/);
+  const jsonString = (jsonMatch ? (jsonMatch[1] ?? jsonMatch[0]) : raw).trim();
+  const parsed = JSON.parse(jsonString) as BodyTypeAnalysis;
+  if (!Array.isArray(parsed.suggestedColors)) parsed.suggestedColors = [];
+  if (!Array.isArray(parsed.suggestedSilhouettes)) parsed.suggestedSilhouettes = [];
+  return parsed;
+}
+
 // Generate search embeddings for semantic search
 export async function generateEmbedding(text: string): Promise<number[]> {
   if (!OPENAI_ENABLED || !openai) {
