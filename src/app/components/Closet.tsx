@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { mockClosetItems, type ClosetItem, currentUserProfile } from "../data/mockData";
 import { useAppStore } from "../context/AppStore";
 import { getCurrentProfile, getClosetItems, createClosetItem, updateClosetItem, deleteClosetItem, uploadImage, getClosetItem } from "../../services/api";
+import { analyzeClothingImage } from "../../services/openai";
 import { apiClosetItemToUI } from "../../lib/adapters";
 
 // Map UI category to database category (reverse of adapter)
@@ -111,6 +112,7 @@ export function Closet() {
   const [error, setError] = useState<string | null>(null);
   const [addItemOpen, setAddItemOpen] = useState(false);
   const [addingItem, setAddingItem] = useState(false);
+  const [analyzingImage, setAnalyzingImage] = useState(false);
   const [addItemError, setAddItemError] = useState<string | null>(null);
   const [editItemOpen, setEditItemOpen] = useState(false);
   const [editingItem, setEditingItem] = useState(false);
@@ -448,10 +450,16 @@ export function Closet() {
                               alt="Preview"
                               className="h-32 w-32 rounded-lg object-cover border border-neutral-200"
                             />
+                            {analyzingImage && (
+                              <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/50 text-xs text-white">
+                                Analyzing…
+                              </div>
+                            )}
                             <button
                               type="button"
                               onClick={() => {
                                 setFormData((prev) => ({ ...prev, image: null, imagePreview: null }));
+                                setAddItemError(null);
                               }}
                               className="absolute -top-2 -right-2 flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-white hover:bg-red-600"
                             >
@@ -476,12 +484,33 @@ export function Closet() {
                             const file = e.target.files?.[0];
                             if (file) {
                               const reader = new FileReader();
-                              reader.onloadend = () => {
+                              reader.onloadend = async () => {
+                                const dataUrl = reader.result as string;
                                 setFormData((prev) => ({
                                   ...prev,
                                   image: file,
-                                  imagePreview: reader.result as string,
+                                  imagePreview: dataUrl,
                                 }));
+                                setAddItemError(null);
+                                setAnalyzingImage(true);
+                                try {
+                                  const analysis = await analyzeClothingImage(dataUrl);
+                                  setFormData((prev) => ({
+                                    ...prev,
+                                    category: analysis.category,
+                                    subcategory: analysis.subcategory || "",
+                                    colors: Array.isArray(analysis.colors) ? analysis.colors : [],
+                                    fabric: analysis.fabric || "",
+                                    silhouette: (analysis.silhouette || "") as Silhouette | "",
+                                    vibeTags: Array.isArray(analysis.vibe_tags) ? (analysis.vibe_tags as VibeTag[]) : [],
+                                  }));
+                                  setAddItemError(null);
+                                } catch (err) {
+                                  console.warn("Auto-fill from image failed:", err);
+                                  setAddItemError("Could not auto-fill details — add them manually.");
+                                } finally {
+                                  setAnalyzingImage(false);
+                                }
                               };
                               reader.readAsDataURL(file);
                             }
