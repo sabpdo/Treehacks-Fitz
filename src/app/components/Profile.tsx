@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate, useSearchParams, Link } from "react-router";
-import { Settings, Flame, TrendingUp, ArrowLeft, LogOut } from "lucide-react";
+import { Settings, Flame, Sparkles, TrendingUp, ArrowLeft, LogOut } from "lucide-react";
 import { useAppStore } from "../context/AppStore";
 import { currentUserProfile, rankedItems } from "../data/mockData";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "./ui/tabs";
@@ -16,7 +16,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "./ui/dialog";
-import { updateProfile, uploadImage, getFollowing, getFollowers, getDiscoverProfiles } from "../../services/api";
+import { updateProfile, uploadImage, getFollowing, getFollowers, getDiscoverProfiles, getMatchScore } from "../../services/api";
 import { getAllCategoryRankings } from "../../services/api/ranking";
 import { apiProfileToUser, DEFAULT_AVATAR, ensurePublicStorageUrl, type UIUser } from "../../lib/adapters";
 import type { RankedItem } from "../data/mockData";
@@ -56,6 +56,8 @@ export function Profile() {
   const [followingList, setFollowingList] = useState<UIUser[]>([]);
   const [discoverList, setDiscoverList] = useState<UIUser[]>([]);
   const [listLoading, setListLoading] = useState(false);
+  const [matchScore, setMatchScore] = useState<{ score: number; reasons: string[] } | null>(null);
+  const [matchScoreLoading, setMatchScoreLoading] = useState(false);
 
   const [searchParams, setSearchParams] = useSearchParams();
   const tabFromUrl = searchParams.get("tab");
@@ -77,6 +79,24 @@ export function Profile() {
   useEffect(() => {
     if (isOwnProfile && isUsingApi) refetchCurrentUser();
   }, [isOwnProfile, isUsingApi, refetchCurrentUser]);
+
+  useEffect(() => {
+    if (isOwnProfile || !isUsingApi || !currentUserId || !profileUserId) return;
+    let cancelled = false;
+    setMatchScoreLoading(true);
+    setMatchScore(null);
+    getMatchScore(currentUserId, profileUserId)
+      .then((result) => {
+        if (!cancelled) setMatchScore(result);
+      })
+      .catch(() => {
+        if (!cancelled) setMatchScore(null);
+      })
+      .finally(() => {
+        if (!cancelled) setMatchScoreLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [isOwnProfile, isUsingApi, currentUserId, profileUserId]);
 
   useEffect(() => {
     if (!isOwnProfile || !isUsingApi || !currentUserId) return;
@@ -400,17 +420,39 @@ export function Profile() {
             </div>
           </div>
 
-          {/* Streak */}
+          {/* Streak (and Match % when viewing someone else) */}
           <div className="border-t border-neutral-200/60 bg-white">
-            <div className="p-5">
-              <div className="mb-2 flex items-center gap-2">
-                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-orange-400 to-rose-500">
-                  <Flame className="h-3.5 w-3.5 text-white" />
+            <div className={isOwnProfile ? "" : "grid grid-cols-2 gap-0"}>
+              <div className="p-5">
+                <div className="mb-2 flex items-center gap-2">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-orange-400 to-rose-500">
+                    <Flame className="h-3.5 w-3.5 text-white" />
+                  </div>
+                  <span className="text-xs uppercase tracking-wide text-neutral-500">Streak</span>
                 </div>
-                <span className="text-xs uppercase tracking-wide text-neutral-500">Streak</span>
+                <p className="font-serif text-3xl text-neutral-900">{streak}</p>
+                <p className="text-xs text-neutral-400">days posting</p>
               </div>
-              <p className="font-serif text-3xl text-neutral-900">{streak}</p>
-              <p className="text-xs text-neutral-400">days posting</p>
+              {!isOwnProfile && isUsingApi && (
+                <div className="border-l border-neutral-200/60 p-5">
+                  <div className="mb-2 flex items-center gap-2">
+                    <div className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-emerald-200 to-green-400">
+                      <Sparkles className="h-3.5 w-3.5 text-green-800" />
+                    </div>
+                    <span className="text-xs uppercase tracking-wide text-neutral-500">Match</span>
+                  </div>
+                  {matchScoreLoading ? (
+                    <p className="font-serif text-3xl text-neutral-400">—</p>
+                  ) : matchScore ? (
+                    <>
+                      <p className="font-serif text-3xl text-neutral-900">{Math.min(100, Math.round(matchScore.score * 200))}%</p>
+                      <p className="text-xs text-neutral-400">style match</p>
+                    </>
+                  ) : (
+                    <p className="font-serif text-3xl text-neutral-400">—</p>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>

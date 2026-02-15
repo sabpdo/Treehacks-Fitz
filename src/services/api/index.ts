@@ -52,6 +52,9 @@ export {
   searchUsers,
 } from './profiles';
 
+// Style Twins (PPR-based style matching)
+export { getStyleTwins, getMatchScore, type StyleTwinResult } from './styleTwins';
+
 // Compatibility API
 export {
   calculateCompatibilityScore,
