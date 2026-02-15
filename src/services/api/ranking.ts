@@ -54,10 +54,13 @@ export async function submitComparison(
   winnerId: string,
   loserId: string
 ): Promise<{ newWinnerRating: number; newLoserRating: number }> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
   // Get current items
   const { data: items, error: fetchError } = await supabase
     .from('closet_items')
-    .select('id, elo_rating, rating, preference_tier')
+    .select('id, elo_rating, rating, preference_tier, category, user_id')
     .in('id', [winnerId, loserId]);
 
   if (fetchError || !items || items.length !== 2) {
@@ -74,33 +77,41 @@ export async function submitComparison(
     winner.preference_tier
   );
 
-  // Update both items in database
-  const updates = [
+  // Update Elo ratings in database
+  await Promise.all([
     supabase
       .from('closet_items')
-      .update({
-        elo_rating: newWinnerElo,
-        rating: eloToScore(newWinnerElo, winner.preference_tier),
-      })
+      .update({ elo_rating: newWinnerElo })
       .eq('id', winnerId),
     supabase
       .from('closet_items')
-      .update({
-        elo_rating: newLoserElo,
-        rating: eloToScore(newLoserElo, loser.preference_tier),
-      })
+      .update({ elo_rating: newLoserElo })
       .eq('id', loserId),
-  ];
+  ]);
 
-  const results = await Promise.all(updates);
+  // Get ALL items in same category & tier to recalculate normalized scores
+  const allItems = await getItemsInCategory(user.id, winner.category, winner.preference_tier);
 
-  if (results.some((r) => r.error)) {
-    throw new Error('Failed to update item ratings');
-  }
+  // Recalculate rankings (this will normalize scores across all items)
+  const rankedItems = calculateRankings(allItems);
+
+  // Update all items with new normalized scores
+  const scoreUpdates = rankedItems.map((item) =>
+    supabase
+      .from('closet_items')
+      .update({ rating: item.rating })
+      .eq('id', item.id)
+  );
+
+  await Promise.all(scoreUpdates);
+
+  // Return the new ratings for the two items that were compared
+  const winnerItem = rankedItems.find((i) => i.id === winnerId);
+  const loserItem = rankedItems.find((i) => i.id === loserId);
 
   return {
-    newWinnerRating: eloToScore(newWinnerElo, winner.preference_tier),
-    newLoserRating: eloToScore(newLoserElo, loser.preference_tier),
+    newWinnerRating: winnerItem?.rating ?? 0,
+    newLoserRating: loserItem?.rating ?? 0,
   };
 }
 
