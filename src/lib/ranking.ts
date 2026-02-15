@@ -1,7 +1,7 @@
 import type { ClosetItem, Category } from '../types/database';
 
 /**
- * Elo-based Ranking Algorithm for ClosetRank
+ * Elo-based Ranking Algorithm for fitz
  * Inspired by Beli's head-to-head comparison system
  *
  * Items start at 1500 Elo points

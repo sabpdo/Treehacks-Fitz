@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router";
-import { ArrowLeft, X, ChevronDown, ChevronUp, ExternalLink, Check, Plus } from "lucide-react";
+import { ArrowLeft, X, ChevronDown, ChevronUp, ExternalLink, Check, Plus, ShoppingBag, Sparkles } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useAppStore } from "../context/AppStore";
 import { formatPostTime, type OutfitItem } from "../data/mockData";
@@ -30,6 +30,7 @@ export function PostDetail() {
   const [fetchedPost, setFetchedPost] = useState<ReturnType<typeof apiPostToOOTDPost> | null>(null);
   const [loading, setLoading] = useState(!!postId);
   const [isOutfitBreakdownExpanded, setIsOutfitBreakdownExpanded] = useState(false);
+  const [showShopModal, setShowShopModal] = useState(false);
 
   const postFromStore = posts.find((p) => p.id === postId);
   const post = postFromStore ?? fetchedPost;
@@ -108,6 +109,20 @@ export function PostDetail() {
         prev ? { ...prev, commentCount: prev.commentCount + 1 } : null
       );
     }
+  };
+
+  const handleAISearch = (item: OutfitItem) => {
+    // Build a descriptive query: e.g. "grey cotton hoodie" instead of just "hoodie"
+    const parts = [
+      item.color,
+      item.fabric,
+      item.label,
+      item.brand,
+    ].filter(Boolean) as string[];
+    const searchQuery = parts.join(" ").trim() || item.label;
+    sessionStorage.setItem("aiSearchQuery", searchQuery);
+    setShowShopModal(false);
+    navigate("/ai-generator");
   };
 
   const rawOutfitItems = (post as { outfitItems?: OutfitItem[] }).outfitItems ?? [];
@@ -363,17 +378,30 @@ export function PostDetail() {
         </div>
 
         {/* Compatibility + actions */}
-        <div className="mb-6 flex items-center justify-between rounded-xl border border-neutral-200/60 bg-white p-4">
-          <Badge variant="accent">{post.compatibilityScore}%</Badge>
-          <ActionRow
-            isLiked={isLikedState}
-            isSaved={isSaved(post.id)}
-            likeCount={post.likeCount}
-            commentCount={post.commentCount}
-            onLike={handleLike}
-            onSave={() => toggleSave(post.id)}
-            onComment={() => { }}
-          />
+        <div className="mb-6 flex flex-col gap-4 rounded-xl border border-neutral-200/60 bg-white p-4">
+          <div className="flex items-center justify-between">
+            <Badge variant="accent">{post.compatibilityScore}%</Badge>
+            <ActionRow
+              isLiked={isLikedState}
+              isSaved={isSaved(post.id)}
+              likeCount={post.likeCount}
+              commentCount={post.commentCount}
+              onLike={handleLike}
+              onSave={() => toggleSave(post.id)}
+              onComment={() => { }}
+            />
+          </div>
+          {outfitItems.length > 0 && (
+            <motion.button
+              type="button"
+              whileTap={{ scale: 0.98 }}
+              onClick={() => setShowShopModal(true)}
+              className="flex w-full items-center justify-center gap-2 rounded-lg border border-neutral-900 bg-neutral-900 py-2.5 text-sm text-white transition-all hover:bg-neutral-800"
+            >
+              <ShoppingBag className="h-4 w-4" />
+              Shop the Look
+            </motion.button>
+          )}
         </div>
 
         {likedByFriendsCount > 0 && (
@@ -404,6 +432,92 @@ export function PostDetail() {
           </div>
         </div>
       </div>
+
+      {/* Shop the Look Modal */}
+      <AnimatePresence>
+        {showShopModal && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowShopModal(false)}
+              className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              transition={{ type: "spring", damping: 25, stiffness: 300 }}
+              className="fixed left-1/2 top-1/2 z-[70] w-full max-w-md -translate-x-1/2 -translate-y-1/2 px-6"
+            >
+              <div className="overflow-hidden rounded-3xl border border-neutral-200/60 bg-white shadow-2xl">
+                <div className="border-b border-neutral-200/60 bg-neutral-50/50 p-5">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="mb-0.5 text-base font-medium text-neutral-900">Shop the Look</h3>
+                      <p className="text-xs text-neutral-500">Find these items or similar styles</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowShopModal(false)}
+                      className="flex h-8 w-8 items-center justify-center rounded-full text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-900"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+                <div className="max-h-[60vh] overflow-y-auto">
+                  <div className="divide-y divide-neutral-100">
+                    {sortedItems.map((item, index) => (
+                      <motion.div
+                        key={item.id}
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: index * 0.1 }}
+                        className="flex items-center gap-4 p-4 transition-colors hover:bg-neutral-50"
+                      >
+                        <div className="h-20 w-20 flex-shrink-0 overflow-hidden rounded-xl bg-neutral-50">
+                          {item.imageUrl ? (
+                            <img
+                              src={ensurePublicStorageUrl(item.imageUrl)}
+                              alt={item.label}
+                              className="h-full w-full object-cover"
+                            />
+                          ) : (
+                            <div className="h-full w-full bg-neutral-200" />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="mb-1 text-[10px] uppercase tracking-wide text-neutral-400">{item.type}</p>
+                          <p className="mb-0.5 truncate text-sm font-medium text-neutral-900">{item.label}</p>
+                          {item.brand && item.brand.toLowerCase() !== "unknown" && (
+                            <p className="mb-2 text-xs text-neutral-500">{item.brand}</p>
+                          )}
+                          <motion.button
+                            type="button"
+                            whileTap={{ scale: 0.97 }}
+                            onClick={() => handleAISearch(item)}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-neutral-900 px-3 py-1.5 text-xs text-white shadow-sm transition-all hover:bg-neutral-800 hover:shadow-md"
+                          >
+                            <Sparkles className="h-3 w-3" />
+                            AI Search
+                          </motion.button>
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+                </div>
+                <div className="border-t border-neutral-200/60 bg-neutral-50/50 px-5 py-3">
+                  <p className="text-center text-[10px] leading-relaxed text-neutral-500">
+                    Powered by AI · Find exact items or discover similar styles
+                  </p>
+                </div>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
 
       <style>{`
         .scrollbar-hide::-webkit-scrollbar { display: none; }

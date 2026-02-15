@@ -20,13 +20,14 @@ import { Providers } from "./Providers";
 
 export const router = createBrowserRouter([
   {
+    path: "/",
     element: <Providers />,
     children: [
-      { path: "/login", Component: Login },
-      { path: "/signup", Component: SignUp },
-      { path: "/confirm-email", Component: ConfirmEmail },
+      { path: "login", Component: Login },
+      { path: "signup", Component: SignUp },
+      { path: "confirm-email", Component: ConfirmEmail },
       {
-        path: "/",
+        path: "",
         element: (
           <ProtectedRoute>
             <Root />

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Search, Sparkles, X } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
@@ -18,6 +18,16 @@ export function AIOutfitGenerator() {
   const [results, setResults] = useState<OutfitResult[]>([]);
   const [reasoning, setReasoning] = useState("");
 
+  // Pre-filled search from Shop the Look (post detail → AI Search)
+  useEffect(() => {
+    const savedQuery = sessionStorage.getItem("aiSearchQuery");
+    if (savedQuery) {
+      sessionStorage.removeItem("aiSearchQuery");
+      setSearchQuery(savedQuery);
+      setTimeout(() => handleSearch(savedQuery), 100);
+    }
+  }, []);
+
   const exampleSearches = [
     "White shirt",
     "Dinner date",
@@ -27,14 +37,16 @@ export function AIOutfitGenerator() {
     "Weekend brunch",
   ];
 
-  const handleSearch = () => {
-    if (!searchQuery.trim()) return;
+  const handleSearch = (query?: string) => {
+    const term = (query ?? searchQuery).trim();
+    if (!term) return;
 
+    setSearchQuery(term);
     setHasSearched(true);
 
     // Mock AI results
     setReasoning(
-      `Based on "${searchQuery}", I've curated 6 outfits that match your style profile. The first 3 are from your existing closet, optimized for versatility and seasonal relevance. The external picks complement your wardrobe gaps and align with your preference for neutral tones and minimal silhouettes.`
+      `Based on "${term}", I've curated 6 outfits that match your style profile. The first 3 are from your existing closet, optimized for versatility and seasonal relevance. The external picks complement your wardrobe gaps and align with your preference for neutral tones and minimal silhouettes.`
     );
 
     setResults([
@@ -110,7 +122,7 @@ export function AIOutfitGenerator() {
       <header className="sticky top-0 z-30 border-b border-neutral-200/60 bg-white/90 backdrop-blur-xl">
         <div className="mx-auto flex max-w-4xl items-center justify-between px-6 py-4">
           <div className="flex items-center gap-2">
-            <Sparkles className="h-4 w-4 text-[#8B9B8E]" />
+            <Sparkles className="h-4 w-4 text-neutral-900" />
             <h1 className="text-base tracking-tight text-neutral-900">AI Search</h1>
           </div>
           {hasSearched && (

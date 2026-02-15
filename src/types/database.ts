@@ -1,4 +1,4 @@
-// Database TypeScript Types for ClosetRank
+// Database TypeScript Types for fitz
 
 // Main Categories - Simple system
 export type Category = 'shirts' | 'pants' | 'skirts_dresses' | 'jackets_outerwear' | 'shoes' | 'bags';

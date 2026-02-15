@@ -1,6 +1,6 @@
-# ClosetRank Backend Setup Guide
+# fitz Backend Setup Guide
 
-Complete guide for setting up the ClosetRank backend with Supabase, OpenAI, and all API functionality.
+Complete guide for setting up the fitz backend with Supabase, OpenAI, and all API functionality.
 
 ## Overview
 
@@ -52,7 +52,7 @@ This will create:
 2. Sign up or log in
 3. Go to **API Keys** section
 4. Click **Create new secret key**
-5. Name it "ClosetRank" and copy the key
+5. Name it "fitz" and copy the key
 
 ### 2.2 Add to Environment
 

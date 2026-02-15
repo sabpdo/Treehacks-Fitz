@@ -111,7 +111,7 @@ export const SignUp: React.FC = () => {
         <CardHeader className="space-y-1">
           <CardTitle className="text-2xl font-bold text-center">Create an Account</CardTitle>
           <CardDescription className="text-center">
-            Join ClosetRank to start sharing your outfits
+            Join fitz to start sharing your outfits
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
