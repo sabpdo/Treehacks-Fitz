@@ -439,3 +439,59 @@ export async function generateEmbedding(text: string): Promise<number[]> {
     throw error;
   }
 }
+
+/** Optional body-type context to personalize the daily look description */
+export interface BodyAnalysisContext {
+  suggestedColors?: string[];
+  suggestedSilhouettes?: string[];
+  bodyTypeLabel?: string;
+}
+
+/**
+ * Generate a short, informed description or reasoning for a suggested outfit
+ * based on today's weather and the specific items. If bodyAnalysis is provided,
+ * can mention fit/flatter in terms of the user's body-type suggestions.
+ */
+export async function generateDailyLookDescription(
+  weatherHighF: number,
+  weatherLowF: number,
+  itemLabels: string[],
+  bodyAnalysis?: BodyAnalysisContext | null
+): Promise<string> {
+  if (!OPENAI_ENABLED || !openai) {
+    throw new Error('OpenAI API is not configured.');
+  }
+
+  const itemList = itemLabels.length ? itemLabels.map((l) => `- ${l}`).join('\n') : 'A few pieces from your closet';
+  const bodySection =
+    bodyAnalysis &&
+      (bodyAnalysis.suggestedColors?.length || bodyAnalysis.suggestedSilhouettes?.length || bodyAnalysis.bodyTypeLabel)
+      ? `
+
+The user has done a body-type analysis. Styling that tends to flatter them:${bodyAnalysis.bodyTypeLabel ? ` body type "${bodyAnalysis.bodyTypeLabel}"` : ''}${bodyAnalysis.suggestedColors?.length ? `; colors: ${bodyAnalysis.suggestedColors.slice(0, 5).join(', ')}` : ''}${bodyAnalysis.suggestedSilhouettes?.length ? `; silhouettes: ${bodyAnalysis.suggestedSilhouettes.slice(0, 5).join(', ')}` : ''}. If this outfit aligns with those, briefly mention it (e.g. "in your flattering colors" or "fits that work for you").`
+      : '';
+
+  const prompt = `Today's weather: high ${weatherHighF}°F, low ${weatherLowF}°F.
+
+Suggested outfit items:
+${itemList}
+${bodySection || ''}
+
+Write exactly 1-2 short sentences (under 25 words) explaining why this outfit works for today. Be specific to the items and the weather—mention fabrics, layers, or comfort. No generic phrases like "comfortable and stylish." Tone: friendly and helpful.`;
+
+  try {
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: 80,
+    });
+    const text = (response.choices[0]?.message?.content ?? '').trim();
+    return text || 'This combo works well for today’s forecast.';
+  } catch (error: unknown) {
+    if (error && typeof error === 'object' && 'status' in error && (error as { status: number }).status === 429) {
+      throw new Error('Rate limit reached. Try again in a moment.');
+    }
+    console.error('Error generating daily look description:', error);
+    throw error;
+  }
+}

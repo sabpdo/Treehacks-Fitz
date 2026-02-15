@@ -75,3 +75,19 @@ export {
 
 // Segmentation (Edge Function: Replicate mask-clothing for "tag your items")
 export { segmentOutfitImage, type SegmentResult } from './segmentation';
+
+// Daily look cache (weather-based outfit suggestion per user per day)
+export {
+  getDailyLook,
+  setDailyLook,
+  type CachedDailyLook,
+  type CachedDailyLookItem,
+} from './dailyLook';
+
+// Body analyses (saved photos + analysis for "Analyze Your Body Type" history and suggestions)
+export {
+  createBodyAnalysis,
+  getBodyAnalyses,
+  getLatestBodyAnalysis,
+  type BodyAnalysisRecord,
+} from './bodyAnalysis';
