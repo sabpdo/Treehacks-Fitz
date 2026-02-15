@@ -1,4 +1,4 @@
-// Central API exports for ClosetRank
+// Central API exports for fitz
 // Import from here instead of individual files
 
 // Closet Items API

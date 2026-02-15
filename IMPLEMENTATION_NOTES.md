@@ -1,4 +1,4 @@
-# Implementation Notes – ClosetRank UI (Frontend + Mock)
+# Implementation Notes – fitz UI (Frontend + Mock)
 
 ## Component structure
 

@@ -4,7 +4,7 @@ A modern React web application built for the TreeHacks hackathon featuring outfi
 
 ## Overview
 
-ClosetRank is a fashion and outfit management application that allows users to:
+fitz is a fashion and outfit management application that allows users to:
 
 - Track and share daily outfits (OOTD - Outfit of the Day)
 - Generate AI-powered outfit recommendations

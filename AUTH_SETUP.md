@@ -1,6 +1,6 @@
 # Authentication Setup Guide
 
-This guide will help you set up authentication for your ClosetRank app using Supabase.
+This guide will help you set up authentication for your fitz app using Supabase.
 
 ## Overview
 
@@ -70,14 +70,14 @@ The app now includes:
    e. Configure the OAuth consent screen if prompted:
 
    - User Type: External
-   - App name: ClosetRank
+   - App name: fitz
    - User support email: your email
    - Developer contact: your email
 
    f. Create OAuth Client ID:
 
    - Application type: Web application
-   - Name: ClosetRank Web Client
+   - Name: fitz Web Client
    - Authorized JavaScript origins:
      - `http://localhost:5173` (for development)
      - Your production URL (when deployed)

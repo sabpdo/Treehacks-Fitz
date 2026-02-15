@@ -25,7 +25,7 @@ export const ConfirmEmail: React.FC = () => {
           </div>
           <CardTitle className="text-xl">Confirm your email</CardTitle>
           <CardDescription>
-            We sent a confirmation link to <strong>{user.email}</strong>. Click the link in that email to verify your account and start using ClosetRank.
+            We sent a confirmation link to <strong>{user.email}</strong>. Click the link in that email to verify your account and start using fitz.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">

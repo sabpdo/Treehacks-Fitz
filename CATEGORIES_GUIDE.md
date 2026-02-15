@@ -1,4 +1,4 @@
-# ClosetRank Category System
+# fitz Category System
 
 Simple, intuitive categorization for organizing your closet.
 

@@ -516,10 +516,38 @@ export function Profile() {
           <DialogHeader>
             <DialogTitle>Edit Profile</DialogTitle>
             <DialogDescription className="sr-only">
-              Update your display name, username, and bio.
+              Update your profile picture, display name, username, and bio.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
+            {isOwnProfile && (
+              <div className="grid gap-2">
+                <label className="text-xs font-medium text-neutral-500">Profile picture</label>
+                <div className="flex items-center gap-4">
+                  <span className="block h-14 w-14 overflow-hidden rounded-full border border-neutral-200 bg-neutral-100 object-cover">
+                    {avatarUploading ? (
+                      <span className="flex h-full w-full items-center justify-center text-xs text-neutral-500">...</span>
+                    ) : (
+                      <img
+                        src={avatarUrl ? ensurePublicStorageUrl(avatarUrl) : DEFAULT_AVATAR}
+                        alt=""
+                        className="h-full w-full object-cover"
+                      />
+                    )}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="rounded-lg"
+                    disabled={avatarUploading}
+                    onClick={() => avatarInputRef.current?.click()}
+                  >
+                    {avatarUploading ? "Uploading..." : "Change photo"}
+                  </Button>
+                </div>
+              </div>
+            )}
             {editError && (
               <div
                 role="alert"

@@ -1,4 +1,4 @@
--- ClosetRank: add missing columns and tables (idempotent)
+-- fitz: add missing columns and tables (idempotent)
 -- Run in Supabase Dashboard → SQL Editor → New query → paste → Run.
 -- Safe to run multiple times; skips columns/tables that already exist.
 
