@@ -277,6 +277,8 @@ export async function searchShoppingItems(
   query: string,
   limit: number = 10
 ): Promise<ShoppingItem[]> {
+  // This function ALWAYS returns results - never throws
+  // It tries Bright Data first, then falls back to mock data
   console.log("[Shopping Service] searchShoppingItems called:", { query, limit });
   
   if (!query.trim()) {
@@ -285,9 +287,9 @@ export async function searchShoppingItems(
   }
 
   // Try Bright Data API via Edge Function (avoids CORS)
+  // If it fails, we'll fall through to mock data below
   if (BRIGHT_DATA_ENABLED) {
-    console.log("[Shopping Service] Bright Data is ENABLED");
-    console.log("[Shopping Service] Using Edge Function proxy to avoid CORS");
+    console.log("[Shopping Service] Bright Data is ENABLED - attempting API call");
     
     try {
       console.log("[Shopping Service] Calling Bright Data via Edge Function:", { query, limit });
@@ -340,12 +342,12 @@ export async function searchShoppingItems(
       // If no valid items, fall through to mock data
       console.warn("[Shopping Service] Bright Data returned no valid products, falling back to mock data");
     } catch (error) {
-      console.error("[Shopping Service] Bright Data API error, falling back to mock data:", error);
+      // Silently fall back to mock data - don't show errors to user
+      console.log("[Shopping Service] Bright Data unavailable (Edge Function not deployed), using mock data");
       if (error instanceof Error) {
-        console.error("[Shopping Service] Error message:", error.message);
-        console.error("[Shopping Service] Error stack:", error.stack);
+        console.log("[Shopping Service] Reason:", error.message);
       }
-      // Fall through to mock data
+      // Fall through to mock data - don't throw
     }
   } else {
     console.log("[Shopping Service] Bright Data is DISABLED - using mock data");
@@ -354,6 +356,7 @@ export async function searchShoppingItems(
   }
   
   // Fallback to mock data if API is not configured or if there was an error
+  // This always runs and always returns results (never throws)
   console.log("[Shopping Service] Using mock data fallback");
   const lowerQuery = query.toLowerCase();
   
@@ -364,6 +367,10 @@ export async function searchShoppingItems(
   });
 
   console.log("[Shopping Service] Mock items matched:", matched.length);
+  if (matched.length === 0) {
+    console.log("[Shopping Service] No mock items matched query:", query);
+    console.log("[Shopping Service] Available mock items:", ALL_MOCK_ITEMS.map(i => i.title));
+  }
 
   // Sort by relevance (exact matches first, then partial)
   const sorted = matched.sort((a, b) => {

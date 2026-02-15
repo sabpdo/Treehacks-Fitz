@@ -7,7 +7,7 @@ import { PostDetail } from "./components/PostDetail";
 import { AllOOTDs } from "./components/AllOOTDs";
 import { Community } from "./components/Community";
 import { Profile } from "./components/Profile";
-import { AIOutfitGenerator } from "./components/AIOutfitGenerator";
+import { Shopping } from "./components/Shopping";
 import { Closet } from "./components/Closet";
 import { ReRank } from "./components/ReRank";
 import { OOTDCapture } from "./components/OOTDCapture";
@@ -46,7 +46,7 @@ export const router = createBrowserRouter([
           { path: "community", Component: Community },
           { path: "profile", Component: Profile },
           { path: "profile/:userId", Component: Profile },
-          { path: "ai-generator", Component: AIOutfitGenerator },
+          { path: "ai-generator", Component: Shopping },
           { path: "closet", Component: Closet },
           { path: "rerank", Component: ReRank },
         ],
