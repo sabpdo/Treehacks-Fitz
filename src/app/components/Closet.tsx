@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useSearchParams } from "react-router";
 import { Plus, Grid3x3, List, X, ChevronRight, Flame, Upload, Trash2 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { mockClosetItems, type ClosetItem, currentUserProfile } from "../data/mockData";
 import { useAppStore } from "../context/AppStore";
 import { getCurrentProfile, getClosetItems, createClosetItem, updateClosetItem, deleteClosetItem, uploadImage, getClosetItem } from "../../services/api";
-import { analyzeClothingImage } from "../../services/openai";
+import { analyzeClothingImage, getPairingDescriptionsAndRanking, getThingsToBuySuggestions, type PairingResultItem } from "../../services/openai";
 import { apiClosetItemToUI } from "../../lib/adapters";
 
 // Map UI category to database category (reverse of adapter)
@@ -102,6 +102,22 @@ function getColorHex(colorName: string): string {
   return colorMap[color] || "#E5E7EB"; // Default to light gray if color not found
 }
 
+type ClosetCategory = ClosetItem["category"];
+const PAIR_WITH_CATEGORIES: Record<ClosetCategory, ClosetCategory[]> = {
+  tops: ["bottoms", "shoes", "outerwear", "accessories"],
+  bottoms: ["tops", "shoes", "outerwear", "accessories"],
+  outerwear: ["tops", "bottoms", "shoes", "accessories"],
+  shoes: ["tops", "bottoms", "outerwear", "accessories"],
+  accessories: ["tops", "bottoms", "outerwear", "shoes"],
+};
+const THINGS_TO_BUY_BY_CATEGORY: Record<ClosetCategory, string[]> = {
+  tops: ["Structured blazer", "White tee", "Oversized sweater", "Silk blouse"],
+  bottoms: ["High-waisted jeans", "Tailored trousers", "Midi skirt", "Wide-leg pants"],
+  outerwear: ["Neutral coat", "Denim jacket", "Trench", "Cardigan"],
+  shoes: ["White sneakers", "Ankle boots", "Loafers", "Heeled sandals"],
+  accessories: ["Leather belt", "Minimal watch", "Tote bag", "Gold hoops"],
+};
+
 export function Closet() {
   const [filter, setFilter] = useState<CategoryFilter>("all");
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
@@ -135,6 +151,14 @@ export function Closet() {
   });
   const [savingDetails, setSavingDetails] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const [pairingResults, setPairingResults] = useState<PairingResultItem[]>([]);
+  const [thingsToBuySuggestions, setThingsToBuySuggestions] = useState<string[]>([]);
+  const [pairingLoading, setPairingLoading] = useState(false);
+  const [thingsToBuyLoading, setThingsToBuyLoading] = useState(false);
+  const selectedItemIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    selectedItemIdRef.current = selectedItem?.id ?? null;
+  }, [selectedItem?.id]);
   const [formData, setFormData] = useState({
     image: null as File | null,
     imagePreview: null as string | null,
@@ -227,6 +251,73 @@ export function Closet() {
       setDetailModalCategory(dbCategoryMap[selectedItem.category] || "shirts");
     }
   }, [selectedItem, isUsingApi]);
+
+  // Fetch AI pairing descriptions and "things to buy" when item detail opens
+  useEffect(() => {
+    if (!selectedItem) {
+      setPairingResults([]);
+      setThingsToBuySuggestions([]);
+      return;
+    }
+    const pairCats = PAIR_WITH_CATEGORIES[selectedItem.category as ClosetCategory] || [];
+    const fromWardrobe = closetItems.filter(
+      (i) => i.id !== selectedItem.id && pairCats.includes(i.category as ClosetCategory)
+    ).slice(0, 6);
+    const mainId = selectedItem.id;
+
+    setPairingLoading(fromWardrobe.length > 0);
+    setThingsToBuyLoading(true);
+    setPairingResults([]);
+    setThingsToBuySuggestions([]);
+
+    if (fromWardrobe.length > 0) {
+      getPairingDescriptionsAndRanking(
+        {
+          imageUrl: selectedItem.imageUrl,
+          category: selectedItem.category,
+          brand: selectedItem.brand,
+          color: selectedItem.color,
+          fabric: selectedItem.fabric,
+          silhouette: selectedItem.silhouette,
+        },
+        fromWardrobe.map((i) => ({
+          id: i.id,
+          category: i.category,
+          brand: i.brand,
+          color: i.color,
+          fabric: i.fabric,
+          silhouette: i.silhouette,
+        }))
+      )
+        .then((items) => {
+          if (selectedItemIdRef.current === mainId) setPairingResults(items);
+        })
+        .catch(() => {
+          if (selectedItemIdRef.current === mainId) setPairingResults([]);
+        })
+        .finally(() => {
+          if (selectedItemIdRef.current === mainId) setPairingLoading(false);
+        });
+    } else {
+      setPairingLoading(false);
+    }
+
+    getThingsToBuySuggestions({
+      imageUrl: selectedItem.imageUrl,
+      category: selectedItem.category,
+      brand: selectedItem.brand,
+      color: selectedItem.color,
+    })
+      .then((list) => {
+        if (selectedItemIdRef.current === mainId) setThingsToBuySuggestions(list.slice(0, 4));
+      })
+      .catch(() => {
+        if (selectedItemIdRef.current === mainId) setThingsToBuySuggestions([]);
+      })
+      .finally(() => {
+        if (selectedItemIdRef.current === mainId) setThingsToBuyLoading(false);
+      });
+  }, [selectedItem?.id, closetItems]);
 
   // Load closet items from API
   useEffect(() => {
@@ -968,15 +1059,24 @@ export function Closet() {
               </div>
 
               {/* Modal Content */}
-              <div className="max-h-[70vh] overflow-y-auto md:max-h-[600px]">
-                <div className="p-6">
-                  {/* Image */}
-                  <div className="mb-6 overflow-hidden rounded-2xl bg-neutral-50">
-                    <img
-                      src={selectedItem.imageUrl}
-                      alt={selectedItem.brand || "Item"}
-                      className="w-full object-cover"
-                    />
+              <div className="max-h-[70vh] overflow-y-auto md:max-h-[85vh]">
+                <div className="p-4 sm:p-6">
+                  {/* Top: constrained image + key info on larger screens */}
+                  <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-start">
+                    <div className="flex-shrink-0 overflow-hidden rounded-xl bg-neutral-50 md:w-44 md:max-w-[220px]">
+                      <img
+                        src={selectedItem.imageUrl}
+                        alt={selectedItem.brand || "Item"}
+                        className="h-48 w-full object-cover object-top md:h-52 md:max-h-[220px]"
+                      />
+                    </div>
+                    <div className="min-w-0 flex-1 md:pt-1">
+                      <p className="text-sm font-medium text-neutral-900">{selectedItem.brand || "Item"}</p>
+                      <p className="text-xs capitalize text-neutral-500">{selectedItem.category.replace("_", " ")}</p>
+                      {selectedItem.color && (
+                        <p className="mt-1 text-xs text-neutral-600">Color: {selectedItem.color}</p>
+                      )}
+                    </div>
                   </div>
 
                   {/* Editable Form Fields - Matching edit form (without subcategory) */}
@@ -1314,6 +1414,70 @@ export function Closet() {
                       </p>
                       <p className="text-xs text-neutral-500">this season</p>
                     </div>
+                  </div>
+
+                  {/* Pair this item with */}
+                  <div className="mt-6 rounded-xl border border-neutral-200/60 bg-white p-4">
+                    <h4 className="mb-3 text-sm font-semibold text-neutral-900">Pair this item with</h4>
+                    {/* From your wardrobe: AI descriptions, sorted by pairing score */}
+                    {(() => {
+                      const pairCats = PAIR_WITH_CATEGORIES[selectedItem.category as ClosetCategory] || [];
+                      const fromWardrobe = closetItems.filter(
+                        (i) => i.id !== selectedItem.id && pairCats.includes(i.category as ClosetCategory)
+                      ).slice(0, 6);
+                      const itemsToShow = pairingResults.length > 0
+                        ? pairingResults
+                        : fromWardrobe.map((i) => ({ id: i.id, shortDescription: i.brand || i.category || "Item", pairingScore: 3 }));
+                      const getItem = (id: string) => closetItems.find((i) => i.id === id);
+                      return (
+                        <>
+                          {fromWardrobe.length > 0 && (
+                            <div className="mb-4">
+                              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-500">From your wardrobe</p>
+                              {pairingLoading ? (
+                                <p className="text-xs text-neutral-500">Loading suggestions…</p>
+                              ) : (
+                                <div className="flex gap-2 overflow-x-auto pb-1">
+                                  {itemsToShow.map((result) => {
+                                    const item = getItem(result.id);
+                                    if (!item) return null;
+                                    return (
+                                      <button
+                                        key={item.id}
+                                        type="button"
+                                        onClick={() => setSelectedItem(item)}
+                                        className="flex-shrink-0 w-[100px] rounded-lg border border-neutral-200 bg-neutral-50 overflow-hidden focus:outline-none focus:ring-2 focus:ring-neutral-400 text-left"
+                                      >
+                                        <img src={item.imageUrl} alt="" className="h-20 w-full object-cover" />
+                                        <p className="w-full truncate px-1.5 py-1 text-[10px] text-neutral-700 leading-tight" title={result.shortDescription}>
+                                          {result.shortDescription}
+                                        </p>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          <div>
+                            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-500">Consider adding</p>
+                            {thingsToBuyLoading ? (
+                              <p className="text-xs text-neutral-500">Loading suggestions…</p>
+                            ) : (
+                              <ul className="flex flex-wrap gap-2">
+                                {(thingsToBuySuggestions.length ? thingsToBuySuggestions : (THINGS_TO_BUY_BY_CATEGORY[selectedItem.category as ClosetCategory] || [])).map((suggestion) => (
+                                  <li key={suggestion}>
+                                    <span className="inline-flex items-center rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-xs text-neutral-700">
+                                      {suggestion}
+                                    </span>
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
+                        </>
+                      );
+                    })()}
                   </div>
 
                   {/* Remove from wardrobe */}

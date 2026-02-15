@@ -259,6 +259,154 @@ Use lowercase for silhouettes so we can match to our app (fitted, oversized, loo
   return parsed;
 }
 
+/** Input for pairing: main item (with image) and candidates (metadata only) */
+export interface PairingMainItem {
+  imageUrl: string;
+  category?: string;
+  brand?: string;
+  color?: string;
+  fabric?: string;
+  silhouette?: string;
+}
+export interface PairingCandidate {
+  id: string;
+  category?: string;
+  brand?: string;
+  color?: string;
+  fabric?: string;
+  silhouette?: string;
+}
+export interface PairingResultItem {
+  id: string;
+  shortDescription: string;
+  pairingScore: number;
+}
+
+/**
+ * Get short, specific product-style descriptions for candidate items and rank how well they pair with the main item.
+ * Returns candidates with shortDescription (e.g. "High-waisted dark wash jeans") and pairingScore 1-5, sorted best first.
+ */
+export async function getPairingDescriptionsAndRanking(
+  mainItem: PairingMainItem,
+  candidates: PairingCandidate[]
+): Promise<PairingResultItem[]> {
+  if (!OPENAI_ENABLED || !openai) {
+    return candidates.map((c) => ({
+      id: c.id,
+      shortDescription: [c.brand, c.category, c.color].filter(Boolean).join(' ') || c.category || 'Item',
+      pairingScore: 3,
+    }));
+  }
+  if (candidates.length === 0) return [];
+
+  const candidateList = candidates
+    .map(
+      (c, i) =>
+        `Candidate ${i + 1} (id: ${c.id}): category ${c.category || 'unknown'}, brand ${c.brand || '—'}, color ${c.color || '—'}, fabric ${c.fabric || '—'}, silhouette ${c.silhouette || '—'}`
+    )
+    .join('\n');
+
+  try {
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      messages: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'text',
+              text: `You are a stylist. The user has one main clothing item (see image) and a list of other items from their wardrobe that could pair with it.
+
+For each candidate below, do two things:
+1. Write a short, specific product-style description (3–8 words), e.g. "High-waisted dark wash jeans", "White leather sneakers", "Oversized beige blazer". Do NOT use generic words like "bottoms" or "accessories"—use the actual type and details.
+2. Rate how well it pairs with the main item from 1 (poor fit) to 5 (perfect).
+
+Return a JSON object: { "items": [ { "id": "<candidate id>", "shortDescription": "...", "pairingScore": number } ] }
+Sort the array by pairingScore descending (best pairs first). Include every candidate.
+
+Candidates:
+${candidateList}`,
+            },
+            {
+              type: 'image_url',
+              image_url: { url: mainItem.imageUrl },
+            },
+          ],
+        },
+      ],
+      max_tokens: 600,
+    });
+    const raw = response.choices[0]?.message?.content?.trim() ?? '';
+    const jsonMatch = raw.match(/```json\n?([\s\S]*?)\n?```/) || raw.match(/(\{[\s\S]*\})/);
+    const jsonString = (jsonMatch ? (jsonMatch[1] ?? jsonMatch[0]) : raw).trim();
+    const parsed = JSON.parse(jsonString) as { items: PairingResultItem[] };
+    const items = Array.isArray(parsed?.items) ? parsed.items : [];
+    return items.filter((i) => i.id && i.shortDescription);
+  } catch (e) {
+    console.error('getPairingDescriptionsAndRanking failed', e);
+    return candidates.map((c) => ({
+      id: c.id,
+      shortDescription: [c.brand, c.category, c.color].filter(Boolean).join(' ') || c.category || 'Item',
+      pairingScore: 3,
+    }));
+  }
+}
+
+/**
+ * Suggest specific things to buy that would pair well with the given item. Returns 4–6 concrete product ideas.
+ */
+export async function getThingsToBuySuggestions(mainItem: PairingMainItem): Promise<string[]> {
+  if (!OPENAI_ENABLED || !openai) {
+    const fallbacks: Record<string, string[]> = {
+      tops: ['Structured blazer', 'White tee', 'Oversized sweater', 'Silk blouse'],
+      bottoms: ['High-waisted jeans', 'Tailored trousers', 'Midi skirt', 'Wide-leg pants'],
+      outerwear: ['Neutral coat', 'Denim jacket', 'Trench', 'Cardigan'],
+      shoes: ['White sneakers', 'Ankle boots', 'Loafers', 'Heeled sandals'],
+      accessories: ['Leather belt', 'Minimal watch', 'Tote bag', 'Gold hoops'],
+    };
+    const cat = (mainItem.category || 'tops').toLowerCase();
+    return fallbacks[cat] ?? fallbacks.tops;
+  }
+  try {
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      messages: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'text',
+              text: `You are a stylist. Suggest 5–6 specific clothing items or accessories the user could BUY to pair well with the item in the image. Be concrete and product-specific (e.g. "Tan leather belt", "Gold hoop earrings", "High-waisted wide-leg trousers"). Do not use generic category names like "bottoms" or "accessories"—use short, descriptive phrases. Return JSON only: { "suggestions": ["...", "..."] }`,
+            },
+            {
+              type: 'image_url',
+              image_url: { url: mainItem.imageUrl },
+            },
+          ],
+        },
+      ],
+      max_tokens: 300,
+    });
+    const raw = response.choices[0]?.message?.content?.trim() ?? '';
+    const jsonMatch = raw.match(/```json\n?([\s\S]*?)\n?```/) || raw.match(/(\{[\s\S]*\})/);
+    const jsonString = (jsonMatch ? (jsonMatch[1] ?? jsonMatch[0]) : raw).trim();
+    const parsed = JSON.parse(jsonString) as { suggestions?: string[] };
+    const list = Array.isArray(parsed?.suggestions) ? parsed.suggestions : [];
+    return list.filter((s) => typeof s === 'string' && s.length > 0).slice(0, 6);
+  } catch (e) {
+    console.error('getThingsToBuySuggestions failed', e);
+    const fallbacks: Record<string, string[]> = {
+      tops: ['Structured blazer', 'White tee', 'Oversized sweater', 'Silk blouse'],
+      bottoms: ['High-waisted jeans', 'Tailored trousers', 'Midi skirt', 'Wide-leg pants'],
+      outerwear: ['Neutral coat', 'Denim jacket', 'Trench', 'Cardigan'],
+      shoes: ['White sneakers', 'Ankle boots', 'Loafers', 'Heeled sandals'],
+      accessories: ['Leather belt', 'Minimal watch', 'Tote bag', 'Gold hoops'],
+    };
+    const cat = (mainItem.category || 'tops').toLowerCase();
+    return fallbacks[cat] ?? fallbacks.tops;
+  }
+}
+
 // Generate search embeddings for semantic search
 export async function generateEmbedding(text: string): Promise<number[]> {
   if (!OPENAI_ENABLED || !openai) {
