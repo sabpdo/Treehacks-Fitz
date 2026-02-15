@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { Camera, Flame, Sparkles, ChevronRight, TrendingUp, ImageOff, MapPin, Cloud } from "lucide-react";
+import { Camera, Flame, Sparkles, ChevronRight, TrendingUp, ImageOff, MapPin, Cloud, CheckCircle2 } from "lucide-react";
 import { motion } from "motion/react";
 import { useAppStore } from "../context/AppStore";
 import { ensurePublicStorageUrl, DEFAULT_AVATAR, apiClosetItemToUI } from "../../lib/adapters";
@@ -11,7 +11,7 @@ import { apiPostToOOTDPost } from "../../lib/adapters";
 import { compositeGridImage } from "../../lib/gridImage";
 import { generateDailyLookDescription, type BodyAnalysisContext } from "../../services/openai";
 import { PostGrid } from "./feed";
-import type { ClosetItem } from "../data/mockData";
+import type { ClosetItem, OOTDPost } from "../data/mockData";
 
 function scoreItemForBody(item: ClosetItem & { silhouette?: string }, body: BodyAnalysisContext | null): number {
   if (!body) return 0;
@@ -122,6 +122,17 @@ function todayDateString(): string {
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
+}
+
+/** True if the ISO date string falls on today (local timezone). */
+function isPostFromToday(createdAt: string): boolean {
+  const d = new Date(createdAt);
+  const today = new Date();
+  return (
+    d.getFullYear() === today.getFullYear() &&
+    d.getMonth() === today.getMonth() &&
+    d.getDate() === today.getDate()
+  );
 }
 
 export function HomeFeed() {
@@ -355,6 +366,13 @@ export function HomeFeed() {
   );
   const friendsPosts = friendsToday.slice(0, 6);
 
+  const myPostsToday = currentUserId
+    ? posts.filter((p) => p.userId === currentUserId && isPostFromToday(p.createdAt))
+    : [];
+  const todaysPost: OOTDPost | null = myPostsToday.length > 0
+    ? myPostsToday.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0]
+    : null;
+
   return (
     <div className="min-h-screen bg-[#FAFAF8]">
       <header className="sticky top-0 z-30 border-b border-neutral-200/60 bg-white/90 backdrop-blur-xl">
@@ -370,26 +388,67 @@ export function HomeFeed() {
       </header>
 
       <div className="mx-auto max-w-5xl px-4 pb-12 sm:px-6 lg:px-8">
-        {/* Today's OOTD Prompt */}
+        {/* Today's OOTD Prompt — shows "posted" state with preview if user already posted today */}
         <section className="py-8">
-          <div className="mx-auto max-w-md overflow-hidden rounded-2xl border border-neutral-200/60 bg-white shadow-sm">
-            <div className="p-8 text-center">
-              <div className="mb-4 flex items-center justify-center gap-2">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-neutral-50">
-                  <Camera className="h-5 w-5 text-neutral-700" />
+          <div className={todaysPost ? "mx-auto max-w-[320px] overflow-hidden rounded-2xl border border-neutral-200/60 bg-white shadow-sm" : "mx-auto max-w-md overflow-hidden rounded-2xl border border-neutral-200/60 bg-white shadow-sm"}>
+            {todaysPost ? (
+              <>
+                <div className="relative h-[200px] w-full overflow-hidden bg-neutral-100">
+                  <img
+                    src={ensurePublicStorageUrl(todaysPost.imageUrl)}
+                    alt={todaysPost.caption || "Today's fit"}
+                    className="absolute inset-0 h-full w-full object-cover object-center"
+                  />
+                  <div className="absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-white/95 px-2.5 py-1 shadow-sm backdrop-blur-sm">
+                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                    <span className="text-xs font-medium text-neutral-700">Posted today</span>
+                  </div>
                 </div>
+                <div className="p-5">
+                  <p className="text-xs text-neutral-500 mb-1">{todayDate}</p>
+                  <h2 className="mb-2 text-base font-medium text-neutral-900">You posted today's fit</h2>
+                  {todaysPost.caption?.trim() && (
+                    <p className="mb-4 line-clamp-2 text-sm text-neutral-600">{todaysPost.caption}</p>
+                  )}
+                  <div className="flex gap-2">
+                    <motion.div whileTap={{ scale: 0.98 }} transition={{ duration: 0.2 }} className="flex-1">
+                      <Link
+                        to={`/post/${todaysPost.id}`}
+                        className="block w-full rounded-xl bg-neutral-900 py-3 text-center text-sm text-white transition-colors duration-200 hover:bg-neutral-800"
+                      >
+                        View post
+                      </Link>
+                    </motion.div>
+                    <motion.div whileTap={{ scale: 0.98 }} transition={{ duration: 0.2 }}>
+                      <Link
+                        to="/capture"
+                        className="block rounded-xl border border-neutral-200 bg-white px-4 py-3 text-center text-sm text-neutral-700 transition-colors duration-200 hover:bg-neutral-50"
+                      >
+                        Post another
+                      </Link>
+                    </motion.div>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="p-8 text-center">
+                <div className="mb-4 flex items-center justify-center gap-2">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-neutral-50">
+                    <Camera className="h-5 w-5 text-neutral-700" />
+                  </div>
+                </div>
+                <h2 className="mb-2 text-lg text-neutral-900">Post Today's Fit</h2>
+                <p className="mb-6 text-xs text-neutral-500">{todayDate}</p>
+                <motion.div whileTap={{ scale: 0.98 }} transition={{ duration: 0.2 }}>
+                  <Link
+                    to="/capture"
+                    className="block w-full rounded-xl bg-neutral-900 py-3.5 text-center text-sm text-white transition-colors duration-200 hover:bg-neutral-800"
+                  >
+                    Open Camera
+                  </Link>
+                </motion.div>
               </div>
-              <h2 className="mb-2 text-lg text-neutral-900">Post Today's Fit</h2>
-              <p className="mb-6 text-xs text-neutral-500">{todayDate}</p>
-              <motion.div whileTap={{ scale: 0.98 }} transition={{ duration: 0.2 }}>
-                <Link
-                  to="/capture"
-                  className="block w-full rounded-xl bg-neutral-900 py-3.5 text-center text-sm text-white transition-colors duration-200 hover:bg-neutral-800"
-                >
-                  Open Camera
-                </Link>
-              </motion.div>
-            </div>
+            )}
           </div>
         </section>
 

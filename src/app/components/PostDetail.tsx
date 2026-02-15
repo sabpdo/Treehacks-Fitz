@@ -36,6 +36,10 @@ export function PostDetail() {
   const post = postFromStore ?? fetchedPost;
 
   useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [postId]);
+
+  useEffect(() => {
     if (!postId) return;
     if (postFromStore) {
       loadCommentsForPost(postId);
@@ -160,7 +164,12 @@ export function PostDetail() {
   const showDailyOOTDCheckmark = isOwnPost && isPostFromToday;
 
   return (
-    <div className="min-h-screen bg-[#FAFAF8]">
+    <motion.div
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, ease: [0.25, 0.46, 0.45, 0.94] }}
+      className="min-h-screen bg-[#FAFAF8]"
+    >
       <header className="sticky top-0 z-30 border-b border-neutral-200/60 bg-white/90 backdrop-blur-xl">
         <div className="mx-auto flex max-w-3xl items-center justify-between px-6 py-4">
           <motion.button
@@ -523,6 +532,6 @@ export function PostDetail() {
         .scrollbar-hide::-webkit-scrollbar { display: none; }
         .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
       `}</style>
-    </div>
+    </motion.div>
   );
 }
