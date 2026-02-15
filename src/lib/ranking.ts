@@ -1,25 +1,36 @@
-import type { ClosetItem, Category } from '../types/database';
+import type { ClosetItem, Category, PreferenceTier } from '../types/database';
 
 /**
  * Elo-based Ranking Algorithm for ClosetRank
  * Inspired by Beli's head-to-head comparison system
  *
- * Items start at 1500 Elo points
- * After comparisons, Elo is converted to 0.0-10.0 score
+ * Items are segmented by preference tier:
+ * - "I don't like it" (dont_like): Elo 800-1200, scores 0-3
+ * - "I like it" (like): Elo 1200-1800, scores 3-6
+ * - "I love it" (love): Elo 1800-2200, scores 7-10
+ *
+ * Items only rank against others in the same preference tier
  */
 
 // =====================================================
 // CONSTANTS
 // =====================================================
 
-const INITIAL_ELO = 1500;
-const K_FACTOR = 32; // How much ratings change per match (higher = more volatile)
-const MIN_ELO = 800;
-const MAX_ELO = 2200;
+const K_FACTOR = 64; // How much ratings change per match (higher = more volatile, better spread)
 
-// For converting Elo to 0-10 scale
-const ELO_RANGE_MIN = 800;  // Maps to 0.0
-const ELO_RANGE_MAX = 2200; // Maps to 10.0
+// Segmented Elo ranges by preference tier
+const TIER_RANGES = {
+  dont_like: { min: 800, max: 1200, initial: 1000 },
+  like: { min: 1200, max: 1800, initial: 1500 },
+  love: { min: 1800, max: 2200, initial: 2000 },
+} as const;
+
+// Score ranges by preference tier (for 0-10 scale)
+const TIER_SCORE_RANGES = {
+  dont_like: { min: 0, max: 3 },
+  like: { min: 3, max: 6 },
+  love: { min: 7, max: 10 },
+} as const;
 
 // =====================================================
 // TYPES
@@ -65,47 +76,66 @@ function calculateExpectedScore(playerElo: number, opponentElo: number): number 
  * Update Elo ratings after a comparison
  * @param winnerElo - Current Elo of winner
  * @param loserElo - Current Elo of loser
+ * @param preferenceTier - The preference tier (items only compete within same tier)
  * @returns New Elo ratings for both items
  */
 export function updateEloRatings(
   winnerElo: number,
-  loserElo: number
+  loserElo: number,
+  preferenceTier: PreferenceTier
 ): { newWinnerElo: number; newLoserElo: number } {
   const expectedWinner = calculateExpectedScore(winnerElo, loserElo);
   const expectedLoser = calculateExpectedScore(loserElo, winnerElo);
 
+  const { min, max } = TIER_RANGES[preferenceTier];
+
   // Winner gets 1 point, loser gets 0
   const newWinnerElo = Math.max(
-    MIN_ELO,
-    Math.min(MAX_ELO, winnerElo + K_FACTOR * (1 - expectedWinner))
+    min,
+    Math.min(max, winnerElo + K_FACTOR * (1 - expectedWinner))
   );
   const newLoserElo = Math.max(
-    MIN_ELO,
-    Math.min(MAX_ELO, loserElo + K_FACTOR * (0 - expectedLoser))
+    min,
+    Math.min(max, loserElo + K_FACTOR * (0 - expectedLoser))
   );
 
   return { newWinnerElo, newLoserElo };
 }
 
 /**
- * Convert Elo rating to 0-10 score (Beli-style)
+ * Convert Elo rating to 0-10 score using tier-specific ranges
  * @param elo - Elo rating
- * @returns Score between 0.0 and 10.0
+ * @param preferenceTier - The preference tier
+ * @returns Score within tier's range (dont_like: 0-3, like: 3-6, love: 7-10)
  */
-export function eloToScore(elo: number): number {
-  const normalized = (elo - ELO_RANGE_MIN) / (ELO_RANGE_MAX - ELO_RANGE_MIN);
-  const score = normalized * 10;
-  return Math.max(0, Math.min(10, Number(score.toFixed(1))));
+export function eloToScore(elo: number, preferenceTier: PreferenceTier): number {
+  const { min: eloMin, max: eloMax } = TIER_RANGES[preferenceTier];
+  const { min: scoreMin, max: scoreMax } = TIER_SCORE_RANGES[preferenceTier];
+
+  // Normalize Elo within tier's range
+  const normalized = (elo - eloMin) / (eloMax - eloMin);
+
+  // Map to tier's score range
+  const score = scoreMin + normalized * (scoreMax - scoreMin);
+
+  return Math.max(scoreMin, Math.min(scoreMax, Number(score.toFixed(1))));
 }
 
 /**
- * Convert 0-10 score back to Elo (for initialization)
- * @param score - Score between 0.0 and 10.0
- * @returns Elo rating
+ * Convert score back to Elo using tier-specific ranges
+ * @param score - Score within tier's range
+ * @param preferenceTier - The preference tier
+ * @returns Elo rating within tier's range
  */
-export function scoreToElo(score: number): number {
-  const normalized = score / 10;
-  return ELO_RANGE_MIN + normalized * (ELO_RANGE_MAX - ELO_RANGE_MIN);
+export function scoreToElo(score: number, preferenceTier: PreferenceTier): number {
+  const { min: eloMin, max: eloMax } = TIER_RANGES[preferenceTier];
+  const { min: scoreMin, max: scoreMax } = TIER_SCORE_RANGES[preferenceTier];
+
+  // Normalize score within tier's range
+  const normalized = (score - scoreMin) / (scoreMax - scoreMin);
+
+  // Map to tier's Elo range
+  return eloMin + normalized * (eloMax - eloMin);
 }
 
 // =====================================================
@@ -113,8 +143,8 @@ export function scoreToElo(score: number): number {
 // =====================================================
 
 /**
- * Determine which items to compare using binary search
- * This efficiently finds the new item's position in the ranking
+ * Determine which items to compare using smart binary search
+ * Makes strategic comparisons to efficiently find position and spread ratings
  *
  * @param newItemElo - Elo of the new item
  * @param existingItems - Sorted list of existing items (high to low Elo)
@@ -135,34 +165,62 @@ export function getNextComparison(
     return null;
   }
 
-  // If only 1-2 items, compare with them
-  if (remainingItems.length <= 2) {
-    return remainingItems[0];
-  }
-
-  // Binary search: find middle item based on current Elo estimate
+  // Sort by Elo (high to low)
   const sortedRemaining = [...remainingItems].sort(
     (a, b) => b.elo_rating - a.elo_rating
   );
 
-  // Find the item closest to our current Elo estimate
-  let closestIndex = 0;
-  let closestDiff = Math.abs(sortedRemaining[0].elo_rating - newItemElo);
+  const numComparisons = comparisonsMade.size - 1; // -1 for the new item itself
 
-  for (let i = 1; i < sortedRemaining.length; i++) {
-    const diff = Math.abs(sortedRemaining[i].elo_rating - newItemElo);
-    if (diff < closestDiff) {
-      closestDiff = diff;
-      closestIndex = i;
+  // Strategy: Make comparisons that maximize information gain
+  if (numComparisons === 0) {
+    // First comparison: Compare with the median item to quickly divide the space
+    const medianIndex = Math.floor(sortedRemaining.length / 2);
+    return sortedRemaining[medianIndex];
+  } else if (numComparisons === 1) {
+    // Second comparison: Based on first result, compare with quartile
+    // Find items above and below current Elo
+    const itemsAbove = sortedRemaining.filter(item => item.elo_rating > newItemElo);
+    const itemsBelow = sortedRemaining.filter(item => item.elo_rating <= newItemElo);
+
+    if (itemsAbove.length > 0 && itemsBelow.length > 0) {
+      // Pick from the larger group to narrow down position
+      if (itemsAbove.length > itemsBelow.length) {
+        // Pick middle of upper half
+        const midIndex = Math.floor(itemsAbove.length / 2);
+        return itemsAbove[midIndex];
+      } else {
+        // Pick middle of lower half
+        const midIndex = Math.floor(itemsBelow.length / 2);
+        return itemsBelow[midIndex];
+      }
+    } else if (itemsAbove.length > 0) {
+      // All remaining are above, pick closest
+      return itemsAbove[itemsAbove.length - 1];
+    } else {
+      // All remaining are below, pick closest
+      return itemsBelow[0];
     }
-  }
+  } else {
+    // Third comparison: Fine-tune position with closest item
+    let closestIndex = 0;
+    let closestDiff = Math.abs(sortedRemaining[0].elo_rating - newItemElo);
 
-  return sortedRemaining[closestIndex];
+    for (let i = 1; i < sortedRemaining.length; i++) {
+      const diff = Math.abs(sortedRemaining[i].elo_rating - newItemElo);
+      if (diff < closestDiff) {
+        closestDiff = diff;
+        closestIndex = i;
+      }
+    }
+
+    return sortedRemaining[closestIndex];
+  }
 }
 
 /**
  * Determine if we have enough comparisons to accurately rank the item
- * Using binary search, we need log2(n) comparisons at minimum
+ * Just 2-3 strategic comparisons are enough with ELO rating system
  *
  * @param totalItems - Total number of items in category
  * @param comparisonsMade - Number of comparisons made
@@ -174,14 +232,11 @@ export function shouldStopComparing(
 ): boolean {
   if (totalItems <= 1) return true;
 
-  // Minimum comparisons needed (log2 of total items, rounded up)
-  const minComparisons = Math.ceil(Math.log2(totalItems));
-
-  // Maximum comparisons (cap at 10 to not overwhelm users)
-  const maxComparisons = Math.min(10, totalItems);
+  // Just need 2-3 strategic comparisons to place the item accurately
+  const maxComparisons = Math.min(3, totalItems);
 
   // Stop if we've done enough comparisons
-  return comparisonsMade >= Math.min(minComparisons + 2, maxComparisons);
+  return comparisonsMade >= maxComparisons;
 }
 
 // =====================================================
@@ -199,7 +254,7 @@ export function calculateRankings(items: ItemWithRanking[]): ItemWithRanking[] {
   return sorted.map((item, index) => ({
     ...item,
     rank_in_category: index + 1,
-    rating: eloToScore(item.elo_rating),
+    rating: eloToScore(item.elo_rating, item.preference_tier),
   }));
 }
 
@@ -218,11 +273,24 @@ export function getTopItems(items: ItemWithRanking[], n: number = 10): ItemWithR
 // =====================================================
 
 /**
- * Initialize a new item with default Elo
- * @returns Initial Elo rating
+ * Initialize a new item with default Elo based on preference tier
+ * @param preferenceTier - The user's preference tier
+ * @returns Initial Elo rating (dont_like: 1000, like: 1500, love: 2000)
  */
-export function getInitialElo(): number {
-  return INITIAL_ELO;
+export function getInitialElo(preferenceTier: PreferenceTier): number {
+  return TIER_RANGES[preferenceTier].initial;
+}
+
+/**
+ * Get the Elo range bounds for a preference tier
+ * @param preferenceTier - The preference tier
+ * @returns Min and max Elo for the tier
+ */
+export function getTierEloBounds(preferenceTier: PreferenceTier): { min: number; max: number } {
+  return {
+    min: TIER_RANGES[preferenceTier].min,
+    max: TIER_RANGES[preferenceTier].max,
+  };
 }
 
 /**
@@ -269,7 +337,7 @@ export function getCategoryStats(items: ItemWithRanking[]): {
     };
   }
 
-  const scores = items.map((item) => eloToScore(item.elo_rating));
+  const scores = items.map((item) => eloToScore(item.elo_rating, item.preference_tier));
 
   return {
     count: items.length,
@@ -289,7 +357,7 @@ export function getCategoryStats(items: ItemWithRanking[]): {
  * which items to compare and updates Elo ratings
  *
  * @param newItem - The new item being ranked
- * @param categoryItems - Existing items in the same category
+ * @param categoryItems - Existing items in the same category and preference tier
  * @param userChoices - Array of item IDs that won each comparison
  * @returns Updated Elo for new item and all compared items
  */
@@ -311,13 +379,21 @@ export function processRankingSession(
 
     const comparedElo = updatedElos.get(comparedItemId) ?? comparedItem.elo_rating;
 
-    // Update Elo based on who won
+    // Update Elo based on who won (using tier-specific bounds)
     if (winnerId === newItem.id) {
-      const { newWinnerElo, newLoserElo } = updateEloRatings(currentElo, comparedElo);
+      const { newWinnerElo, newLoserElo } = updateEloRatings(
+        currentElo,
+        comparedElo,
+        newItem.preference_tier
+      );
       currentElo = newWinnerElo;
       updatedElos.set(comparedItemId, newLoserElo);
     } else {
-      const { newWinnerElo, newLoserElo } = updateEloRatings(comparedElo, currentElo);
+      const { newWinnerElo, newLoserElo } = updateEloRatings(
+        comparedElo,
+        currentElo,
+        newItem.preference_tier
+      );
       currentElo = newLoserElo;
       updatedElos.set(comparedItemId, newWinnerElo);
     }

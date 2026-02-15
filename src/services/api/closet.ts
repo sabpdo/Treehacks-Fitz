@@ -115,6 +115,7 @@ export async function createClosetItem(
     image_url: imageUrl,
     brand: request.brand || null,
     category: request.category,
+    preference_tier: request.preference_tier,
     vibe_tags: request.vibe_tags || aiAnalysis.vibe_tags,
     price_tier: request.price_tier || null,
     colors: request.colors && request.colors.length > 0 ? request.colors : aiAnalysis.colors,
@@ -123,7 +124,7 @@ export async function createClosetItem(
     subcategory: request.subcategory || aiAnalysis.subcategory,
     times_worn: 0,
     rating: 0,
-    elo_rating: getInitialElo(),
+    elo_rating: getInitialElo(request.preference_tier),
   };
 
   const { data, error } = await supabase

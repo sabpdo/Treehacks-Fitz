@@ -259,7 +259,7 @@ function mapCategoryToUI(dbCategory: string): "tops" | "bottoms" | "outerwear" |
 }
 
 // Convert database ClosetItem to UI ClosetItem
-export function apiClosetItemToUI(dbItem: import('../types/database').ClosetItem): import('../app/data/mockData').ClosetItem & { priceTier?: string; allColors?: string[]; subcategory?: string } {
+export function apiClosetItemToUI(dbItem: import('../types/database').ClosetItem): import('../app/data/mockData').ClosetItem & { priceTier?: string; allColors?: string[]; subcategory?: string; rating?: number; eloRating?: number; preferenceTier?: string } {
   return {
     id: dbItem.id,
     imageUrl: ensurePublicStorageUrl(dbItem.image_url),
@@ -275,5 +275,8 @@ export function apiClosetItemToUI(dbItem: import('../types/database').ClosetItem
     priceTier: dbItem.price_tier || undefined,
     allColors: dbItem.colors || [],
     subcategory: dbItem.subcategory || undefined,
+    rating: dbItem.rating || 0,
+    eloRating: dbItem.elo_rating || 1500,
+    preferenceTier: dbItem.preference_tier || undefined,
   };
 }

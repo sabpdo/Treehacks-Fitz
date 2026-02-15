@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from "react";
-import { useSearchParams } from "react-router";
-import { Plus, Grid3x3, List, X, ChevronRight, Flame, Upload, Trash2 } from "lucide-react";
+import { Plus, Grid3x3, List, X, ChevronRight, Flame, Upload } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { mockClosetItems, type ClosetItem, currentUserProfile } from "../data/mockData";
 import { useAppStore } from "../context/AppStore";
-import { getCurrentProfile, getClosetItems, createClosetItem, updateClosetItem, deleteClosetItem, uploadImage, getClosetItem } from "../../services/api";
-import { analyzeClothingImage } from "../../services/openai";
+import { getCurrentProfile, getClosetItems, createClosetItem, updateClosetItem, uploadImage, getClosetItem, deleteClosetItem } from "../../services/api";
+import { compressImage } from "../../services/api/storage";
 import { apiClosetItemToUI } from "../../lib/adapters";
+import { startRankingSession } from "../../services/api/ranking";
+import { RankingSession } from "./RankingSession";
+import type { ItemWithRanking } from "../../lib/ranking";
 
 // Map UI category to database category (reverse of adapter)
 function mapCategoryToUI(dbCategory: string): "tops" | "bottoms" | "outerwear" | "shoes" | "accessories" {
@@ -21,21 +23,11 @@ function mapCategoryToUI(dbCategory: string): "tops" | "bottoms" | "outerwear" |
   return categoryMap[dbCategory] || "tops";
 }
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "./ui/alert-dialog";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
-import type { Category, VibeTag, PriceTier, Silhouette } from "../../types/database";
+import type { Category, VibeTag, PriceTier, Silhouette, PreferenceTier } from "../../types/database";
 
 type CategoryFilter = "all" | "tops" | "bottoms" | "outerwear" | "shoes" | "accessories";
 type ViewMode = "grid" | "list";
@@ -45,6 +37,19 @@ const PREDEFINED_BRANDS = [
   "Target", "ASOS", "Shein", "Urban Outfitters", "Aritzia", "Lululemon",
   "Levi's", "Madewell", "Everlane", "Reformation"
 ];
+
+// Get preference tier badge styling
+function getPreferenceTierBadge(tier: string | undefined): { bg: string; text: string; border: string; label: string } | null {
+  if (!tier) return null;
+
+  const tierMap: Record<string, { bg: string; text: string; border: string; label: string }> = {
+    love: { bg: 'bg-green-100', text: 'text-green-700', border: 'border-green-300', label: 'I love it' },
+    like: { bg: 'bg-yellow-100', text: 'text-yellow-700', border: 'border-yellow-300', label: 'I like it' },
+    dont_like: { bg: 'bg-red-100', text: 'text-red-700', border: 'border-red-300', label: "I don't like it" },
+  };
+
+  return tierMap[tier] || null;
+}
 
 // Map color names to actual hex colors
 function getColorHex(colorName: string): string {
@@ -112,16 +117,12 @@ export function Closet() {
   const [error, setError] = useState<string | null>(null);
   const [addItemOpen, setAddItemOpen] = useState(false);
   const [addingItem, setAddingItem] = useState(false);
-  const [analyzingImage, setAnalyzingImage] = useState(false);
   const [addItemError, setAddItemError] = useState<string | null>(null);
   const [editItemOpen, setEditItemOpen] = useState(false);
   const [editingItem, setEditingItem] = useState(false);
   const [editItemError, setEditItemError] = useState<string | null>(null);
   const [detailModalCategory, setDetailModalCategory] = useState<Category | "">("");
   const [savingCategory, setSavingCategory] = useState(false);
-  const [deletingItem, setDeletingItem] = useState(false);
-  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [detailFormData, setDetailFormData] = useState({
     image: null as File | null,
     imagePreview: null as string | null,
@@ -135,11 +136,14 @@ export function Closet() {
   });
   const [savingDetails, setSavingDetails] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const [deletingItem, setDeletingItem] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [formData, setFormData] = useState({
     image: null as File | null,
     imagePreview: null as string | null,
     brand: "",
     category: "" as Category | "",
+    preferenceTier: "" as PreferenceTier | "",
     vibeTags: [] as VibeTag[],
     priceTier: "" as PriceTier | "",
     colors: [] as string[],
@@ -148,7 +152,14 @@ export function Closet() {
     subcategory: "",
   });
   const { isUsingApi, currentUserId, getUser } = useAppStore();
-  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Ranking state
+  const [rankingSessionData, setRankingSessionData] = useState<{
+    newItem: ClosetItem;
+    itemsToCompare: ItemWithRanking[];
+    totalComparisons: number;
+    category: Category;
+  } | null>(null);
 
   // Map UI category back to database category
   const mapCategoryToDB = (uiCategory: string): Category => {
@@ -253,17 +264,6 @@ export function Closet() {
     }
   }, [isUsingApi, currentUserId]);
 
-  // Open item from URL when navigating from post detail (e.g. /closet?item=uuid)
-  useEffect(() => {
-    const itemId = searchParams.get("item");
-    if (!itemId || closetItems.length === 0) return;
-    const item = closetItems.find((i) => i.id === itemId);
-    if (item) {
-      setSelectedItem(item);
-      setSearchParams({}, { replace: true });
-    }
-  }, [closetItems, searchParams, setSearchParams]);
-
   const filteredItems =
     filter === "all"
       ? closetItems
@@ -308,19 +308,21 @@ export function Closet() {
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setViewMode("grid")}
-                className={`flex h-9 w-9 items-center justify-center rounded-lg transition-all ${viewMode === "grid"
-                  ? "bg-neutral-900 text-white"
-                  : "text-neutral-400 hover:bg-neutral-100"
-                  }`}
+                className={`flex h-9 w-9 items-center justify-center rounded-lg transition-all ${
+                  viewMode === "grid"
+                    ? "bg-neutral-900 text-white"
+                    : "text-neutral-400 hover:bg-neutral-100"
+                }`}
               >
                 <Grid3x3 className="h-4 w-4" />
               </button>
               <button
                 onClick={() => setViewMode("list")}
-                className={`flex h-9 w-9 items-center justify-center rounded-lg transition-all ${viewMode === "list"
-                  ? "bg-neutral-900 text-white"
-                  : "text-neutral-400 hover:bg-neutral-100"
-                  }`}
+                className={`flex h-9 w-9 items-center justify-center rounded-lg transition-all ${
+                  viewMode === "list"
+                    ? "bg-neutral-900 text-white"
+                    : "text-neutral-400 hover:bg-neutral-100"
+                }`}
               >
                 <List className="h-4 w-4" />
               </button>
@@ -382,8 +384,13 @@ export function Closet() {
                   <form
                     onSubmit={async (e) => {
                       e.preventDefault();
-                      if (!formData.image || !formData.category) {
-                        setAddItemError("Please select an image and category");
+                      if (!formData.category) {
+                        setAddItemError("Please select a category");
+                        return;
+                      }
+
+                      if (!formData.preferenceTier) {
+                        setAddItemError("Please select how you feel about this item");
                         return;
                       }
 
@@ -396,14 +403,19 @@ export function Closet() {
                       setAddItemError(null);
 
                       try {
-                        // Upload image first
-                        const imageUrl = await uploadImage(formData.image);
+                        // Upload image if provided, otherwise use placeholder
+                        let imageUrl = "https://placehold.co/600x600/e5e7eb/6b7280?text=No+Image";
+                        if (formData.image) {
+                          const compressedImage = await compressImage(formData.image, 800, 800, 0.85);
+                          imageUrl = await uploadImage(compressedImage);
+                        }
 
                         // Create closet item
                         const newItem = await createClosetItem({
                           image_url: imageUrl,
                           brand: formData.brand || undefined,
                           category: formData.category as Category,
+                          preference_tier: formData.preferenceTier as PreferenceTier,
                           vibe_tags: formData.vibeTags.length > 0 ? formData.vibeTags : undefined,
                           price_tier: formData.priceTier || undefined,
                           colors: formData.colors.length > 0 ? formData.colors : undefined,
@@ -416,12 +428,29 @@ export function Closet() {
                         const uiItem = apiClosetItemToUI(newItem);
                         setClosetItems((prev) => [uiItem, ...prev]);
 
+                        // Start ranking session for the new item
+                        try {
+                          const rankingData = await startRankingSession(newItem.id, formData.category);
+                          if (rankingData && rankingData.itemsToCompare.length > 0) {
+                            setRankingSessionData({
+                              newItem: uiItem,
+                              itemsToCompare: rankingData.itemsToCompare,
+                              totalComparisons: rankingData.totalComparisons,
+                              category: formData.category,
+                            });
+                          }
+                        } catch (rankingErr) {
+                          console.error("Failed to start ranking session:", rankingErr);
+                          // Don't block item creation if ranking fails
+                        }
+
                         // Reset form and close dialog
                         setFormData({
                           image: null,
                           imagePreview: null,
                           brand: "",
                           category: "" as Category | "",
+                          preferenceTier: "" as PreferenceTier | "",
                           vibeTags: [],
                           priceTier: "" as PriceTier | "",
                           colors: [],
@@ -441,7 +470,7 @@ export function Closet() {
                   >
                     {/* Image Upload */}
                     <div className="space-y-2">
-                      <Label htmlFor="image">Item Image *</Label>
+                      <Label htmlFor="image">Item Image (optional)</Label>
                       <div className="flex items-center gap-4">
                         {formData.imagePreview ? (
                           <div className="relative">
@@ -450,11 +479,6 @@ export function Closet() {
                               alt="Preview"
                               className="h-32 w-32 rounded-lg object-cover border border-neutral-200"
                             />
-                            {analyzingImage && (
-                              <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/50 text-xs text-white">
-                                Analyzing…
-                              </div>
-                            )}
                             <button
                               type="button"
                               onClick={() => {
@@ -484,7 +508,7 @@ export function Closet() {
                             const file = e.target.files?.[0];
                             if (file) {
                               const reader = new FileReader();
-                              reader.onloadend = async () => {
+                              reader.onloadend = () => {
                                 const dataUrl = reader.result as string;
                                 setFormData((prev) => ({
                                   ...prev,
@@ -492,25 +516,6 @@ export function Closet() {
                                   imagePreview: dataUrl,
                                 }));
                                 setAddItemError(null);
-                                setAnalyzingImage(true);
-                                try {
-                                  const analysis = await analyzeClothingImage(dataUrl);
-                                  setFormData((prev) => ({
-                                    ...prev,
-                                    category: analysis.category,
-                                    subcategory: analysis.subcategory || "",
-                                    colors: Array.isArray(analysis.colors) ? analysis.colors : [],
-                                    fabric: analysis.fabric || "",
-                                    silhouette: (analysis.silhouette || "") as Silhouette | "",
-                                    vibeTags: Array.isArray(analysis.vibe_tags) ? (analysis.vibe_tags as VibeTag[]) : [],
-                                  }));
-                                  setAddItemError(null);
-                                } catch (err) {
-                                  console.warn("Auto-fill from image failed:", err);
-                                  setAddItemError("Could not auto-fill details — add them manually.");
-                                } finally {
-                                  setAnalyzingImage(false);
-                                }
                               };
                               reader.readAsDataURL(file);
                             }
@@ -582,6 +587,49 @@ export function Closet() {
                       </Select>
                     </div>
 
+                    {/* Preference Tier */}
+                    <div className="space-y-2">
+                      <Label>How do you feel about this item? *</Label>
+                      <div className="grid grid-cols-3 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setFormData((prev) => ({ ...prev, preferenceTier: "dont_like" as PreferenceTier }))}
+                          className={`rounded-lg border-2 px-4 py-3 text-sm font-medium transition-all ${
+                            formData.preferenceTier === "dont_like"
+                              ? "border-red-500 bg-red-50 text-red-700"
+                              : "border-neutral-200 bg-white text-neutral-700 hover:border-neutral-300"
+                          }`}
+                        >
+                          I don't like it
+                          <div className="mt-1 text-xs opacity-60">0-3</div>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setFormData((prev) => ({ ...prev, preferenceTier: "like" as PreferenceTier }))}
+                          className={`rounded-lg border-2 px-4 py-3 text-sm font-medium transition-all ${
+                            formData.preferenceTier === "like"
+                              ? "border-yellow-500 bg-yellow-50 text-yellow-700"
+                              : "border-neutral-200 bg-white text-neutral-700 hover:border-neutral-300"
+                          }`}
+                        >
+                          I like it
+                          <div className="mt-1 text-xs opacity-60">3-6</div>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setFormData((prev) => ({ ...prev, preferenceTier: "love" as PreferenceTier }))}
+                          className={`rounded-lg border-2 px-4 py-3 text-sm font-medium transition-all ${
+                            formData.preferenceTier === "love"
+                              ? "border-green-500 bg-green-50 text-green-700"
+                              : "border-neutral-200 bg-white text-neutral-700 hover:border-neutral-300"
+                          }`}
+                        >
+                          I love it
+                          <div className="mt-1 text-xs opacity-60">7-10</div>
+                        </button>
+                      </div>
+                    </div>
+
                     {/* Price Tier */}
                     <div className="space-y-2">
                       <Label htmlFor="priceTier">Price Tier</Label>
@@ -616,10 +664,11 @@ export function Closet() {
                                   : [...prev.colors, color],
                               }));
                             }}
-                            className={`rounded-full px-3 py-1 text-xs capitalize transition-colors ${formData.colors.includes(color)
-                              ? "bg-neutral-900 text-white"
-                              : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
-                              }`}
+                            className={`rounded-full px-3 py-1 text-xs capitalize transition-colors ${
+                              formData.colors.includes(color)
+                                ? "bg-neutral-900 text-white"
+                                : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
+                            }`}
                           >
                             {color}
                           </button>
@@ -703,10 +752,11 @@ export function Closet() {
                                   : [...prev.vibeTags, vibe],
                               }));
                             }}
-                            className={`rounded-full px-3 py-1 text-xs transition-colors ${formData.vibeTags.includes(vibe)
-                              ? "bg-neutral-900 text-white"
-                              : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
-                              }`}
+                            className={`rounded-full px-3 py-1 text-xs transition-colors ${
+                              formData.vibeTags.includes(vibe)
+                                ? "bg-neutral-900 text-white"
+                                : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
+                            }`}
                           >
                             {vibe}
                           </button>
@@ -733,6 +783,7 @@ export function Closet() {
                             imagePreview: null,
                             brand: "",
                             category: "" as Category | "",
+                            preferenceTier: "" as PreferenceTier | "",
                             vibeTags: [],
                             priceTier: "" as PriceTier | "",
                             colors: [],
@@ -746,7 +797,7 @@ export function Closet() {
                       >
                         Cancel
                       </Button>
-                      <Button type="submit" disabled={addingItem || !formData.image || !formData.category}>
+                      <Button type="submit" disabled={addingItem || !formData.category}>
                         {addingItem ? "Adding..." : "Add Item"}
                       </Button>
                     </div>
@@ -802,10 +853,11 @@ export function Closet() {
             <button
               key={cat.value}
               onClick={() => setFilter(cat.value as CategoryFilter)}
-              className={`flex-shrink-0 rounded-full px-4 py-1.5 text-xs transition-all ${filter === cat.value
-                ? "bg-neutral-900 text-white"
-                : "border border-neutral-200 bg-white text-neutral-600 hover:border-neutral-300"
-                }`}
+              className={`flex-shrink-0 rounded-full px-4 py-1.5 text-xs transition-all ${
+                filter === cat.value
+                  ? "bg-neutral-900 text-white"
+                  : "border border-neutral-200 bg-white text-neutral-600 hover:border-neutral-300"
+              }`}
             >
               {cat.label}
             </button>
@@ -835,39 +887,55 @@ export function Closet() {
               </div>
             ) : (
               filteredItems.map((item, index) => (
-                <motion.button
-                  key={item.id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.03 }}
-                  onClick={() => setSelectedItem(item)}
-                  className="group overflow-hidden rounded-xl border border-neutral-200/60 bg-white text-left transition-all hover:border-neutral-300 hover:shadow-lg"
-                >
-                  <div className="relative aspect-square overflow-hidden bg-neutral-50">
-                    <img
-                      src={item.imageUrl}
-                      alt={`${item.brand} ${item.category}`}
-                      className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-                    />
-                    {/* Color Dot */}
-                    <div
-                      className="absolute right-3 top-3 h-5 w-5 rounded-full border-2 border-white shadow-sm"
-                      style={{
-                        backgroundColor: getColorHex(item.color),
-                      }}
-                    />
-                  </div>
-                  <div className="p-3">
-                    <p className="mb-1 text-xs uppercase tracking-wide text-neutral-400">
-                      {item.category}
-                    </p>
-                    <p className="text-sm text-neutral-900">
-                      {(item as any).subcategory && item.brand
-                        ? `${(item as any).subcategory} • ${item.brand}`
-                        : (item as any).subcategory || item.brand || item.style || "—"}
-                    </p>
-                  </div>
-                </motion.button>
+              <motion.button
+                key={item.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.03 }}
+                onClick={() => setSelectedItem(item)}
+                className="group overflow-hidden rounded-xl border border-neutral-200/60 bg-white text-left transition-all hover:border-neutral-300 hover:shadow-lg"
+              >
+                <div className="relative aspect-square overflow-hidden bg-neutral-50">
+                  <img
+                    src={item.imageUrl}
+                    alt={`${item.brand} ${item.category}`}
+                    className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                  />
+                  {/* Ranking Badge - Colored by Preference Tier */}
+                  {(item as any).rating !== undefined && (item as any).rating > 0 && (() => {
+                    const tierBadge = getPreferenceTierBadge((item as any).preferenceTier);
+                    const badgeClasses = tierBadge
+                      ? `absolute left-3 top-3 rounded-full border ${tierBadge.border} ${tierBadge.bg} px-2.5 py-1 shadow-sm`
+                      : "absolute left-3 top-3 rounded-full bg-white/90 px-2.5 py-1 backdrop-blur-sm shadow-sm";
+                    const textClasses = tierBadge
+                      ? `text-xs font-semibold ${tierBadge.text}`
+                      : "text-xs font-semibold text-neutral-900";
+
+                    return (
+                      <div className={badgeClasses}>
+                        <p className={textClasses}>{((item as any).rating).toFixed(1)}</p>
+                      </div>
+                    );
+                  })()}
+                  {/* Color Dot */}
+                  <div
+                    className="absolute right-3 top-3 h-5 w-5 rounded-full border-2 border-white shadow-sm"
+                    style={{
+                      backgroundColor: getColorHex(item.color),
+                    }}
+                  />
+                </div>
+                <div className="p-3">
+                  <p className="mb-1 text-xs uppercase tracking-wide text-neutral-400">
+                    {item.category}
+                  </p>
+                  <p className="text-sm text-neutral-900">
+                    {(item as any).subcategory && item.brand
+                      ? `${(item as any).subcategory} • ${item.brand}`
+                      : (item as any).subcategory || item.brand || item.style || "—"}
+                  </p>
+                </div>
+              </motion.button>
               ))
             )}
           </div>
@@ -895,43 +963,43 @@ export function Closet() {
                 </div>
               ) : (
                 filteredItems.map((item, index) => (
-                  <motion.button
-                    key={item.id}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ delay: index * 0.02 }}
-                    onClick={() => setSelectedItem(item)}
-                    className="grid w-full grid-cols-[60px_1fr_100px_100px_80px_100px_100px] items-center gap-4 px-4 py-3 text-left text-sm transition-colors hover:bg-neutral-50"
-                  >
-                    <div className="h-12 w-12 overflow-hidden rounded-lg bg-neutral-100">
-                      <img
-                        src={item.imageUrl}
-                        alt={item.brand || "Item"}
-                        className="h-full w-full object-cover"
-                      />
-                    </div>
-                    <div>
-                      <p className="text-sm text-neutral-900">{item.brand || "—"}</p>
-                      <p className="text-xs text-neutral-400">{item.style}</p>
-                    </div>
-                    <div className="text-xs capitalize text-neutral-600">
-                      {item.category}
-                    </div>
-                    <div className="text-xs text-neutral-600">{item.brand || "—"}</div>
-                    <div className="flex items-center gap-2">
-                      <div
-                        className="h-3 w-3 rounded-full border border-neutral-300"
-                        style={{
-                          backgroundColor: getColorHex(item.color),
-                        }}
-                      />
-                      <span className="text-xs text-neutral-600">{item.color}</span>
-                    </div>
-                    <div className="text-xs text-neutral-600">{item.fabric || "—"}</div>
-                    <div className="text-xs text-neutral-600">
-                      {item.silhouette || "—"}
-                    </div>
-                  </motion.button>
+                <motion.button
+                  key={item.id}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: index * 0.02 }}
+                  onClick={() => setSelectedItem(item)}
+                  className="grid w-full grid-cols-[60px_1fr_100px_100px_80px_100px_100px] items-center gap-4 px-4 py-3 text-left text-sm transition-colors hover:bg-neutral-50"
+                >
+                  <div className="h-12 w-12 overflow-hidden rounded-lg bg-neutral-100">
+                    <img
+                      src={item.imageUrl}
+                      alt={item.brand || "Item"}
+                      className="h-full w-full object-cover"
+                    />
+                  </div>
+                  <div>
+                    <p className="text-sm text-neutral-900">{item.brand || "—"}</p>
+                    <p className="text-xs text-neutral-400">{item.style}</p>
+                  </div>
+                  <div className="text-xs capitalize text-neutral-600">
+                    {item.category}
+                  </div>
+                  <div className="text-xs text-neutral-600">{item.brand || "—"}</div>
+                  <div className="flex items-center gap-2">
+                    <div
+                      className="h-3 w-3 rounded-full border border-neutral-300"
+                      style={{
+                        backgroundColor: getColorHex(item.color),
+                      }}
+                    />
+                    <span className="text-xs text-neutral-600">{item.color}</span>
+                  </div>
+                  <div className="text-xs text-neutral-600">{item.fabric || "—"}</div>
+                  <div className="text-xs text-neutral-600">
+                    {item.silhouette || "—"}
+                  </div>
+                </motion.button>
                 ))
               )}
             </div>
@@ -1184,10 +1252,11 @@ export function Closet() {
                                   : [...prev.colors, color],
                               }));
                             }}
-                            className={`rounded-full px-3 py-1 text-xs capitalize transition-colors ${detailFormData.colors.includes(color)
-                              ? "bg-neutral-900 text-white"
-                              : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
-                              }`}
+                            className={`rounded-full px-3 py-1 text-xs capitalize transition-colors ${
+                              detailFormData.colors.includes(color)
+                                ? "bg-neutral-900 text-white"
+                                : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
+                            }`}
                           >
                             {color}
                           </button>
@@ -1260,10 +1329,11 @@ export function Closet() {
                                   : [...prev.vibeTags, vibe],
                               }));
                             }}
-                            className={`rounded-full px-3 py-1 text-xs transition-colors ${detailFormData.vibeTags.includes(vibe)
-                              ? "bg-neutral-900 text-white"
-                              : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
-                              }`}
+                            className={`rounded-full px-3 py-1 text-xs transition-colors ${
+                              detailFormData.vibeTags.includes(vibe)
+                                ? "bg-neutral-900 text-white"
+                                : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
+                            }`}
                           >
                             {vibe}
                           </button>
@@ -1315,68 +1385,60 @@ export function Closet() {
                       <p className="text-xs text-neutral-500">this season</p>
                     </div>
                   </div>
-
-                  {/* Remove from wardrobe */}
+                  {/* Delete Button */}
                   <div className="mt-6 border-t border-neutral-200/60 pt-4">
-                    {deleteError && (
-                      <p className="mb-3 text-sm text-red-600">{deleteError}</p>
-                    )}
-                    <button
-                      type="button"
-                      disabled={deletingItem}
-                      onClick={() => setDeleteConfirmOpen(true)}
-                      className="flex w-full items-center justify-center gap-2 rounded-xl border border-red-200 bg-white py-3 text-sm text-red-600 transition-colors hover:bg-red-50 disabled:opacity-50"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                      Remove from wardrobe
-                    </button>
-                  </div>
+                    {showDeleteConfirm ? (
+                      <div className="rounded-lg border border-red-200 bg-red-50 p-4">
+                        <p className="mb-3 text-sm text-red-900">
+                          Are you sure you want to delete this item? This action cannot be undone.
+                        </p>
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setShowDeleteConfirm(false)}
+                            disabled={deletingItem}
+                          >
+                            Cancel
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="bg-red-600 hover:bg-red-700 text-white"
+                            onClick={async () => {
+                              if (!selectedItem || !isUsingApi) return;
 
-                  <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
-                    <AlertDialogContent className="max-w-[calc(100%-2rem)] rounded-2xl border-neutral-200/60 bg-white p-6 shadow-xl sm:max-w-md">
-                      <AlertDialogHeader>
-                        <AlertDialogTitle className="text-left text-lg font-semibold text-neutral-900">
-                          Remove from wardrobe?
-                        </AlertDialogTitle>
-                        <AlertDialogDescription className="text-left text-sm text-neutral-500">
-                          This item will be removed from your closet. This can't be undone.
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter className="mt-6 flex flex-row gap-3 sm:justify-end">
-                        <AlertDialogCancel
-                          onClick={() => setDeleteError(null)}
-                          className="rounded-xl border-neutral-300"
-                        >
-                          Cancel
-                        </AlertDialogCancel>
-                        <AlertDialogAction
-                          onClick={async (e) => {
-                            e.preventDefault();
-                            if (!selectedItem) return;
-                            setDeleteError(null);
-                            setDeletingItem(true);
-                            try {
-                              if (isUsingApi && selectedItem.id) {
+                              setDeletingItem(true);
+                              try {
                                 await deleteClosetItem(selectedItem.id);
+                                setClosetItems((prev) => prev.filter((item) => item.id !== selectedItem.id));
+                                setSelectedItem(null);
+                                setShowDeleteConfirm(false);
+                              } catch (err) {
+                                console.error("Failed to delete item:", err);
+                                setDetailError(err instanceof Error ? err.message : "Failed to delete item");
+                                setShowDeleteConfirm(false);
+                              } finally {
+                                setDeletingItem(false);
                               }
-                              setClosetItems((prev) => prev.filter((i) => i.id !== selectedItem.id));
-                              setSelectedItem(null);
-                              setDeleteConfirmOpen(false);
-                            } catch (err) {
-                              console.error("Failed to delete item:", err);
-                              setDeleteError(err instanceof Error ? err.message : "Failed to remove item");
-                              setDeleteConfirmOpen(false);
-                            } finally {
-                              setDeletingItem(false);
-                            }
-                          }}
-                          className="rounded-xl bg-red-600 text-white hover:bg-red-700"
-                        >
-                          {deletingItem ? "Removing…" : "Remove"}
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
+                            }}
+                            disabled={deletingItem}
+                          >
+                            {deletingItem ? "Deleting..." : "Delete Item"}
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setShowDeleteConfirm(true)}
+                        className="w-full rounded-lg border border-red-300 bg-white py-2 text-sm text-red-600 transition-colors hover:bg-red-50"
+                      >
+                        Delete Item
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             </motion.div>
@@ -1443,6 +1505,7 @@ export function Closet() {
                   imagePreview: null,
                   brand: "",
                   category: "" as Category | "",
+                  preferenceTier: "" as PreferenceTier | "",
                   vibeTags: [],
                   priceTier: "" as PriceTier | "",
                   colors: [],
@@ -1610,10 +1673,11 @@ export function Closet() {
                           : [...prev.colors, color],
                       }));
                     }}
-                    className={`rounded-full px-3 py-1 text-xs capitalize transition-colors ${formData.colors.includes(color)
-                      ? "bg-neutral-900 text-white"
-                      : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
-                      }`}
+                    className={`rounded-full px-3 py-1 text-xs capitalize transition-colors ${
+                      formData.colors.includes(color)
+                        ? "bg-neutral-900 text-white"
+                        : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
+                    }`}
                   >
                     {color}
                   </button>
@@ -1697,10 +1761,11 @@ export function Closet() {
                           : [...prev.vibeTags, vibe],
                       }));
                     }}
-                    className={`rounded-full px-3 py-1 text-xs transition-colors ${formData.vibeTags.includes(vibe)
-                      ? "bg-neutral-900 text-white"
-                      : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
-                      }`}
+                    className={`rounded-full px-3 py-1 text-xs transition-colors ${
+                      formData.vibeTags.includes(vibe)
+                        ? "bg-neutral-900 text-white"
+                        : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
+                    }`}
                   >
                     {vibe}
                   </button>
@@ -1727,6 +1792,7 @@ export function Closet() {
                     imagePreview: null,
                     brand: "",
                     category: "" as Category | "",
+                    preferenceTier: "" as PreferenceTier | "",
                     vibeTags: [],
                     priceTier: "" as PriceTier | "",
                     colors: [],
@@ -1747,6 +1813,36 @@ export function Closet() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Ranking Session */}
+      {rankingSessionData && (
+        <RankingSession
+          newItem={rankingSessionData.newItem}
+          itemsToCompare={rankingSessionData.itemsToCompare}
+          totalComparisons={rankingSessionData.totalComparisons}
+          category={rankingSessionData.category}
+          onComplete={(rankings) => {
+            console.log("Ranking session completed with rankings:", rankings);
+            // Clear the ranking session
+            setRankingSessionData(null);
+            // Optionally reload closet items to get updated ratings
+            if (isUsingApi && currentUserId) {
+              getClosetItems(currentUserId)
+                .then((items) => {
+                  const uiItems = items.map(apiClosetItemToUI);
+                  setClosetItems(uiItems);
+                })
+                .catch((err) => {
+                  console.error("Failed to reload closet items:", err);
+                });
+            }
+          }}
+          onSkip={() => {
+            // Allow user to skip ranking
+            setRankingSessionData(null);
+          }}
+        />
+      )}
 
       <style>{`
         .scrollbar-hide::-webkit-scrollbar {
