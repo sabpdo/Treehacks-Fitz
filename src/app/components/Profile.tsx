@@ -270,7 +270,15 @@ export function Profile() {
       <header className="sticky top-0 z-30 border-b border-neutral-200/60 bg-white/90 backdrop-blur-xl">
         <div className="mx-auto flex max-w-4xl items-center px-4 py-4 sm:px-6 md:py-5">
           <div className="w-9 flex-shrink-0">
-            {!isOwnProfile && (
+            {isOwnProfile ? (
+              <Link
+                to="/"
+                className="flex h-9 w-9 items-center justify-center rounded-lg text-neutral-600 transition-colors duration-200 hover:bg-neutral-100"
+                aria-label="Back to home"
+              >
+                <img src="/fitz.png" alt="fitz" className="h-7 w-auto object-contain" />
+              </Link>
+            ) : (
               <button
                 type="button"
                 onClick={() => navigate(-1)}

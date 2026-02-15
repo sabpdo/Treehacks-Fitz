@@ -137,9 +137,13 @@ export function BodyAnalyze() {
   return (
     <div className="min-h-screen bg-[#FAFAF8]">
       <header className="sticky top-0 z-30 border-b border-neutral-200/60 bg-white/90 backdrop-blur-xl">
-        <div className="mx-auto max-w-3xl px-4 py-4 sm:px-6">
-          <h1 className="font-serif text-xl tracking-tight text-neutral-900">Analyze Your Body Type</h1>
-          <p className="mt-0.5 text-xs text-neutral-500">Get personalized color & silhouette suggestions, then see recommended looks from the feed.</p>
+        <div className="mx-auto max-w-6xl px-6 py-4 md:px-8 md:py-5">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-base tracking-tight text-neutral-900">Analyze Your Body Type</h1>
+              <p className="mt-0.5 text-xs text-neutral-500">Get personalized color & silhouette suggestions.</p>
+            </div>
+          </div>
         </div>
       </header>
 
@@ -182,7 +186,7 @@ export function BodyAnalyze() {
             <Upload className="h-4 w-4 text-neutral-500" />
             <h2 className="text-sm font-semibold text-neutral-800">Photos (optional)</h2>
           </div>
-          <p className="mb-4 text-xs text-neutral-500">Upload 1–4 full-body or torso photos for best results.</p>
+          <p className="mb-4 text-xs text-neutral-500">Upload 1–4 full-body or torso photos in natural lighting for best results.</p>
           {uploadingPhotos && <p className="mb-2 text-xs text-neutral-500">Uploading to storage…</p>}
           <div className="flex flex-wrap gap-3">
             {photoPreviews.map((url, i) => (

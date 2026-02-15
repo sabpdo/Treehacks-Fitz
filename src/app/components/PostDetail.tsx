@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router";
-import { ArrowLeft, X, Check, Plus, ShoppingBag, Sparkles } from "lucide-react";
+import { ArrowLeft, X, Check, Plus, ShoppingBag, Sparkles, ChevronDown, ChevronUp, ExternalLink } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useAppStore } from "../context/AppStore";
 import { formatPostTime, type OutfitItem } from "../data/mockData";
@@ -30,6 +30,7 @@ export function PostDetail() {
   const [fetchedPost, setFetchedPost] = useState<ReturnType<typeof apiPostToOOTDPost> | null>(null);
   const [loading, setLoading] = useState(!!postId);
   const [showShopModal, setShowShopModal] = useState(false);
+  const [isOutfitBreakdownExpanded, setIsOutfitBreakdownExpanded] = useState(false);
 
   const postFromStore = posts.find((p) => p.id === postId);
   const post = postFromStore ?? fetchedPost;
@@ -228,10 +229,11 @@ export function PostDetail() {
           </div>
         </article>
 
-        {/* Outfit: grid of items */}
+        {/* Outfit: collapsible — collapsed = horizontal scroll (small cards), expanded = list */}
         <section className="mb-8">
-          <h2 className="mb-4 text-sm font-medium text-neutral-900">What they're wearing</h2>
           {outfitItems.length === 0 ? (
+            <>
+              <h2 className="mb-4 text-sm font-medium text-neutral-900">What they're wearing</h2>
             <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-neutral-200 bg-neutral-50/80 py-10 px-6 text-center">
               <p className="text-sm text-neutral-500">Nothing here yet.</p>
               <p className="mt-1 text-xs text-neutral-400">
@@ -251,63 +253,159 @@ export function PostDetail() {
                 </Button>
               )}
             </div>
+            </>
           ) : (
-            <div className="grid grid-cols-2 gap-3 sm:gap-4">
-              {sortedItems.map((oi, idx) => {
-                const closetId = (oi as OutfitItem & { closetItemId?: string }).closetItemId;
-                const inWardrobe = isOwnPost && closetId;
-                const displayName = oi.brand && oi.brand.toLowerCase() !== "unknown" ? oi.brand : oi.label;
-                return (
-                  <motion.div
-                    key={oi.id ?? `oi-${idx}`}
-                    whileHover={{ y: -2 }}
-                    transition={{ duration: 0.2 }}
-                    className={cn(
-                      "overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-neutral-200/60",
-                      inWardrobe && "cursor-pointer"
-                    )}
-                    role={inWardrobe ? "button" : undefined}
-                    onClick={inWardrobe ? () => navigate(`/closet?item=${closetId}`) : undefined}
-                    onKeyDown={
-                      inWardrobe
-                        ? (e: React.KeyboardEvent) => {
-                          if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault();
+            <>
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-sm font-medium text-neutral-900">What they're wearing</h2>
+                <button
+                  type="button"
+                  onClick={() => setIsOutfitBreakdownExpanded(!isOutfitBreakdownExpanded)}
+                  className="flex items-center gap-1 text-xs text-neutral-400 transition-colors hover:text-neutral-900"
+                >
+                  {isOutfitBreakdownExpanded ? (
+                    <>
+                      Collapse
+                      <ChevronUp className="h-3.5 w-3.5" />
+                    </>
+                  ) : (
+                    <>
+                      View Details
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {!isOutfitBreakdownExpanded && (
+                <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
+                  {sortedItems.map((oi, idx) => {
+                    const closetId = (oi as OutfitItem & { closetItemId?: string }).closetItemId;
+                    const inWardrobe = isOwnPost && closetId;
+                    const displayName = oi.brand && oi.brand.toLowerCase() !== "unknown" ? oi.brand : oi.label;
+                    return (
+                      <motion.button
+                        key={oi.id ?? `oi-${idx}`}
+                        type="button"
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                        className="flex-shrink-0 text-left"
+                        onClick={() => {
+                          if (inWardrobe && closetId) {
                             navigate(`/closet?item=${closetId}`);
+                          } else {
+                            setIsOutfitBreakdownExpanded(true);
                           }
-                        }
-                        : undefined
-                    }
-                    tabIndex={inWardrobe ? 0 : undefined}
-                  >
-                    <div className="aspect-square overflow-hidden bg-neutral-100">
-                      {oi.imageUrl ? (
-                        <img
-                          src={ensurePublicStorageUrl(oi.imageUrl)}
-                          alt={oi.label}
-                          className="h-full w-full object-cover"
-                        />
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center text-neutral-300">
-                          <Sparkles className="h-8 w-8" />
+                        }}
+                      >
+                        <div className="w-24 overflow-hidden rounded-lg border border-neutral-200/60 bg-white shadow-sm transition-all hover:shadow-md">
+                          <div className="relative aspect-square overflow-hidden bg-neutral-50">
+                            {oi.imageUrl ? (
+                              <img
+                                src={ensurePublicStorageUrl(oi.imageUrl)}
+                                alt={oi.label}
+                                className="h-full w-full object-cover"
+                              />
+                            ) : (
+                              <div className="flex h-full w-full items-center justify-center text-neutral-300">
+                                <Sparkles className="h-5 w-5" />
+                              </div>
+                            )}
+                          </div>
+                          <div className="p-2">
+                            <p className="mb-0.5 truncate text-[10px] font-medium uppercase tracking-wide text-neutral-400">
+                              {oi.type}
+                            </p>
+                            <p className="truncate text-xs text-neutral-900">{displayName}</p>
+                          </div>
                         </div>
-                      )}
-                    </div>
-                    <div className="p-3">
-                      <p className="text-[10px] font-medium uppercase tracking-wider text-neutral-400">{oi.type}</p>
-                      <p className="mt-0.5 truncate text-sm font-medium text-neutral-900">{displayName}</p>
-                      {oi.color && <p className="mt-1 text-xs text-neutral-500">{oi.color}</p>}
-                      {inWardrobe && (
-                        <p className="mt-2 inline-flex items-center gap-1 text-[10px] text-[#8B9B8E]">
-                          <Check className="h-3 w-3" />
-                          In your wardrobe
-                        </p>
-                      )}
+                      </motion.button>
+                    );
+                  })}
+                </div>
+              )}
+
+              <AnimatePresence>
+                {isOutfitBreakdownExpanded && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: "auto", opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.3, ease: "easeInOut" }}
+                    className="overflow-hidden"
+                  >
+                    <div className="overflow-hidden rounded-xl border border-neutral-200/60 bg-white">
+                      <div className="divide-y divide-neutral-100">
+                        {sortedItems.map((oi, idx) => {
+                          const closetId = (oi as OutfitItem & { closetItemId?: string }).closetItemId;
+                          const inWardrobe = isOwnPost && closetId;
+                          const displayName = oi.brand && oi.brand.toLowerCase() !== "unknown" ? oi.brand : oi.label;
+                          return (
+                            <button
+                              key={oi.id ?? `oi-${idx}`}
+                              type="button"
+                              onClick={() => {
+                                if (inWardrobe && closetId) navigate(`/closet?item=${closetId}`);
+                              }}
+                              className={cn(
+                                "flex w-full items-center gap-3 p-3 text-left transition-colors",
+                                inWardrobe && closetId ? "cursor-pointer hover:bg-neutral-50" : "cursor-default"
+                              )}
+                            >
+                              <div className="h-16 w-16 flex-shrink-0 overflow-hidden rounded-lg bg-neutral-100">
+                                {oi.imageUrl ? (
+                                  <img
+                                    src={ensurePublicStorageUrl(oi.imageUrl)}
+                                    alt={oi.label}
+                                    className="h-full w-full object-cover"
+                                  />
+                                ) : (
+                                  <div className="flex h-full w-full items-center justify-center text-neutral-300">
+                                    <Sparkles className="h-6 w-6" />
+                                  </div>
+                                )}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <p className="mb-0.5 text-xs font-medium uppercase tracking-wide text-neutral-400">
+                                  {oi.type}
+                                </p>
+                                <p className="mb-1 text-sm font-medium text-neutral-900">{oi.label}</p>
+                                {displayName !== oi.label && (
+                                  <p className="mb-2 text-xs text-neutral-500">{displayName}</p>
+                                )}
+                                <div className="flex flex-wrap gap-1.5">
+                                  {oi.color && (
+                                    <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] text-neutral-600">
+                                      {oi.color}
+                                    </span>
+                                  )}
+                                  {oi.fabric && (
+                                    <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] text-neutral-600">
+                                      {oi.fabric}
+                                    </span>
+                                  )}
+                                  {inWardrobe && (
+                                    <span className="inline-flex items-center gap-0.5 rounded-full bg-[#8B9B8E]/10 px-2 py-0.5 text-[10px] text-[#8B9B8E]">
+                                      <Check className="h-2.5 w-2.5" />
+                                      In wardrobe
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              {(inWardrobe && closetId) && (
+                                <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-neutral-400 transition-colors hover:bg-neutral-100">
+                                  <ExternalLink className="h-3.5 w-3.5" />
+                                </div>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
                   </motion.div>
-                );
-              })}
-            </div>
+                )}
+              </AnimatePresence>
+            </>
           )}
         </section>
 
