@@ -138,13 +138,13 @@ export function RankingSession({
       className="fixed inset-0 z-50 flex flex-col bg-[#FAFAF8]"
     >
       {/* Header */}
-      <header className="border-b border-neutral-200 bg-white px-6 py-4">
-        <div className="mx-auto flex max-w-4xl items-center justify-between">
-          <div className="flex items-center gap-3">
-            <span className="text-2xl">{getCategoryIcon(category)}</span>
+      <header className="border-b border-neutral-200 bg-white px-4 py-3">
+        <div className="mx-auto flex max-w-md items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-lg">{getCategoryIcon(category)}</span>
             <div>
-              <h1 className="text-lg font-medium text-neutral-900">Rank Your New Item</h1>
-              <p className="text-xs text-neutral-500">
+              <h1 className="text-sm font-medium text-neutral-900">Rank Your New Item</h1>
+              <p className="text-[10px] text-neutral-500">
                 {comparisonsMade.length} of {totalComparisons} comparisons
               </p>
             </div>
@@ -152,15 +152,15 @@ export function RankingSession({
           {onSkip && (
             <button
               onClick={onSkip}
-              className="text-sm text-neutral-500 transition-colors hover:text-neutral-900"
+              className="text-xs text-neutral-500 transition-colors active:text-neutral-900"
             >
-              Skip for now
+              Skip
             </button>
           )}
         </div>
 
         {/* Progress bar */}
-        <div className="mx-auto mt-4 max-w-4xl">
+        <div className="mx-auto mt-2 max-w-md">
           <div className="h-1 w-full overflow-hidden rounded-full bg-neutral-200">
             <motion.div
               className="h-full bg-[#8B9B8E]"
@@ -173,17 +173,17 @@ export function RankingSession({
       </header>
 
       {/* Comparison */}
-      <div className="flex flex-1 items-center justify-center p-6">
-        <div className="mx-auto w-full max-w-3xl">
-          <h2 className="mb-6 text-center text-lg text-neutral-900">Which do you prefer?</h2>
+      <div className="flex flex-1 items-center justify-center px-4 py-4">
+        <div className="mx-auto w-full max-w-md">
+          <h2 className="mb-3 text-center text-sm font-medium text-neutral-900">Which do you prefer?</h2>
 
-          <div className="grid gap-6 md:grid-cols-2">
+          <div className="grid grid-cols-2 gap-3">
             <AnimatePresence mode="wait">
               {/* New Item */}
               <ComparisonCard
                 key={newItem.id}
                 item={newItem}
-                label="New Item"
+                label="New"
                 isSelected={selectedItem === newItem.id}
                 onClick={() => handleChoice(newItem.id)}
                 disabled={loading}
@@ -228,13 +228,12 @@ function ComparisonCard({
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.95 }}
-      whileHover={{ scale: disabled ? 1 : 1.02 }}
-      whileTap={{ scale: disabled ? 1 : 0.98 }}
+      whileTap={{ scale: disabled ? 1 : 0.95 }}
       onClick={onClick}
       disabled={disabled}
-      className={`group relative overflow-hidden rounded-2xl border-2 transition-all ${isSelected
+      className={`group relative overflow-hidden rounded-xl border-2 transition-all ${isSelected
           ? 'border-[#8B9B8E] shadow-lg'
-          : 'border-neutral-200 hover:border-neutral-300 hover:shadow-md'
+          : 'border-neutral-200 active:border-neutral-400'
         } ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
     >
       {/* Image */}
@@ -242,19 +241,19 @@ function ComparisonCard({
         <img
           src={item.image_url}
           alt={item.subcategory || 'Item'}
-          className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+          className="h-full w-full object-cover"
         />
 
         {/* Labels */}
         {label && (
-          <div className="absolute left-3 top-3 rounded-full bg-black/70 px-3 py-1 backdrop-blur-sm">
-            <p className="text-xs font-medium text-white">{label}</p>
+          <div className="absolute left-2 top-2 rounded-md bg-black/70 px-2 py-0.5 backdrop-blur-sm">
+            <p className="text-[10px] font-medium text-white">{label}</p>
           </div>
         )}
 
         {currentRating !== undefined && currentRating > 0 && (
-          <div className="absolute right-3 top-3 rounded-full bg-white/90 px-3 py-1 backdrop-blur-sm">
-            <p className="text-sm font-medium text-neutral-900">{currentRating.toFixed(1)}/10</p>
+          <div className="absolute right-2 top-2 rounded-md bg-white/90 px-2 py-0.5 backdrop-blur-sm">
+            <p className="text-[10px] font-semibold text-neutral-900">{currentRating.toFixed(1)}</p>
           </div>
         )}
 
@@ -265,27 +264,27 @@ function ComparisonCard({
             animate={{ opacity: 1 }}
             className="absolute inset-0 flex items-center justify-center bg-[#8B9B8E]/20 backdrop-blur-[2px]"
           >
-            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[#8B9B8E] shadow-lg">
-              <Check className="h-8 w-8 text-white" strokeWidth={3} />
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#8B9B8E] shadow-lg">
+              <Check className="h-6 w-6 text-white" strokeWidth={3} />
             </div>
           </motion.div>
         )}
       </div>
 
       {/* Item info */}
-      <div className="bg-white p-4">
-        <p className="mb-1 font-medium text-neutral-900">
+      <div className="bg-white p-2">
+        <p className="mb-0.5 text-xs font-medium text-neutral-900 line-clamp-1">
           {item.brand || item.subcategory || 'Item'}
         </p>
         {item.subcategory && item.brand && (
-          <p className="text-sm text-neutral-500">{item.subcategory}</p>
+          <p className="text-[10px] text-neutral-500 line-clamp-1">{item.subcategory}</p>
         )}
         {item.colors && item.colors.length > 0 && (
-          <div className="mt-2 flex gap-1">
+          <div className="mt-1 flex gap-1">
             {item.colors.slice(0, 3).map((color, i) => (
               <div
                 key={i}
-                className="h-4 w-4 rounded-full border border-neutral-200"
+                className="h-3 w-3 rounded-full border border-neutral-200"
                 style={{ backgroundColor: color.toLowerCase() }}
                 title={color}
               />

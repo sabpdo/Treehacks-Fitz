@@ -108,9 +108,11 @@ export function updateEloRatings(
  * @param preferenceTier - The preference tier
  * @returns Score within tier's range (dont_like: 0-3, like: 3-6, love: 7-10)
  */
-export function eloToScore(elo: number, preferenceTier: PreferenceTier): number {
-  const { min: eloMin, max: eloMax } = TIER_RANGES[preferenceTier];
-  const { min: scoreMin, max: scoreMax } = TIER_SCORE_RANGES[preferenceTier];
+export function eloToScore(elo: number, preferenceTier: PreferenceTier | null | undefined): number {
+  // Default to "like" tier if preference tier is not set
+  const tier = preferenceTier || 'like';
+  const { min: eloMin, max: eloMax } = TIER_RANGES[tier];
+  const { min: scoreMin, max: scoreMax } = TIER_SCORE_RANGES[tier];
 
   // Normalize Elo within tier's range
   const normalized = (elo - eloMin) / (eloMax - eloMin);
@@ -244,17 +246,77 @@ export function shouldStopComparing(
 // =====================================================
 
 /**
+ * Normalize scores within a tier to use full range
+ * Takes items with clustered Elo ratings and spreads them evenly across tier's score range
+ * @param items - Items in the same preference tier
+ * @param preferenceTier - The preference tier
+ * @returns Items with normalized scores using full tier range
+ */
+function normalizeScoresInTier(items: ItemWithRanking[], preferenceTier: PreferenceTier): ItemWithRanking[] {
+  if (items.length === 0) return items;
+  if (items.length === 1) {
+    // Single item gets middle of tier range
+    const { min, max } = TIER_SCORE_RANGES[preferenceTier];
+    const middleScore = (min + max) / 2;
+    return items.map(item => ({
+      ...item,
+      rating: Number(middleScore.toFixed(1)),
+    }));
+  }
+
+  // Sort by Elo (high to low)
+  const sorted = [...items].sort((a, b) => b.elo_rating - a.elo_rating);
+  const { min: scoreMin, max: scoreMax } = TIER_SCORE_RANGES[preferenceTier];
+
+  // Distribute scores evenly across the full tier range
+  return sorted.map((item, index) => {
+    // Linear interpolation from max to min score
+    const normalizedScore = scoreMax - (index / (sorted.length - 1)) * (scoreMax - scoreMin);
+    return {
+      ...item,
+      rating: Number(normalizedScore.toFixed(1)),
+    };
+  });
+}
+
+/**
  * Calculate rank in category based on Elo
  * @param items - All items in category with Elo ratings
- * @returns Items sorted by rank with rank_in_category field
+ * @returns Items sorted by rank with rank_in_category field and normalized scores
  */
 export function calculateRankings(items: ItemWithRanking[]): ItemWithRanking[] {
   const sorted = [...items].sort((a, b) => b.elo_rating - a.elo_rating);
 
-  return sorted.map((item, index) => ({
+  // Group by preference tier for normalization
+  const byTier: Record<string, ItemWithRanking[]> = {
+    dont_like: [],
+    like: [],
+    love: [],
+  };
+
+  sorted.forEach(item => {
+    const tier = item.preference_tier || 'like';
+    if (byTier[tier]) {
+      byTier[tier].push(item);
+    }
+  });
+
+  // Normalize scores within each tier to spread them across full range
+  const normalized: ItemWithRanking[] = [];
+  (Object.keys(byTier) as PreferenceTier[]).forEach(tier => {
+    const tierItems = byTier[tier];
+    if (tierItems.length > 0) {
+      const normalizedTierItems = normalizeScoresInTier(tierItems, tier);
+      normalized.push(...normalizedTierItems);
+    }
+  });
+
+  // Re-sort by Elo and add rank
+  const final = normalized.sort((a, b) => b.elo_rating - a.elo_rating);
+
+  return final.map((item, index) => ({
     ...item,
     rank_in_category: index + 1,
-    rating: eloToScore(item.elo_rating, item.preference_tier),
   }));
 }
 
@@ -277,8 +339,10 @@ export function getTopItems(items: ItemWithRanking[], n: number = 10): ItemWithR
  * @param preferenceTier - The user's preference tier
  * @returns Initial Elo rating (dont_like: 1000, like: 1500, love: 2000)
  */
-export function getInitialElo(preferenceTier: PreferenceTier): number {
-  return TIER_RANGES[preferenceTier].initial;
+export function getInitialElo(preferenceTier: PreferenceTier | null | undefined): number {
+  // Default to "like" tier if preference tier is not set
+  const tier = preferenceTier || 'like';
+  return TIER_RANGES[tier].initial;
 }
 
 /**
