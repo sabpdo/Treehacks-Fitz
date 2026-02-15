@@ -1,10 +1,10 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { Link } from "react-router";
-import { Ruler, Upload, Sparkles, ChevronRight } from "lucide-react";
+import { Ruler, Upload, Sparkles, ChevronRight, ImageIcon } from "lucide-react";
 import { motion } from "motion/react";
 import { useAppStore } from "../context/AppStore";
 import { analyzeBodyType, type BodyTypeAnalysis } from "../../services/openai";
-import { uploadImage } from "../../services/api";
+import { uploadImage, createBodyAnalysis, getBodyAnalyses, type BodyAnalysisRecord } from "../../services/api";
 import { PostGrid } from "./feed";
 import type { OOTDPost } from "../data/mockData";
 
@@ -39,12 +39,14 @@ function postMatchesAnalysis(post: OOTDPost, analysis: BodyTypeAnalysis): boolea
 }
 
 export function BodyAnalyze() {
-  const { posts, refetchFeed } = useAppStore();
+  const { posts, refetchFeed, currentUserId, isUsingApi } = useAppStore();
   const [dimensions, setDimensions] = useState(INITIAL_DIMENSIONS);
   const [photoPreviews, setPhotoPreviews] = useState<string[]>([]);
   const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<BodyTypeAnalysis | null>(null);
+  const [previousAnalyses, setPreviousAnalyses] = useState<BodyAnalysisRecord[]>([]);
+  const [loadingPrevious, setLoadingPrevious] = useState(false);
 
   const recommendedPosts = useMemo(() => {
     if (!result) return [];
@@ -110,6 +112,15 @@ export function BodyAnalyze() {
         imageUrls: photoPreviews.length ? photoPreviews : undefined,
       });
       setResult(analysis);
+      if (isUsingApi && currentUserId) {
+        try {
+          await createBodyAnalysis(currentUserId, photoPreviews, analysis);
+          const list = await getBodyAnalyses(currentUserId);
+          setPreviousAnalyses(list);
+        } catch {
+          /* ignore save failure */
+        }
+      }
       await refetchFeed?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Analysis failed");
@@ -274,6 +285,70 @@ export function BodyAnalyze() {
               )}
             </section>
           </motion.div>
+        )}
+
+        {/* Previously uploaded images and analysis */}
+        {isUsingApi && currentUserId && (
+          <section className="mt-12 border-t border-neutral-200/60 pt-10">
+            <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-neutral-700">Previously uploaded images and analysis</h2>
+            <p className="mb-4 text-xs text-neutral-500">Your past body-type analyses are used to personalize clothing suggestions.</p>
+            {loadingPrevious ? (
+              <p className="text-xs text-neutral-500">Loading…</p>
+            ) : previousAnalyses.length === 0 ? (
+              <p className="rounded-2xl border border-neutral-200/60 bg-white py-8 text-center text-xs text-neutral-500">No analyses yet. Run one above to see history here.</p>
+            ) : (
+              <div className="space-y-4">
+                {previousAnalyses.map((record) => (
+                  <div
+                    key={record.id}
+                    className="flex flex-col gap-4 rounded-2xl border border-neutral-200/60 bg-white p-4 shadow-sm sm:flex-row sm:items-start"
+                  >
+                    <div className="flex shrink-0 gap-2">
+                      {record.image_urls?.length > 0 ? (
+                        record.image_urls.slice(0, 3).map((url, i) => (
+                          <img
+                            key={i}
+                            src={url}
+                            alt=""
+                            className="h-20 w-20 rounded-lg object-cover border border-neutral-200"
+                          />
+                        ))
+                      ) : (
+                        <div className="flex h-20 w-20 items-center justify-center rounded-lg border border-neutral-200 bg-neutral-50">
+                          <ImageIcon className="h-8 w-8 text-neutral-400" />
+                        </div>
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="mb-2 text-xs text-neutral-400">
+                        {new Date(record.created_at).toLocaleDateString("en-US", { dateStyle: "medium" })}
+                      </p>
+                      {record.analysis.bodyTypeLabel && (
+                        <p className="mb-2 text-xs font-medium text-neutral-700">Body type: {record.analysis.bodyTypeLabel}</p>
+                      )}
+                      <div className="mb-2 flex flex-wrap gap-1.5">
+                        {(record.analysis.suggestedColors ?? []).slice(0, 4).map((c) => (
+                          <span key={c} className="rounded-full bg-[#8B9B8E]/15 px-2 py-0.5 text-[10px] text-[#5a6b5d]">
+                            {c}
+                          </span>
+                        ))}
+                      </div>
+                      <div className="mb-2 flex flex-wrap gap-1.5">
+                        {(record.analysis.suggestedSilhouettes ?? []).slice(0, 4).map((s) => (
+                          <span key={s} className="rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] text-neutral-600">
+                            {s}
+                          </span>
+                        ))}
+                      </div>
+                      {record.analysis.tips?.[0] && (
+                        <p className="text-[10px] text-neutral-500 italic">{record.analysis.tips[0]}</p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
         )}
       </div>
     </div>
