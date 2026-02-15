@@ -241,28 +241,49 @@ export function PostDetail() {
             <>
               {!isOutfitBreakdownExpanded && (
                 <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
-                  {sortedItems.map((oi, idx) => (
-                    <motion.div
-                      key={oi.id ?? `oi-${idx}`}
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      className="flex-shrink-0"
-                    >
-                      <div className="w-24 overflow-hidden rounded-lg border border-neutral-200/60 bg-white shadow-sm hover:shadow-md">
-                        <div className="relative aspect-square overflow-hidden bg-neutral-50">
-                          {oi.imageUrl ? (
-                            <img src={ensurePublicStorageUrl(oi.imageUrl)} alt={oi.label} className="h-full w-full object-cover" />
-                          ) : (
-                            <div className="h-full w-full bg-neutral-200" />
-                          )}
-                        </div>
-                        <div className="p-2">
-                          <p className="truncate text-[10px] uppercase tracking-wide text-neutral-400">{oi.type}</p>
-                          <p className="truncate text-xs text-neutral-900">{oi.brand || oi.label}</p>
-                        </div>
-                      </div>
-                    </motion.div>
-                  ))}
+                  {sortedItems.map((oi, idx) => {
+                    const inWardrobe = isOwnPost && (oi as OutfitItem & { closetItemId?: string }).closetItemId;
+                    const Wrapper = inWardrobe
+                      ? ({ children }: { children: React.ReactNode }) => (
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/closet?item=${(oi as OutfitItem & { closetItemId?: string }).closetItemId}`)}
+                          className="flex-shrink-0 text-left"
+                        >
+                          {children}
+                        </button>
+                      )
+                      : ({ children }: { children: React.ReactNode }) => <div className="flex-shrink-0">{children}</div>;
+                    return (
+                      <motion.div
+                        key={oi.id ?? `oi-${idx}`}
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                        className="flex-shrink-0"
+                      >
+                        <Wrapper>
+                          <div className="w-24 overflow-hidden rounded-lg border border-neutral-200/60 bg-white shadow-sm hover:shadow-md hover:border-neutral-300">
+                            <div className="relative aspect-square overflow-hidden bg-neutral-50">
+                              {oi.imageUrl ? (
+                                <img src={ensurePublicStorageUrl(oi.imageUrl)} alt={oi.label} className="h-full w-full object-cover" />
+                              ) : (
+                                <div className="h-full w-full bg-neutral-200" />
+                              )}
+                            </div>
+                            <div className="p-2">
+                              <p className="truncate text-[10px] uppercase tracking-wide text-neutral-400">{oi.type}</p>
+                              <p className="truncate text-xs text-neutral-900">
+                                {oi.brand && oi.brand.toLowerCase() !== "unknown" ? oi.brand : oi.label}
+                              </p>
+                              {inWardrobe && (
+                                <p className="mt-0.5 text-[10px] text-neutral-500">In wardrobe · tap to view</p>
+                              )}
+                            </div>
+                          </div>
+                        </Wrapper>
+                      </motion.div>
+                    );
+                  })}
                 </div>
               )}
 
@@ -277,36 +298,61 @@ export function PostDetail() {
                   >
                     <div className="overflow-hidden rounded-xl border border-neutral-200/60 bg-white">
                       <div className="divide-y divide-neutral-100">
-                        {sortedItems.map((oi, idx) => (
-                          <div
-                            key={oi.id ?? `oi-${idx}`}
-                            className="flex w-full items-center gap-3 p-3 text-left"
-                          >
-                            {oi.imageUrl ? (
-                              <img
-                                src={ensurePublicStorageUrl(oi.imageUrl)}
-                                alt={oi.label}
-                                className="h-16 w-16 rounded-lg object-cover"
-                              />
-                            ) : (
-                              <div className="h-16 w-16 rounded-lg bg-neutral-200" />
-                            )}
-                            <div className="flex-1 min-w-0">
-                              <p className="text-xs uppercase tracking-wide text-neutral-400">{oi.type}</p>
-                              <p className="text-sm text-neutral-900">{oi.label}</p>
-                              <p className="text-xs text-neutral-500">{oi.brand}</p>
-                              <div className="mt-2 flex flex-wrap gap-1.5">
-                                {oi.color && (
-                                  <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] text-neutral-600">{oi.color}</span>
+                        {sortedItems.map((oi, idx) => {
+                          const closetId = (oi as OutfitItem & { closetItemId?: string }).closetItemId;
+                          const inWardrobe = isOwnPost && closetId;
+                          return (
+                            <div
+                              key={oi.id ?? `oi-${idx}`}
+                              className={cn(
+                                "flex w-full items-center gap-3 p-3 text-left",
+                                inWardrobe && "cursor-pointer hover:bg-neutral-50/80"
+                              )}
+                              role={inWardrobe ? "button" : undefined}
+                              onClick={inWardrobe ? () => navigate(`/closet?item=${closetId}`) : undefined}
+                              onKeyDown={
+                                inWardrobe
+                                  ? (e) => {
+                                    if (e.key === "Enter" || e.key === " ") {
+                                      e.preventDefault();
+                                      navigate(`/closet?item=${closetId}`);
+                                    }
+                                  }
+                                  : undefined
+                              }
+                              tabIndex={inWardrobe ? 0 : undefined}
+                            >
+                              {oi.imageUrl ? (
+                                <img
+                                  src={ensurePublicStorageUrl(oi.imageUrl)}
+                                  alt={oi.label}
+                                  className="h-16 w-16 rounded-lg object-cover"
+                                />
+                              ) : (
+                                <div className="h-16 w-16 rounded-lg bg-neutral-200" />
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs uppercase tracking-wide text-neutral-400">{oi.type}</p>
+                                <p className="text-sm text-neutral-900">{oi.label}</p>
+                                {oi.brand && oi.brand.toLowerCase() !== "unknown" && (
+                                  <p className="text-xs text-neutral-500">{oi.brand}</p>
                                 )}
-                                {oi.fabric && (
-                                  <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] text-neutral-600">{oi.fabric}</span>
+                                <div className="mt-2 flex flex-wrap gap-1.5">
+                                  {oi.color && (
+                                    <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] text-neutral-600">{oi.color}</span>
+                                  )}
+                                  {oi.fabric && (
+                                    <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] text-neutral-600">{oi.fabric}</span>
+                                  )}
+                                </div>
+                                {inWardrobe && (
+                                  <p className="mt-2 text-[10px] text-neutral-500">In your wardrobe · tap to view details</p>
                                 )}
                               </div>
+                              <ExternalLink className="h-3.5 w-3.5 shrink-0 text-neutral-400" />
                             </div>
-                            <ExternalLink className="h-3.5 w-3.5 text-neutral-400" />
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
                   </motion.div>

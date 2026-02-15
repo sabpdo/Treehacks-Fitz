@@ -7,6 +7,7 @@ import type { AIImageAnalysis, PostOutfitItem, Category } from "../../types/data
 import {
   segmentOutfitImage,
   uploadImage,
+  uploadImageToPath,
   dataURLToFile,
   createPost,
   updateStreak,
@@ -64,19 +65,24 @@ function detectedTypeToDbCategory(type: string): Category {
   return "shirts";
 }
 
-/** Convert detected items to post outfit items (same schema as closet). */
+/** Convert detected items to post outfit items (same schema as closet). Never persist "Unknown" as brand. */
 function detectedItemsToPostOutfitItems(detected: DetectedItem[]): PostOutfitItem[] {
-  return detected.map((di) => ({
-    image_url: di.imageUrl || di.closetMatch?.imageUrl || "",
-    category: detectedTypeToDbCategory(di.type),
-    brand: di.closetMatch?.brand ?? null,
-    subcategory: di.label || null,
-    colors: di.color && di.color !== "—" ? [di.color] : [],
-    fabric: di.fabric ?? null,
-    silhouette: (di.silhouette as PostOutfitItem["silhouette"]) ?? null,
-    vibe_tags: [],
-    ...(di.closetMatch?.id ? { closet_item_id: di.closetMatch.id } : {}),
-  }));
+  return detected.map((di) => {
+    const rawBrand = di.closetMatch?.brand ?? null;
+    const brand =
+      rawBrand && rawBrand.trim().toLowerCase() !== "unknown" ? rawBrand : null;
+    return {
+      image_url: di.imageUrl || di.closetMatch?.imageUrl || "",
+      category: detectedTypeToDbCategory(di.type),
+      brand,
+      subcategory: di.label || null,
+      colors: di.color && di.color !== "—" ? [di.color] : [],
+      fabric: di.fabric ?? null,
+      silhouette: (di.silhouette as PostOutfitItem["silhouette"]) ?? null,
+      vibe_tags: [],
+      ...(di.closetMatch?.id ? { closet_item_id: di.closetMatch.id } : {}),
+    };
+  });
 }
 
 function aiAnalysisToDetectedItems(items: AIImageAnalysis[]): DetectedItem[] {
@@ -94,6 +100,213 @@ function aiAnalysisToDetectedItems(items: AIImageAnalysis[]): DetectedItem[] {
       isConfirmed: false,
     };
   });
+}
+
+/** Get bounding box (in pixel coords) of non-transparent pixels in a mask image. */
+function getMaskBbox(
+  maskCanvas: HTMLCanvasElement,
+  ctx: CanvasRenderingContext2D
+): { x: number; y: number; w: number; h: number } | null {
+  const w = maskCanvas.width;
+  const h = maskCanvas.height;
+  const data = ctx.getImageData(0, 0, w, h);
+  const d = data.data;
+  let minX = w;
+  let minY = h;
+  let maxX = 0;
+  let maxY = 0;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4;
+      const alpha = d[i + 3];
+      if (alpha > 128) {
+        if (x < minX) minX = x;
+        if (y < minY) minY = y;
+        if (x > maxX) maxX = x;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+  if (minX > maxX || minY > maxY) return null;
+  return { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 };
+}
+
+/** Crop segments that have a mask (from Hugging Face); derive bbox from mask and crop the image. */
+async function cropSegmentsWithMask(
+  segments: SegmentResult[],
+  imageUrl: string
+): Promise<SegmentResult[]> {
+  const withMask = segments.filter((s) => s.mask);
+  if (withMask.length === 0) return segments;
+
+  const img = new Image();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error("Image load failed"));
+      img.src = imageUrl;
+    });
+  } catch {
+    return segments;
+  }
+  const origW = img.naturalWidth;
+  const origH = img.naturalHeight;
+  if (!origW || !origH) return segments;
+
+  const result: SegmentResult[] = [];
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i];
+    if (!seg.mask) {
+      result.push(seg);
+      continue;
+    }
+    const maskDataUrl = seg.mask.startsWith("data:") ? seg.mask : `data:image/png;base64,${seg.mask}`;
+    const maskImg = new Image();
+    try {
+      await new Promise<void>((resolve, reject) => {
+        maskImg.onload = () => resolve();
+        maskImg.onerror = () => reject(new Error("Mask load failed"));
+        maskImg.src = maskDataUrl;
+      });
+    } catch {
+      result.push(seg);
+      continue;
+    }
+    const maskW = maskImg.naturalWidth;
+    const maskH = maskImg.naturalHeight;
+    if (!maskW || !maskH) {
+      result.push(seg);
+      continue;
+    }
+    const maskCanvas = document.createElement("canvas");
+    maskCanvas.width = maskW;
+    maskCanvas.height = maskH;
+    const mCtx = maskCanvas.getContext("2d");
+    if (!mCtx) {
+      result.push(seg);
+      continue;
+    }
+    mCtx.drawImage(maskImg, 0, 0);
+    const bbox = getMaskBbox(maskCanvas, mCtx);
+    if (!bbox || bbox.w < 1 || bbox.h < 1) {
+      result.push(seg);
+      continue;
+    }
+    const scaleX = origW / maskW;
+    const scaleY = origH / maskH;
+    const sx = bbox.x * scaleX;
+    const sy = bbox.y * scaleY;
+    const sw = bbox.w * scaleX;
+    const sh = bbox.h * scaleY;
+    const cropCanvas = document.createElement("canvas");
+    cropCanvas.width = Math.max(1, Math.round(sw));
+    cropCanvas.height = Math.max(1, Math.round(sh));
+    const ctx = cropCanvas.getContext("2d");
+    if (!ctx) {
+      result.push(seg);
+      continue;
+    }
+    try {
+      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, cropCanvas.width, cropCanvas.height);
+      const dataUrl = cropCanvas.toDataURL("image/jpeg", 0.9);
+      const { mask: _m, ...rest } = seg;
+      result.push({ ...rest, crop_url: dataUrl });
+    } catch {
+      result.push(seg);
+    }
+  }
+  return result;
+}
+
+/** Crop segments that have bbox (0-100%) from the full image; returns segments with crop_url set to data URL. */
+async function cropSegmentsWithBbox(
+  segments: SegmentResult[],
+  imageUrl: string
+): Promise<SegmentResult[]> {
+  const withBbox = segments.filter((s) => s.bbox);
+  if (withBbox.length === 0) return segments;
+
+  const img = new Image();
+  img.crossOrigin = "anonymous";
+  try {
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error("Image load failed"));
+      img.src = imageUrl;
+    });
+  } catch {
+    return segments;
+  }
+
+  const w = img.naturalWidth;
+  const h = img.naturalHeight;
+  if (!w || !h) return segments;
+
+  const result: SegmentResult[] = [];
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i];
+    if (!seg.bbox) {
+      result.push(seg);
+      continue;
+    }
+    const { x_min, y_min, x_max, y_max } = seg.bbox;
+    const pad = 2;
+    const x1 = Math.max(0, x_min - pad);
+    const y1 = Math.max(0, y_min - pad);
+    const x2 = Math.min(100, x_max + pad);
+    const y2 = Math.min(100, y_max + pad);
+    const sx = (x1 / 100) * w;
+    const sy = (y1 / 100) * h;
+    const sw = ((x2 - x1) / 100) * w;
+    const sh = ((y2 - y1) / 100) * h;
+    if (sw < 1 || sh < 1) {
+      result.push(seg);
+      continue;
+    }
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(sw));
+    canvas.height = Math.max(1, Math.round(sh));
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      result.push(seg);
+      continue;
+    }
+    try {
+      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.9);
+      result.push({ ...seg, crop_url: dataUrl });
+    } catch {
+      result.push(seg);
+    }
+  }
+  return result;
+}
+
+/** Upload each cropped segment (specific item photo) to Supabase Storage so it can be used in wardrobe and posts. */
+async function uploadSegmentCropsToStorage(
+  segments: SegmentResult[],
+  userId: string
+): Promise<SegmentResult[]> {
+  const requestId = crypto.randomUUID();
+  const basePath = `segment-crops/${userId}/${requestId}`;
+  const results: SegmentResult[] = [];
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i];
+    if (!seg.crop_url.startsWith("data:")) {
+      results.push(seg);
+      continue;
+    }
+    try {
+      const file = dataURLToFile(seg.crop_url, `crop-${i}.jpg`);
+      const path = `${basePath}/${i}.jpg`;
+      const publicUrl = await uploadImageToPath(file, path);
+      results.push({ ...seg, crop_url: publicUrl });
+    } catch (err) {
+      console.warn("Upload segment crop failed:", err);
+      results.push(seg);
+    }
+  }
+  return results;
 }
 
 /** Map segmentation API result (one crop per clothing region) to DetectedItem for tagging UI. */
@@ -174,6 +387,7 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
   const [postError, setPostError] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const addNewItemPhotoInputRef = useRef<HTMLInputElement>(null);
 
   // Add new item form state (brand = actual brand from dropdown; subcategory = item name/description)
   const [newItemData, setNewItemData] = useState({
@@ -314,7 +528,7 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
     e.target.value = "";
   };
 
-  // AI scanning: try OpenAI/edge first, then segmentation (Replicate), then mock
+  // AI scanning: try segmentation first (HF or edge OpenAI with bbox → real crops), then direct OpenAI, then mock
   useEffect(() => {
     if (step !== "scanning" || !capturedImage) return;
 
@@ -327,6 +541,34 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
       }
     };
 
+    const runSegmentation = async () => {
+      try {
+        const file = dataURLToFile(capturedImage, "capture.jpg");
+        const imageUrl = await uploadImage(file);
+        const { segments } = await segmentOutfitImage(imageUrl);
+        if (segments.length > 0) {
+          const usedHuggingFace = segments.some((s) => s.mask);
+          if (usedHuggingFace) {
+            console.log("[Segmentation] Using Hugging Face (clothing model masks)");
+          } else {
+            console.log("[Segmentation] Using OpenAI (vision bbox)");
+          }
+          const withCrops = usedHuggingFace
+            ? await cropSegmentsWithMask(segments, capturedImage)
+            : await cropSegmentsWithBbox(segments, capturedImage);
+          const withStorageUrls = await uploadSegmentCropsToStorage(
+            withCrops,
+            currentUserId || "anonymous"
+          );
+          goToTagging(segmentsToDetectedItems(withStorageUrls));
+          return true;
+        }
+      } catch (err) {
+        console.warn("Segmentation failed, falling back:", err);
+      }
+      return false;
+    };
+
     const runOpenAI = async () => {
       const env = (import.meta as unknown as { env?: { VITE_OPENAI_API_KEY?: string } }).env;
       if (!env?.VITE_OPENAI_API_KEY) return false;
@@ -334,6 +576,7 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
         const res = await analyzeOutfitImage(capturedImage);
         const items = res?.items;
         if (items && items.length > 0) {
+          console.log("[Segmentation] Using OpenAI (direct outfit analysis, no bbox)");
           goToTagging(aiAnalysisToDetectedItems(items));
           return true;
         }
@@ -343,28 +586,13 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
       return false;
     };
 
-    const runSegmentation = async () => {
-      try {
-        const file = dataURLToFile(capturedImage, "capture.jpg");
-        const imageUrl = await uploadImage(file);
-        const { segments } = await segmentOutfitImage(imageUrl);
-        if (segments.length > 0) {
-          goToTagging(segmentsToDetectedItems(segments));
-          return true;
-        }
-      } catch (err) {
-        console.warn("Segmentation failed, falling back:", err);
-      }
-      return false;
-    };
-
     let mockTimer: ReturnType<typeof setTimeout> | null = null;
     (async () => {
-      const usedOpenAI = await runOpenAI();
+      const usedSegmentation = await runSegmentation();
       if (cancelled) return;
-      if (!usedOpenAI) {
-        const usedSegmentation = await runSegmentation();
-        if (!cancelled && !usedSegmentation) {
+      if (!usedSegmentation) {
+        const usedOpenAI = await runOpenAI();
+        if (!cancelled && !usedOpenAI) {
           mockTimer = setTimeout(() => goToTagging(MOCK_DETECTED_ITEMS), 2500);
         }
       }
@@ -946,8 +1174,8 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
                   >
                     <div
                       className={`flex items-center gap-3 rounded-xl border p-3 transition-colors ${item.isConfirmed
-                          ? "border-[#8B9B8E]/50 bg-[#8B9B8E]/5"
-                          : "border-neutral-200/60 bg-white"
+                        ? "border-[#8B9B8E]/50 bg-[#8B9B8E]/5"
+                        : "border-neutral-200/60 bg-white"
                         }`}
                     >
                       <button
@@ -1456,18 +1684,98 @@ export function OOTDCapture({ onClose }: { onClose: () => void }) {
                         <label className="mb-2 block text-xs uppercase tracking-wide text-neutral-500">
                           Image
                         </label>
-                        <div className="relative">
-                          <Upload className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
-                          <input
-                            type="text"
-                            value={newItemData.image}
-                            onChange={(e) =>
-                              setNewItemData({ ...newItemData, image: e.target.value })
+                        <input
+                          ref={addNewItemPhotoInputRef}
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file && file.type.startsWith("image/")) {
+                              const reader = new FileReader();
+                              reader.onload = () =>
+                                setNewItemData((prev) => ({ ...prev, image: String(reader.result) }));
+                              reader.readAsDataURL(file);
                             }
-                            placeholder="Image URL or upload..."
-                            className="w-full rounded-xl border border-neutral-200 bg-white py-2.5 pl-10 pr-4 text-sm outline-none transition-all focus:border-neutral-900"
-                          />
-                        </div>
+                            e.target.value = "";
+                          }}
+                        />
+                        {(newItemData.image || "").trim() ? (
+                          <div className="space-y-2">
+                            <div className="flex items-start gap-3">
+                              <div className="relative h-20 w-20 shrink-0 rounded-lg border border-neutral-200 bg-neutral-100 overflow-hidden">
+                                <img
+                                  src={(newItemData.image || "").trim()}
+                                  alt="Item crop"
+                                  className="h-full w-full object-cover"
+                                  onError={(e) => {
+                                    const el = e.currentTarget;
+                                    el.onerror = null;
+                                    el.style.display = "none";
+                                    const fallback = el.parentElement?.querySelector(".add-item-preview-fallback") as HTMLElement | null;
+                                    if (fallback) fallback.classList.remove("hidden");
+                                  }}
+                                />
+                                <div className="add-item-preview-fallback absolute inset-0 hidden items-center justify-center bg-neutral-100 text-center text-xs text-neutral-500">
+                                  Preview unavailable
+                                </div>
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="mb-1 text-xs text-neutral-500">
+                                  Auto-uploaded crop — this image will be saved to your wardrobe. You can change it below.
+                                </p>
+                                <input
+                                  type="text"
+                                  value={newItemData.image}
+                                  onChange={(e) =>
+                                    setNewItemData({ ...newItemData, image: e.target.value })
+                                  }
+                                  placeholder="Image URL"
+                                  className="w-full rounded-xl border border-neutral-200 bg-white py-2 pl-3 pr-4 text-sm outline-none transition-all focus:border-neutral-900"
+                                />
+                              </div>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                onClick={() => addNewItemPhotoInputRef.current?.click()}
+                                className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs text-neutral-700 transition-colors hover:bg-neutral-50"
+                              >
+                                Upload different photo
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setNewItemData((prev) => ({ ...prev, image: "" }))}
+                                className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs text-neutral-700 transition-colors hover:bg-neutral-50"
+                              >
+                                Clear photo
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            <div className="relative">
+                              <Upload className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+                              <input
+                                type="text"
+                                value={newItemData.image}
+                                onChange={(e) =>
+                                  setNewItemData({ ...newItemData, image: e.target.value })
+                                }
+                                placeholder="Paste image URL or upload below..."
+                                className="w-full rounded-xl border border-neutral-200 bg-white py-2.5 pl-10 pr-4 text-sm outline-none transition-all focus:border-neutral-900"
+                              />
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => addNewItemPhotoInputRef.current?.click()}
+                              className="flex w-full items-center justify-center gap-2 rounded-xl border border-neutral-300 bg-white py-2.5 text-sm text-neutral-700 transition-colors hover:bg-neutral-50"
+                            >
+                              <Upload className="h-4 w-4" />
+                              Upload photo
+                            </button>
+                          </div>
+                        )}
                       </div>
 
                       <div>

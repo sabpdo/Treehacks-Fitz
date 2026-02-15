@@ -64,16 +64,30 @@ export async function analyzeClothingImage(imageUrl: string): Promise<AIImageAna
       max_tokens: 500,
     });
 
-    const content = response.choices[0]?.message?.content;
+    const content = (response.choices[0]?.message?.content ?? '').trim();
     if (!content) {
       throw new Error('No response from OpenAI');
     }
 
-    // Extract JSON from the response (it might be wrapped in markdown code blocks)
-    const jsonMatch = content.match(/```json\n?(.*?)\n?```/s) || content.match(/(\{.*\})/s);
-    const jsonString = jsonMatch ? jsonMatch[1] : content;
+    // Model may return plain text (e.g. "I'm unable to analyze this image") instead of JSON
+    if (!content.startsWith('{') && !content.includes('```')) {
+      throw new Error(`OpenAI returned non-JSON: ${content.slice(0, 80)}`);
+    }
 
-    const analysis: AIImageAnalysis = JSON.parse(jsonString);
+    // Extract JSON from the response (it might be wrapped in markdown code blocks)
+    const jsonMatch = content.match(/```json\n?(.*?)\n?```/s) || content.match(/(\{[\s\S]*\})/);
+    const jsonString = (jsonMatch ? (jsonMatch[1] ?? jsonMatch[0]) : content).trim();
+
+    if (!jsonString.startsWith('{')) {
+      throw new Error(`OpenAI returned no valid JSON: ${content.slice(0, 80)}`);
+    }
+
+    let analysis: AIImageAnalysis;
+    try {
+      analysis = JSON.parse(jsonString);
+    } catch (parseErr) {
+      throw new Error(`OpenAI response was not valid JSON: ${content.slice(0, 80)}`);
+    }
 
     return analysis;
   } catch (error) {

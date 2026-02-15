@@ -412,6 +412,8 @@ export interface OutfitItem {
   color?: string;
   fabric?: string;
   silhouette?: string;
+  /** When set, item is in the post author's wardrobe — link to /closet?item=id */
+  closetItemId?: string;
 }
 
 export interface OOTDPost {

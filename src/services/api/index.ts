@@ -63,6 +63,7 @@ export {
 // Storage API
 export {
   uploadImage,
+  uploadImageToPath,
   deleteImage,
   compressImage,
   uploadImageWithCompression,

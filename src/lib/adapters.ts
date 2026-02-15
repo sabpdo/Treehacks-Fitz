@@ -4,16 +4,16 @@
  */
 
 import type { Post, Profile, Comment as ApiComment, ClosetItem, PostOutfitItem } from '../types/database';
+import { supabaseUrl } from './supabase';
 
 const BUCKET = 'closet-images';
 
-/** Ensure Supabase storage URL is a full public URL so images load in the browser */
+/** Ensure Supabase storage URL is a full public URL so OpenAI and the browser can load it */
 export function ensurePublicStorageUrl(url: string | null | undefined): string {
   if (!url || typeof url !== 'string') return url || '';
   let full = url.trim();
-  if (full.startsWith('data:')) return full;
-  const base = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_URL) || '';
-  const baseUrl = base.replace(/\/$/, '');
+  if (full.startsWith('data:') || full.startsWith('http://') || full.startsWith('https://')) return full;
+  const baseUrl = (supabaseUrl || '').replace(/\/$/, '');
 
   if (!full.startsWith('http')) {
     if (!baseUrl) return full;
@@ -66,6 +66,8 @@ export interface UIOutfitItem {
   color?: string;
   fabric?: string;
   silhouette?: string;
+  /** When set, this item is in the post author's wardrobe — link to /closet?item=id (only for own post). */
+  closetItemId?: string;
 }
 
 export interface UIOOTDPost {
@@ -135,6 +137,13 @@ function closetItemsToOutfitItems(items: ClosetItem[]): UIOutfitItem[] {
   });
 }
 
+/** Treat "Unknown" / "Unknown Brand" as no value so we never display that text. */
+function cleanBrand(brand: string | null | undefined): string | undefined {
+  const b = (brand ?? '').trim();
+  if (!b || b.toLowerCase() === 'unknown' || b.toLowerCase() === 'unknown brand') return undefined;
+  return b;
+}
+
 /** Build UI outfit items from post outfit items (same shape as closet item but from post). */
 function postOutfitItemsToUIOutfitItems(items: PostOutfitItem[]): UIOutfitItem[] {
   if (!items?.length) return [];
@@ -142,16 +151,18 @@ function postOutfitItemsToUIOutfitItems(items: PostOutfitItem[]): UIOutfitItem[]
     const pos = DEFAULT_OUTFIT_POSITIONS[i % DEFAULT_OUTFIT_POSITIONS.length];
     const label = item.subcategory || item.category?.replace(/_/g, ' ') || 'Item';
     const capitalizedLabel = label.charAt(0).toUpperCase() + label.slice(1);
+    const brand = cleanBrand(item.brand);
     return {
       id: item.id ?? `post-item-${i}`,
       type: categoryToOutfitType(item.category),
-      label: item.brand ? `${item.brand} ${capitalizedLabel}` : capitalizedLabel,
+      label: brand ? `${brand} ${capitalizedLabel}` : capitalizedLabel,
       position: pos,
       imageUrl: item.image_url || undefined,
-      brand: item.brand ?? undefined,
+      brand,
       color: item.colors?.[0] ?? undefined,
       fabric: item.fabric ?? undefined,
       silhouette: item.silhouette ?? undefined,
+      closetItemId: item.closet_item_id ?? undefined,
     };
   });
 }

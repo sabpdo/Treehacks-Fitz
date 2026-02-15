@@ -2,6 +2,7 @@ import { supabase } from '../../lib/supabase';
 import { ClosetItem, CreateClosetItemRequest, UpdateClosetItemRequest, AIImageAnalysis } from '../../types/database';
 import { analyzeClothingImage, analyzeOutfitImage } from '../openai';
 import { getInitialElo, eloToScore } from '../../lib/ranking';
+import { ensurePublicStorageUrl } from '../../lib/adapters';
 
 /**
  * Get all closet items for a user
@@ -87,10 +88,13 @@ export async function createClosetItem(
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
 
+  // OpenAI requires a full absolute URL to fetch the image; normalize relative storage paths
+  const imageUrl = ensurePublicStorageUrl(request.image_url) || request.image_url;
+
   // Analyze image with OpenAI
   let aiAnalysis;
   try {
-    aiAnalysis = await analyzeClothingImage(request.image_url);
+    aiAnalysis = await analyzeClothingImage(imageUrl);
   } catch (error) {
     console.error('AI analysis failed, using manual input:', error);
     // Fall back to manual input if AI fails
@@ -108,7 +112,7 @@ export async function createClosetItem(
   // Merge AI analysis with user input (user input takes precedence)
   const itemData = {
     user_id: user.id,
-    image_url: request.image_url,
+    image_url: imageUrl,
     brand: request.brand || null,
     category: request.category,
     vibe_tags: request.vibe_tags || aiAnalysis.vibe_tags,

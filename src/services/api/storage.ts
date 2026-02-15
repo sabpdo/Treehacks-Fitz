@@ -1,4 +1,4 @@
-import { supabase } from '../../lib/supabase';
+import { supabase, supabaseUrl } from '../../lib/supabase';
 
 /**
  * Convert a data URL (e.g. from canvas or file input) to a File for upload.
@@ -68,10 +68,52 @@ export async function uploadImage(file: File, bucket: string = 'closet-images'):
     throw new Error(`Upload failed: ${msg}`);
   }
 
-  // Build public URL (must include /object/public/ for public buckets to load in browser)
-  const baseUrl = import.meta.env.VITE_SUPABASE_URL?.replace(/\/$/, '') || '';
-  const publicUrl = `${baseUrl}/storage/v1/object/public/${bucket}/${filePath}`;
+  // Build public URL (must be absolute so OpenAI and browsers can load it)
+  const base = (supabaseUrl || '').replace(/\/$/, '');
+  const publicUrl = base ? `${base}/storage/v1/object/public/${bucket}/${filePath}` : `/${bucket}/${filePath}`;
   return publicUrl;
+}
+
+/**
+ * Upload an image to Supabase Storage at a specific path (e.g. segment crops for wardrobe).
+ * @param file - The image file to upload
+ * @param path - Full object path (e.g. 'segment-crops/userId/requestId/0.jpg'), no leading slash
+ * @param bucket - The storage bucket name (default: 'closet-images')
+ * @returns Public URL of the uploaded image
+ */
+export async function uploadImageToPath(
+  file: File,
+  path: string,
+  bucket: string = 'closet-images'
+): Promise<string> {
+  if (!file.type.startsWith('image/')) {
+    throw new Error('File must be an image');
+  }
+  const maxSize = 5 * 1024 * 1024;
+  if (file.size > maxSize) {
+    throw new Error('Image must be less than 5MB');
+  }
+  const cleanPath = path.replace(/^\/+/, '');
+  const { error } = await supabase.storage.from(bucket).upload(cleanPath, file, {
+    cacheControl: '3600',
+    upsert: true,
+  });
+  if (error) {
+    const msg = error.message || '';
+    if (msg.toLowerCase().includes('bucket') && msg.toLowerCase().includes('not found')) {
+      throw new Error(
+        "Upload failed: Storage bucket 'closet-images' not found. Create it in Supabase: Storage → New bucket → name 'closet-images', set to Public."
+      );
+    }
+    if (msg.toLowerCase().includes('row-level security') || msg.toLowerCase().includes('violates')) {
+      throw new Error(
+        "Upload failed: Storage policy missing. Run supabase/storage-policies.sql for segment-crops paths."
+      );
+    }
+    throw new Error(`Upload failed: ${msg}`);
+  }
+  const base = (supabaseUrl || '').replace(/\/$/, '');
+  return base ? `${base}/storage/v1/object/public/${bucket}/${cleanPath}` : `/${bucket}/${cleanPath}`;
 }
 
 /**
