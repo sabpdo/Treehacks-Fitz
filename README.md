@@ -1,8 +1,13 @@
 # Fitz
+<img width="795" height="449" alt="Screenshot 2026-02-16 at 2 05 03 PM" src="https://github.com/user-attachments/assets/81167807-c2a8-4ff8-b77a-74f22a3483d2" />
 
 **Fitz** is an AI-powered fashion social platform that makes it easy to find what to buy next and share outfits with friends. Built for TreeHacks.
 
 Finding personalized and trusted clothing recommendations is hard amid a million options. Fitz combines your **closet**, **body fit profile**, and **social feed** to curate recommendations and shopping results tailored to you.
+
+**Video Demo:** https://devpost.com/software/fitz-zbpu8l
+
+**Pitch Deck**: https://docs.google.com/presentation/d/1YamvZYAMt3oHakAYhBJhvPdG2qq5wMlXOWHgkD8_nhU/edit?usp=sharing
 
 ## Features
 
@@ -112,32 +117,7 @@ treehacks/
 └── README.md
 ```
 
-## Troubleshooting
-
-### "Bucket not found" or "Failed to create post" when posting a photo
-
-1. In Supabase: **Storage → New bucket** → name **`closet-images`**, set **Public** → Create.
-2. If you see **"new row violates row-level security policy"**, run the SQL in **supabase/storage-policies.sql** in the Supabase SQL Editor (see **BACKEND_SETUP.md** if present).
-
-### Post images show "Image unavailable"
-
-1. **Storage** → **closet-images** → ensure the bucket is **Public**.
-2. Check **.env** has **`VITE_SUPABASE_URL`** correct (no trailing slash).
-3. In DevTools → Network, inspect the failing image request (403 = bucket/RLS; 404 = wrong path).
-
-### Shop search fails or "SERPAPI_KEY not configured"
-
-- **Local:** Set `VITE_SERPAPI_KEY` in `.env`; Vite proxy forwards to SerpAPI (see `vite.config.ts`).
-- **Production (Vercel):** Set **`SERPAPI_KEY`** in Project Settings → Environment Variables. The `/api/shopping-search` serverless function uses it.
-
-### Port already in use
-
-Vite will try the next port; check the terminal for the URL.
 
 ## Contributing
 
-Contributions are welcome. Open an issue or submit a pull request.
-
-## License
-
-TBD.
+Built by Angie Cao, Maggie Lin, Cynthia Zhang, and me.
