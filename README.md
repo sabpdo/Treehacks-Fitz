@@ -9,6 +9,8 @@ Finding personalized and trusted clothing recommendations is hard amid a million
 
 **Pitch Deck**: https://docs.google.com/presentation/d/1YamvZYAMt3oHakAYhBJhvPdG2qq5wMlXOWHgkD8_nhU/edit?usp=sharing
 
+**Twitter Demo**: https://x.com/alexreibman/status/2023304536652460102?s=46
+
 ## Features
 
 - **Capture** — Photo or upload an outfit; AI detects items and can match them to your closet. Link pieces to what you own, swap in similar items, then post to the feed.
